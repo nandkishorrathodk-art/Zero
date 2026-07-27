@@ -1,0 +1,14 @@
+{
+  "name": "zero-builder",
+  "version": "4.4.0",
+  "private": true,
+  "description": "ZERO-BUILDER Max — Motion Studio for Awwwards/Motionsites-class websites + full-stack product mode.",
+  "scripts": {
+    "build": "node build-bundle.js",
+    "dev": "node build-bundle.js && node server.js",
+    "start": "node build-bundle.js && node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

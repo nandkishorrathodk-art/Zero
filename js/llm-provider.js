@@ -1,0 +1,592 @@
+/* ============================================================
+   ZERO-BUILDER — Custom LLM Provider System
+   Supports: Gemini, OpenAI, Anthropic, DeepSeek, Groq, 
+             Mistral, Ollama, and any OpenAI-compatible API
+   ============================================================ */
+
+class LLMProvider {
+    constructor() {
+        this.providers = {
+            gemini: {
+                name: 'Google Gemini',
+                baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+                models: [
+                    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Fast & Free)' },
+                    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro (Best Quality)' },
+                    { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash' },
+                ],
+                format: 'gemini',
+                color: '#22c55e',
+            },
+            openai: {
+                name: 'OpenAI',
+                baseUrl: 'https://api.openai.com/v1',
+                models: [
+                    { id: 'gpt-4o', name: 'GPT-4o (Recommended)' },
+                    { id: 'gpt-4o-mini', name: 'GPT-4o Mini (Cheaper)' },
+                    { id: 'gpt-4.1', name: 'GPT-4.1' },
+                    { id: 'o3-mini', name: 'o3-mini (Reasoning)' },
+                ],
+                format: 'openai',
+                color: '#f97316',
+            },
+            anthropic: {
+                name: 'Anthropic Claude',
+                baseUrl: 'https://api.anthropic.com/v1',
+                models: [
+                    { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4 (Recommended)' },
+                    { id: 'claude-opus-4-20250514', name: 'Claude Opus 4 (Best Quality)' },
+                    { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku (Fast)' },
+                ],
+                format: 'anthropic',
+                color: '#a855f7',
+            },
+            deepseek: {
+                name: 'DeepSeek',
+                baseUrl: 'https://api.deepseek.com/v1',
+                models: [
+                    { id: 'deepseek-chat', name: 'DeepSeek V3 (Recommended)' },
+                    { id: 'deepseek-reasoner', name: 'DeepSeek R1 (Reasoning)' },
+                ],
+                format: 'openai-compatible',
+                color: '#3b82f6',
+            },
+            groq: {
+                name: 'Groq',
+                baseUrl: 'https://api.groq.com/openai/v1',
+                models: [
+                    { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B (Recommended)' },
+                    { id: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B' },
+                    { id: 'gemma2-9b-it', name: 'Gemma 2 9B' },
+                ],
+                format: 'openai-compatible',
+                color: '#eab308',
+            },
+            mistral: {
+                name: 'Mistral',
+                baseUrl: 'https://api.mistral.ai/v1',
+                models: [
+                    { id: 'mistral-large-latest', name: 'Mistral Large (Best)' },
+                    { id: 'codestral-latest', name: 'Codestral (Code-optimized)' },
+                    { id: 'mistral-small-latest', name: 'Mistral Small (Fast)' },
+                ],
+                format: 'openai-compatible',
+                color: '#ef4444',
+            },
+            ollama: {
+                name: 'Ollama (Local)',
+                baseUrl: 'http://localhost:11434/v1',
+                models: [
+                    { id: 'llama3.1', name: 'Llama 3.1' },
+                    { id: 'codellama', name: 'CodeLlama' },
+                    { id: 'deepseek-coder-v2', name: 'DeepSeek Coder V2' },
+                    { id: 'qwen2.5-coder', name: 'Qwen 2.5 Coder' },
+                ],
+                format: 'openai-compatible',
+                color: '#a78bfa',
+                noApiKey: true,
+            },
+            custom: {
+                name: 'Custom Endpoint',
+                baseUrl: '',
+                models: [{ id: 'custom', name: 'Custom Model' }],
+                format: 'openai-compatible',
+                color: '#6b7280',
+            },
+        };
+
+        this.currentProvider = 'gemini';
+        this.currentModel = 'gemini-2.5-flash';
+        this.apiKeys = {};
+        this.customBaseUrl = '';
+        this.customModelName = '';
+        this.tokenUsage = { total: 0, today: 0 };
+        
+        this._loadSettings();
+    }
+
+    /* ===== SETTINGS PERSISTENCE ===== */
+    _loadSettings() {
+        try {
+            const saved = localStorage.getItem('zb_llm_settings');
+            if (saved) {
+                const s = JSON.parse(saved);
+                this.currentProvider = s.currentProvider || 'gemini';
+                this.currentModel = s.currentModel || 'gemini-2.5-flash';
+                this.apiKeys = s.apiKeys || {};
+                this.customBaseUrl = s.customBaseUrl || '';
+                this.customModelName = s.customModelName || '';
+                this.tokenUsage = s.tokenUsage || { total: 0, today: 0 };
+
+                // Auto-sanitize broken content-safety / nemotron models
+                if (this.customModelName.includes('content-safety') || this.customModelName.includes('nemotron')) {
+                    this.customModelName = '';
+                    this.currentProvider = 'gemini';
+                    this.currentModel = 'gemini-2.5-flash';
+                }
+            }
+        } catch (e) {
+            console.warn('Failed to load LLM settings:', e);
+        }
+    }
+
+    saveSettings() {
+        try {
+            localStorage.setItem('zb_llm_settings', JSON.stringify({
+                currentProvider: this.currentProvider,
+                currentModel: this.currentModel,
+                apiKeys: this.apiKeys,
+                customBaseUrl: this.customBaseUrl,
+                customModelName: this.customModelName,
+                tokenUsage: this.tokenUsage,
+            }));
+        } catch (e) {
+            console.warn('Failed to save LLM settings:', e);
+        }
+    }
+
+    /* ===== PROVIDER MANAGEMENT ===== */
+    setProvider(providerId, modelId) {
+        if (!this.providers[providerId]) throw new Error(`Unknown provider: ${providerId}`);
+        this.currentProvider = providerId;
+        this.currentModel = modelId || this.providers[providerId].models[0].id;
+        this.saveSettings();
+    }
+
+    setApiKey(providerId, key) {
+        this.apiKeys[providerId] = key;
+        this.saveSettings();
+    }
+
+    getApiKey(providerId) {
+        return this.apiKeys[providerId || this.currentProvider] || '';
+    }
+
+    getProviderInfo() {
+        return this.providers[this.currentProvider];
+    }
+
+    getModels(providerId) {
+        const p = this.providers[providerId || this.currentProvider];
+        return p ? p.models : [];
+    }
+
+    /* ===== CORE CHAT METHOD ===== */
+    async chat(messages, options = {}) {
+        const provider = this.providers[this.currentProvider];
+        const apiKey = this.apiKeys[this.currentProvider];
+        const model = options.model || this.currentModel;
+        
+        if (!provider.noApiKey && !apiKey) {
+            throw new Error(`No API key configured for ${provider.name}. Go to Settings → AI Provider.`);
+        }
+
+        switch (provider.format) {
+            case 'gemini':
+                return this._chatGemini(messages, model, apiKey, options);
+            case 'openai':
+                return this._chatOpenAI(messages, model, apiKey, provider.baseUrl, options);
+            case 'anthropic':
+                return this._chatAnthropic(messages, model, apiKey, options);
+            case 'openai-compatible':
+                const baseUrl = this.currentProvider === 'custom' 
+                    ? this.customBaseUrl 
+                    : provider.baseUrl;
+                if (!baseUrl) {
+                    throw new Error(`No Base URL configured for ${provider.name}. Go to Settings → AI Provider and set the Custom Base URL.`);
+                }
+                const actualModel = this.currentProvider === 'custom'
+                    ? this.customModelName || model
+                    : model;
+                return this._chatOpenAI(messages, actualModel, apiKey, baseUrl, options);
+            default:
+                throw new Error(`Unknown format: ${provider.format}`);
+        }
+    }
+
+    /* ===== STREAMING CHAT ===== */
+    async stream(messages, options = {}, onChunk) {
+        const provider = this.providers[this.currentProvider];
+        const apiKey = this.apiKeys[this.currentProvider];
+        const model = options.model || this.currentModel;
+
+        if (!provider.noApiKey && !apiKey) {
+            throw new Error(`No API key configured for ${provider.name}. Go to Settings → AI Provider.`);
+        }
+
+        switch (provider.format) {
+            case 'gemini':
+                return this._streamGemini(messages, model, apiKey, options, onChunk);
+            case 'openai':
+                return this._streamOpenAI(messages, model, apiKey, provider.baseUrl, options, onChunk);
+            case 'anthropic':
+                return this._streamAnthropic(messages, model, apiKey, options, onChunk);
+            case 'openai-compatible':
+                const baseUrl = this.currentProvider === 'custom' ? this.customBaseUrl : provider.baseUrl;
+                if (!baseUrl) {
+                    throw new Error(`No Base URL configured for ${provider.name}. Go to Settings → AI Provider and set the Custom Base URL.`);
+                }
+                const actualModel = this.currentProvider === 'custom' ? this.customModelName || model : model;
+                return this._streamOpenAI(messages, actualModel, apiKey, baseUrl, options, onChunk);
+            default:
+                throw new Error(`Unknown format: ${provider.format}`);
+        }
+    }
+
+    /* ===== GOOGLE GEMINI ADAPTER ===== */
+    async _chatGemini(messages, model, apiKey, options) {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        
+        const contents = this._convertToGeminiFormat(messages);
+        
+        const body = {
+            contents,
+            generationConfig: {
+                temperature: options.temperature || 0.7,
+                maxOutputTokens: options.maxTokens || 32768,
+                topP: options.topP || 0.95,
+            },
+        };
+
+        if (options.systemPrompt) {
+            body.systemInstruction = { parts: [{ text: options.systemPrompt }] };
+        }
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+
+        if (!response.ok) {
+            const err = await response.text();
+            throw new Error(`Gemini API error (${response.status}): ${err}`);
+        }
+
+        const data = await response.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        
+        this._trackTokens(text.length / 4); // rough estimate
+        return text;
+    }
+
+    async _streamGemini(messages, model, apiKey, options, onChunk) {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
+        
+        const contents = this._convertToGeminiFormat(messages);
+        const body = {
+            contents,
+            generationConfig: {
+                temperature: options.temperature || 0.7,
+                maxOutputTokens: options.maxTokens || 32768,
+            },
+        };
+
+        if (options.systemPrompt) {
+            body.systemInstruction = { parts: [{ text: options.systemPrompt }] };
+        }
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+
+        if (!response.ok) {
+            const err = await response.text();
+            throw new Error(`Gemini stream error (${response.status}): ${err}`);
+        }
+
+        let fullText = '';
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const json = JSON.parse(line.slice(6));
+                        const chunk = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                        if (chunk) {
+                            fullText += chunk;
+                            if (onChunk) onChunk(chunk, fullText);
+                        }
+                    } catch (e) { /* skip malformed chunks */ }
+                }
+            }
+        }
+
+        this._trackTokens(fullText.length / 4);
+        return fullText;
+    }
+
+    _convertToGeminiFormat(messages) {
+        return messages
+            .filter(m => m.role !== 'system')
+            .map(m => ({
+                role: m.role === 'assistant' ? 'model' : 'user',
+                parts: [{ text: m.content }],
+            }));
+    }
+
+    /* ===== OPENAI / OPENAI-COMPATIBLE ADAPTER ===== */
+    async _chatOpenAI(messages, model, apiKey, baseUrl, options) {
+        const url = `${baseUrl}/chat/completions`;
+        
+        const allMessages = [];
+        if (options.systemPrompt) {
+            allMessages.push({ role: 'system', content: options.systemPrompt });
+        }
+        allMessages.push(...messages);
+
+        const body = {
+            model,
+            messages: allMessages,
+            temperature: options.temperature || 0.7,
+            max_tokens: options.maxTokens || 32768,
+        };
+
+        const headers = { 'Content-Type': 'application/json' };
+        if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
+        let response;
+        try {
+            response = await fetch(url, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(body),
+            });
+        } catch (e) {
+            if (window.location.protocol === 'https:' && (url.includes('localhost') || url.includes('127.0.0.1'))) {
+                throw new Error(`Browser Security Blocked Local Connection: You are on HTTPS but trying to connect to local Ollama. Please open http://zero-ai.surge.sh (without the 's') or run Zero-Builder locally using 'node server.js'.`);
+            }
+            throw new Error(`Network Error: Failed to connect to ${url}. Please verify your Base URL (e.g. openrouter.ai instead of openrouter.io) and check your internet connection. (${e.message})`);
+        }
+
+        if (!response.ok) {
+            const err = await response.text();
+            if (response.status === 401) {
+                throw new Error(`Authentication Error (401): Missing Authentication header. If your custom API requires an API key (e.g. OpenRouter, Together AI, Groq), please enter it in Settings → AI Provider → API Key.`);
+            }
+            throw new Error(`API error (${response.status}): ${err}`);
+        }
+
+        const data = await response.json();
+        const text = data.choices?.[0]?.message?.content || '';
+        this._trackTokens(data.usage?.total_tokens || text.length / 4);
+        return text;
+    }
+
+    async _streamOpenAI(messages, model, apiKey, baseUrl, options, onChunk) {
+        const url = `${baseUrl}/chat/completions`;
+        
+        const allMessages = [];
+        if (options.systemPrompt) {
+            allMessages.push({ role: 'system', content: options.systemPrompt });
+        }
+        allMessages.push(...messages);
+
+        const body = {
+            model,
+            messages: allMessages,
+            temperature: options.temperature || 0.7,
+            max_tokens: options.maxTokens || 32768,
+            stream: true,
+        };
+
+        const headers = { 'Content-Type': 'application/json' };
+        if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
+        let response;
+        try {
+            response = await fetch(url, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(body),
+            });
+        } catch (e) {
+            if (window.location.protocol === 'https:' && (url.includes('localhost') || url.includes('127.0.0.1'))) {
+                throw new Error(`Browser Security Blocked Local Connection: You are on HTTPS but trying to connect to local Ollama. Please open http://zero-ai.surge.sh (without the 's') or run Zero-Builder locally using 'node server.js'.`);
+            }
+            throw new Error(`Network Error: Failed to connect to ${url}. Please verify your Base URL (e.g. openrouter.ai instead of openrouter.io) and check your internet connection. (${e.message})`);
+        }
+
+        if (!response.ok) {
+            const err = await response.text();
+            if (response.status === 401) {
+                throw new Error(`Authentication Error (401): Missing Authentication header. If your custom API requires an API key (e.g. OpenRouter, Together AI, Groq), please enter it in Settings → AI Provider → API Key.`);
+            }
+            throw new Error(`Stream error (${response.status}): ${err}`);
+        }
+
+        let fullText = '';
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+                if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+                    try {
+                        const json = JSON.parse(line.slice(6));
+                        const chunk = json.choices?.[0]?.delta?.content || '';
+                        if (chunk) {
+                            fullText += chunk;
+                            if (onChunk) onChunk(chunk, fullText);
+                        }
+                    } catch (e) { /* skip */ }
+                }
+            }
+        }
+
+        this._trackTokens(fullText.length / 4);
+        return fullText;
+    }
+
+    /* ===== ANTHROPIC ADAPTER ===== */
+    async _chatAnthropic(messages, model, apiKey, options) {
+        const url = 'https://api.anthropic.com/v1/messages';
+        
+        const body = {
+            model,
+            max_tokens: options.maxTokens || 32768,
+            messages: messages.map(m => ({
+                role: m.role,
+                content: m.content,
+            })),
+        };
+
+        if (options.systemPrompt) {
+            body.system = options.systemPrompt;
+        }
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': apiKey,
+                'anthropic-version': '2023-06-01',
+                'anthropic-dangerous-direct-browser-access': 'true',
+            },
+            body: JSON.stringify(body),
+        });
+
+        if (!response.ok) {
+            const err = await response.text();
+            throw new Error(`Anthropic error (${response.status}): ${err}`);
+        }
+
+        const data = await response.json();
+        const text = data.content?.[0]?.text || '';
+        this._trackTokens(data.usage?.input_tokens + data.usage?.output_tokens || text.length / 4);
+        return text;
+    }
+
+    async _streamAnthropic(messages, model, apiKey, options, onChunk) {
+        const url = 'https://api.anthropic.com/v1/messages';
+        
+        const body = {
+            model,
+            max_tokens: options.maxTokens || 32768,
+            stream: true,
+            messages: messages.map(m => ({
+                role: m.role,
+                content: m.content,
+            })),
+        };
+
+        if (options.systemPrompt) {
+            body.system = options.systemPrompt;
+        }
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': apiKey,
+                'anthropic-version': '2023-06-01',
+                'anthropic-dangerous-direct-browser-access': 'true',
+            },
+            body: JSON.stringify(body),
+        });
+
+        if (!response.ok) {
+            const err = await response.text();
+            throw new Error(`Anthropic stream error (${response.status}): ${err}`);
+        }
+
+        let fullText = '';
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const json = JSON.parse(line.slice(6));
+                        if (json.type === 'content_block_delta') {
+                            const chunk = json.delta?.text || '';
+                            if (chunk) {
+                                fullText += chunk;
+                                if (onChunk) onChunk(chunk, fullText);
+                            }
+                        }
+                    } catch (e) { /* skip */ }
+                }
+            }
+        }
+
+        this._trackTokens(fullText.length / 4);
+        return fullText;
+    }
+
+    /* ===== TOKEN TRACKING ===== */
+    _trackTokens(count) {
+        this.tokenUsage.total += Math.round(count);
+        this.tokenUsage.today += Math.round(count);
+        this.saveSettings();
+    }
+
+    getTokenUsage() {
+        return { ...this.tokenUsage };
+    }
+
+    /* ===== CONNECTION TEST ===== */
+    async testConnection() {
+        try {
+            const result = await this.chat(
+                [{ role: 'user', content: 'Say "OK" and nothing else.' }],
+                { maxTokens: 10, temperature: 0 }
+            );
+            return { success: true, message: `Connected! Response: ${result.trim()}` };
+        } catch (e) {
+            return { success: false, message: e.message };
+        }
+    }
+}
+
+// Global instance
+window.llmProvider = new LLMProvider();

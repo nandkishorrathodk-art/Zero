@@ -1,0 +1,14 @@
+{
+  "name": "@zero-builder/local",
+  "version": "1.0.0",
+  "description": "Zero-Builder Remote Control CLI",
+  "main": "index.js",
+  "bin": {
+    "zero-local": "index.js"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "Zero-Builder",
+  "license": "ISC"
+}
