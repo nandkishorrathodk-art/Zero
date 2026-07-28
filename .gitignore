@@ -35,5 +35,3 @@ Thumbs.db
 .cache/
 
 # Sensitive files (auto-detected)
-build-bundle.js
-
