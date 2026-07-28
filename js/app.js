@@ -100,6 +100,7 @@
             // Wire up event listeners
             setupAgentEvents();
             setupUIEvents();
+            setupConversionLab();
             loadSavedSettings();
             loadWorkspace();
             renderRecentProjects();
@@ -140,6 +141,11 @@
 
     /* ===== AGENT FRAMEWORK EVENTS ===== */
     function setupAgentEvents() {
+        if (!framework) {
+            console.error('AgentFramework failed to load — generation is unavailable');
+            return;
+        }
+
         framework.on('stateChange', ({ from, to }) => {
             updateStepIndicators(to);
         });
@@ -153,10 +159,19 @@
         });
 
         framework.on('filesReady', (files) => {
-            editor.setFiles(files);
-            fileSystem.setFiles(files);
-            preview.render(files);
-            preview.runInteractionAudit?.();
+            if (editor) editor.setFiles(files);
+            if (fileSystem) fileSystem.setFiles(files);
+            if (preview) {
+                preview.render(files);
+                preview.runInteractionAudit?.();
+            }
+            scheduleWorkspaceSave();
+        });
+
+        framework.on('livePreview', ({ files, partial }) => {
+            if (editor) editor.setFiles(files);
+            if (fileSystem) fileSystem.setFiles(files);
+            if (preview) preview.render(files);
         });
 
         framework.on('complete', (files) => {
@@ -171,7 +186,8 @@
             // Render bug report if there are unfixable bugs
             if (framework.memory && framework.memory.bugReport) {
                 const report = framework.memory.bugReport;
-                const unfixable = report.bugs.filter(b => !report.fixable.includes(b));
+                const fixableSet = new Set((report.fixable || []).map(b => b?.message || b));
+                const unfixable = (report.bugs || []).filter(b => !fixableSet.has(b?.message || b));
                 if (unfixable.length > 0) {
                     let html = `<div class="ws-bug-report">
                         <div class="ws-bug-report-title">
@@ -181,7 +197,7 @@
                         <ul>`;
 
                     for (const bug of unfixable) {
-                        html += `<li><strong>${bug.file}:</strong> ${bug.message}</li>`;
+                        html += `<li><strong>${escapeHtml(bug.file || 'file')}:</strong> ${escapeHtml(bug.message || '')}</li>`;
                     }
                     html += `</ul></div>`;
 
@@ -229,6 +245,7 @@
                 document.querySelectorAll('.welcome-fw-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 const fw = btn.dataset.framework;
+                if (!framework) return;
                 if (fw === 'react-vite') {
                     framework.frameworkOverride = 'react-vite';
                     showToast('info', 'Target: React + Vite');
@@ -245,7 +262,7 @@
         document.querySelectorAll('.welcome-quality-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 buildQuality = btn.dataset.quality || 'production';
-                framework.aiMode = buildQuality;
+                if (framework) framework.aiMode = buildQuality;
                 document.querySelectorAll('.welcome-quality-btn').forEach(item => item.classList.toggle('active', item === btn));
             });
         });
@@ -319,19 +336,26 @@
             btn.addEventListener('click', () => {
                 document.querySelectorAll('.ws-device-btn, .device-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
-                preview.setDevice(btn.dataset.device);
+                preview?.setDevice(btn.dataset.device);
             });
         });
 
         // Preview controls
-        document.getElementById('btn-refresh-preview')?.addEventListener('click', () => preview.refresh());
-        document.getElementById('btn-fullscreen')?.addEventListener('click', () => preview.toggleFullscreen());
+        document.getElementById('btn-refresh-preview')?.addEventListener('click', () => preview?.refresh());
+        document.getElementById('btn-fullscreen')?.addEventListener('click', () => preview?.toggleFullscreen());
 
         // Visual Inspector
-        const visualInspector = new VisualInspector(document.getElementById('preview-iframe'), { editor });
+        const visualInspector = typeof VisualInspector !== 'undefined'
+            ? new VisualInspector(document.getElementById('preview-iframe'), { editor })
+            : null;
         document.getElementById('btn-visual-inspector')?.addEventListener('click', () => {
+            if (!visualInspector) {
+                showToast('warning', 'Visual Inspector is not available');
+                return;
+            }
             const active = visualInspector.toggle();
             const btn = document.getElementById('btn-visual-inspector');
+            if (!btn) return;
             if (active) {
                 btn.classList.add('active');
                 btn.style.background = 'rgba(56, 189, 248, 0.2)';
@@ -394,7 +418,7 @@
                 chip.classList.toggle('active');
                 chip.classList.contains('active') ? selectedRequirements.add(requirement) : selectedRequirements.delete(requirement);
                 if (chip.classList.contains('active') && ['auth', 'database', 'api', 'payments'].includes(requirement)) {
-                    framework.frameworkOverride = 'fullstack-nextjs';
+                    if (framework) framework.frameworkOverride = 'fullstack-nextjs';
                     document.querySelectorAll('.fw-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.framework === 'fullstack-nextjs'));
                     showToast('info', 'Full-Stack target selected for backend capabilities');
                 }
@@ -404,7 +428,7 @@
         document.querySelectorAll('.quality-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 buildQuality = btn.dataset.quality || 'production';
-                framework.aiMode = buildQuality;
+                if (framework) framework.aiMode = buildQuality;
                 document.querySelectorAll('.quality-btn').forEach(item => item.classList.toggle('active', item === btn));
                 scheduleWorkspaceSave();
             });
@@ -437,13 +461,14 @@
         document.getElementById('btn-new-file')?.addEventListener('click', () => {
             const name = prompt('Enter file name:');
             if (name) {
-                editor.addFile(name, '');
-                fileSystem.addFile(name, '');
+                editor?.addFile(name, '');
+                fileSystem?.addFile(name, '');
             }
         });
 
         // Copy code
         document.getElementById('btn-copy-code')?.addEventListener('click', () => {
+            if (!editor) return;
             navigator.clipboard?.writeText(editor.getValue());
             showToast('success', 'Code copied to clipboard!');
         });
@@ -468,13 +493,13 @@
         document.addEventListener('keydown', (e) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 's') {
                 e.preventDefault();
-                const files = editor.getAllFiles();
-                preview.render(files);
+                const files = editor?.getAllFiles() || {};
+                preview?.render(files);
                 showToast('info', 'Preview refreshed');
             }
             if (e.key === 'F11') {
                 e.preventDefault();
-                preview.toggleFullscreen();
+                preview?.toggleFullscreen();
             }
         });
 
@@ -690,6 +715,11 @@ Format:
     }
 
     async function executeGeneration(prompt) {
+        if (!framework) {
+            showToast('error', 'Agent framework failed to load. Refresh the page.');
+            return;
+        }
+
         if (isGenerating) {
             // Prevent accidental double-click / Enter cancellation (require at least 4.5s delay)
             if (Date.now() - generationStartTime < 4500) {
@@ -705,6 +735,10 @@ Format:
         }
 
         // Check API key
+        if (!window.llmProvider) {
+            showToast('error', 'LLM provider failed to load. Refresh the page.');
+            return;
+        }
         const apiKey = window.llmProvider.getApiKey();
         if (!apiKey && !window.llmProvider.providers[window.llmProvider.currentProvider]?.noApiKey) {
             showToast('error', 'Please set your API key in Settings first');
@@ -729,10 +763,11 @@ Format:
         if (editor) editor.setValue('// Initiating deep generation sequence...\n');
 
         try {
-            // Pass art direction into framework for prompt engineer
-            framework.memory = framework.memory || {};
-            framework.memory._artDirectionPreset = artDirectionPreset;
-            await framework.generate(buildGenerationBrief(prompt));
+            // Pass art direction as generate() options so it survives the memory reset
+            if (framework) framework.aiMode = buildQuality;
+            await framework.generate(buildGenerationBrief(prompt), {
+                artDirection: artDirectionPreset,
+            });
 
             // Add success message in chat instead of replacing
             addChatMessage('system', '✅ Generation complete! Check the preview.', true);
@@ -746,7 +781,7 @@ Format:
             addChatMessage('system', `❌ Error: ${msg}`, true);
 
             // Surface engineer-grade failure guidance (no silent fail, no weak shell)
-            if (/too thin|no weak|failed permanently|could not finish|extract ANY code/i.test(msg)) {
+            if (/too thin|no weak|failed permanently|could not finish|extract ANY code|is not a function/i.test(msg)) {
                 showToast('error', 'Generation failed quality bar. Retry with Production/Autonomous + a stronger model (Pro/Opus/GPT-4o).');
                 addConsoleLog('error', `Engineer mode rejected thin/failed output: ${msg}`);
             } else {
@@ -759,7 +794,7 @@ Format:
     /* ===== CHAT / REFINEMENT ===== */
     function handleStopGeneration() {
         if (!isGenerating) return;
-        framework.cancel();
+        framework?.cancel();
         isGenerating = false;
         updateGenerateButton(false);
         showToast('info', 'Generation stopped');
@@ -776,9 +811,11 @@ Format:
 
         // IF GENERATION IS CURRENTLY IN PROGRESS:
         if (isGenerating) {
-            framework.memory = framework.memory || {};
-            framework.memory.midFlightNotes = framework.memory.midFlightNotes || [];
-            framework.memory.midFlightNotes.push(prompt);
+            if (framework) {
+                framework.memory = framework.memory || {};
+                framework.memory.midFlightNotes = framework.memory.midFlightNotes || [];
+                framework.memory.midFlightNotes.push(prompt);
+            }
 
             try {
                 const systemPrompt = "You are the Zero-Builder AI Assistant. The user sent a message WHILE a website build is running in the background. Briefly acknowledge their message in 1 short friendly sentence and confirm that your instructions/note have been saved for the build. Speak in the user's language (e.g. Hinglish if they use it).";
@@ -798,6 +835,7 @@ Format:
         const hasFiles = Object.keys(currentFiles || {}).length > 0;
 
         isGenerating = true;
+        updateGenerateButton(true);
         addChatMessage('ai', 'Thinking...');
 
         try {
@@ -822,7 +860,6 @@ Format:
 
             // If it's a simple greeting or general inquiry, stop here. Do NOT throw error or refine code.
             if (isGreeting) {
-                isGenerating = false;
                 return;
             }
 
@@ -831,13 +868,16 @@ Format:
                 const questions = await fetchClarificationQuestions(prompt);
                 if (questions && questions.length > 0) {
                     renderQuestionnaire(questions, prompt);
-                    isGenerating = false;
                     return;
                 }
+                // executeGeneration manages its own isGenerating flag
                 isGenerating = false;
+                updateGenerateButton(false);
                 await executeGeneration(prompt);
                 return;
             }
+
+            if (!framework) throw new Error('Agent framework is not available');
 
             // Apply actual code changes if files already exist
             await framework.refine(prompt);
@@ -846,16 +886,22 @@ Format:
             addChatMessage('system', '✅ Changes applied! Check the preview.', true);
         } catch (e) {
             addChatMessage('system', `❌ Error: ${e.message}`, true);
+            showToast('error', `Chat failed: ${e.message}`);
         } finally {
             isGenerating = false;
+            updateGenerateButton(false);
         }
     }
 
     /* ===== EXPORT ===== */
     async function handleExport() {
-        const files = editor.getAllFiles();
+        const files = editor?.getAllFiles() || {};
         if (Object.keys(files).length === 0) {
             showToast('warning', 'No files to export. Generate a website first.');
+            return;
+        }
+        if (!deploy) {
+            showToast('error', 'Export manager is not available');
             return;
         }
         try {
@@ -871,8 +917,14 @@ Format:
         const zipFile = input?.files?.[0];
         if (!zipFile) return;
 
+        if (!projectIntake) {
+            showToast('error', 'Project intake is not available');
+            input.value = '';
+            return;
+        }
+
         try {
-            const currentFiles = editor.getAllFiles();
+            const currentFiles = editor?.getAllFiles() || {};
             if (Object.keys(currentFiles).length && !confirm('Import this ZIP and replace the current editor workspace? Save/export first if needed.')) {
                 input.value = '';
                 return;
@@ -887,35 +939,42 @@ Format:
             const nameInput = document.getElementById('project-name');
             if (nameInput) nameInput.value = projectName || 'Imported project';
 
-            editor.setFiles(files);
-            fileSystem.setFiles(files);
-            preview.render(files);
-            framework.memory.generatedFiles = { ...files };
-            framework.memory.importAnalysis = analysis;
-            framework.memory.specification = buildImportedSpecification(analysis);
-            framework.memory.designSystem = buildImportedDesignSystem();
+            editor?.setFiles(files);
+            fileSystem?.setFiles(files);
+            preview?.render(files);
+            if (framework) {
+                framework.memory = framework.memory || {};
+                framework.memory.generatedFiles = { ...files };
+                framework.memory.importAnalysis = analysis;
+                framework.memory.specification = buildImportedSpecification(analysis);
+                framework.memory.designSystem = buildImportedDesignSystem();
+            }
             applyFrameworkFromAnalysis(analysis);
             persistWorkspace();
-            const intelligence = await framework.analyzeImportedProject(files, analysis, {
-                projectName: getProjectName(),
-                importedAt: Date.now()
-            });
+            const intelligence = framework
+                ? await framework.analyzeImportedProject(files, analysis, {
+                    projectName: getProjectName(),
+                    importedAt: Date.now()
+                })
+                : {};
             logProjectIntelligence(intelligence);
-            const repoEntry = projectRepository.record({
-                name: getProjectName(),
-                source: analysis.sourceName,
-                framework: analysis.framework,
-                fileCount: analysis.fileCount,
-                warnings: [...(analysis.warnings || []), ...(intelligence.upgradePlan?.priority || []).slice(0, 5)],
-                agents: Object.keys(intelligence).filter(key => !['context', 'analysis'].includes(key))
-            });
-            addConsoleLog('success', `Project Repository saved: ${repoEntry.organization} / ${repoEntry.name}`);
+            if (projectRepository) {
+                const repoEntry = projectRepository.record({
+                    name: getProjectName(),
+                    source: analysis.sourceName,
+                    framework: analysis.framework,
+                    fileCount: analysis.fileCount,
+                    warnings: [...(analysis.warnings || []), ...(intelligence.upgradePlan?.priority || []).slice(0, 5)],
+                    agents: Object.keys(intelligence).filter(key => !['context', 'analysis'].includes(key))
+                });
+                addConsoleLog('success', `Project Repository saved: ${repoEntry.organization} / ${repoEntry.name}`);
+            }
 
             addConsoleLog('success', `Imported ${analysis.fileCount} files (${formatBytes(analysis.size)}) as ${analysis.framework}.`);
-            if (analysis.pages.length) addConsoleLog('info', `Detected pages: ${analysis.pages.slice(0, 6).join(', ')}`);
-            if (analysis.dependencies.length) addConsoleLog('info', `Dependencies: ${analysis.dependencies.slice(0, 10).join(', ')}`);
-            analysis.warnings.forEach(warning => addConsoleLog('warning', warning));
-            if (skipped.length) addConsoleLog('warning', `Skipped sample: ${skipped.slice(0, 5).map(item => `${item.path} (${item.reason})`).join('; ')}`);
+            if (analysis.pages?.length) addConsoleLog('info', `Detected pages: ${analysis.pages.slice(0, 6).join(', ')}`);
+            if (analysis.dependencies?.length) addConsoleLog('info', `Dependencies: ${analysis.dependencies.slice(0, 10).join(', ')}`);
+            (analysis.warnings || []).forEach(warning => addConsoleLog('warning', warning));
+            if (skipped?.length) addConsoleLog('warning', `Skipped sample: ${skipped.slice(0, 5).map(item => `${item.path} (${item.reason})`).join('; ')}`);
 
             showToast('success', `Imported ${analysis.fileCount} files from ZIP`);
             if (analysis.size > 4 * 1024 * 1024) showToast('warning', 'Large project imported. Use Local export if browser storage gets full.');
@@ -961,7 +1020,7 @@ Format:
 
     function applyFrameworkFromAnalysis(analysis) {
         const target = analysis.framework === 'nextjs' ? 'fullstack-nextjs' : analysis.framework === 'react' ? 'react-vite' : 'vanilla';
-        framework.frameworkOverride = target;
+        if (framework) framework.frameworkOverride = target;
         document.querySelectorAll('.fw-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.framework === target));
     }
 
@@ -1004,7 +1063,7 @@ Format:
     }
 
     async function exportToLocalWorkspace() {
-        const files = editor.getAllFiles();
+        const files = editor?.getAllFiles() || {};
         if (!Object.keys(files).length) {
             showToast('warning', 'Generate a project before exporting to your device');
             return;
@@ -1048,9 +1107,13 @@ Format:
 
     /* ===== DEPLOY ===== */
     async function handleDeploy() {
-        const files = editor.getAllFiles();
+        const files = editor?.getAllFiles() || {};
         if (Object.keys(files).length === 0) {
             showToast('warning', 'No files to deploy. Generate a website first.');
+            return;
+        }
+        if (!deploy) {
+            showToast('error', 'Deploy manager is not available');
             return;
         }
 
@@ -1094,7 +1157,9 @@ Format:
         };
 
         const prompt = prompts[template] || prompts.realestate;
-        const promptInput = document.getElementById('prompt-input');
+        // Prefer welcome prompt when on landing, otherwise workspace prompt
+        const promptInput = document.getElementById('welcome-prompt-input')
+            || document.getElementById('prompt-input');
         if (promptInput) {
             promptInput.value = prompt;
             promptInput.focus();
@@ -1102,13 +1167,15 @@ Format:
         // Prefer Motion Studio for cinematic library cards
         if (['realestate', 'agency', 'fashion', 'architecture', 'product'].includes(template)) {
             buildQuality = 'motion-studio';
-            framework.aiMode = 'motion-studio';
+            if (framework) {
+                framework.aiMode = 'motion-studio';
+                framework.frameworkOverride = 'vanilla';
+            }
             artDirectionPreset = 'cinematic';
-            document.querySelectorAll('.quality-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.quality === 'motion-studio'));
+            document.querySelectorAll('.quality-btn, .welcome-quality-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.quality === 'motion-studio'));
             const art = document.getElementById('art-direction');
             if (art) art.value = 'cinematic';
-            framework.frameworkOverride = 'vanilla';
-            document.querySelectorAll('.fw-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.framework === 'vanilla'));
+            document.querySelectorAll('.fw-btn, .welcome-fw-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.framework === 'vanilla'));
         }
         showToast('success', 'Studio prompt loaded — Generate or Enhance first');
         scheduleWorkspaceSave();
@@ -1501,19 +1568,28 @@ Format:
             selectedRequirements = new Set(Array.isArray(saved.requirements) ? saved.requirements : []);
             document.querySelectorAll('.build-chip').forEach(chip => chip.classList.toggle('active', selectedRequirements.has(chip.dataset.requirement)));
             buildQuality = ['fast', 'production', 'autonomous', 'motion-studio', 'power'].includes(saved.quality) ? saved.quality : 'production';
-            framework.aiMode = buildQuality;
+            if (framework) framework.aiMode = buildQuality;
             document.querySelectorAll('.quality-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.quality === buildQuality));
             artDirectionPreset = saved.artDirection || 'editorial';
             const artDirection = document.getElementById('art-direction');
             if (artDirection) artDirection.value = artDirectionPreset;
-            if (saved.framework) {
+            if (saved.framework && framework) {
                 framework.frameworkOverride = saved.framework;
                 document.querySelectorAll('.fw-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.framework === saved.framework));
             }
             if (saved.files && Object.keys(saved.files).length) {
-                editor.setFiles(saved.files);
-                fileSystem.setFiles(saved.files);
-                preview.render(saved.files);
+                editor?.setFiles(saved.files);
+                fileSystem?.setFiles(saved.files);
+                preview?.render(saved.files);
+
+                // Auto-restore workspace view on F5 page refresh
+                const welcomeScreen = document.getElementById('welcome-screen');
+                const app = document.getElementById('app');
+                if (welcomeScreen) welcomeScreen.style.display = 'none';
+                if (app) {
+                    app.classList.remove('hidden');
+                    setTimeout(() => { if (editor) editor.refresh(); }, 100);
+                }
             }
             setSaveState(saved.updatedAt ? `Restored ${new Date(saved.updatedAt).toLocaleDateString()}` : 'Workspace restored');
         } catch (error) {
@@ -1521,6 +1597,15 @@ Format:
             setSaveState('New workspace');
         }
     }
+
+    // Protect active generation from accidental F5 refresh
+    window.addEventListener('beforeunload', (e) => {
+        if (isGenerating) {
+            e.preventDefault();
+            e.returnValue = 'ZERO-BUILDER is currently generating your website. Are you sure you want to refresh?';
+            return e.returnValue;
+        }
+    });
 
     function setSaveState(text) {
         const status = document.getElementById('save-state');
@@ -1566,6 +1651,14 @@ Format:
             files,
         };
         try {
+            if (framework?.versionControl) {
+                framework.versionControl.createSnapshot({
+                    label,
+                    prompt: framework.memory?.userPrompt || label,
+                    files,
+                    reviewScore: framework.memory?.reviewReport?.score || 0
+                });
+            }
             const snapshots = [snapshot, ...getSnapshots()].slice(0, 12);
             localStorage.setItem(HISTORY_KEY, JSON.stringify(snapshots));
             persistWorkspace();
@@ -1580,13 +1673,17 @@ Format:
         const snapshot = getSnapshots().find(item => item.id === id);
         if (!snapshot || !snapshot.files) return;
         if (!confirm(`Restore “${snapshot.label}”? Your current workspace will be kept as a local draft.`)) return;
-        editor.setFiles(snapshot.files);
-        fileSystem.setFiles(snapshot.files);
-        preview.render(snapshot.files);
+        editor?.setFiles(snapshot.files);
+        fileSystem?.setFiles(snapshot.files);
+        preview?.render(snapshot.files);
+        if (framework) {
+            framework.memory = framework.memory || {};
+            framework.memory.generatedFiles = { ...snapshot.files };
+            framework.frameworkOverride = snapshot.framework || 'vanilla';
+        }
         const name = document.getElementById('project-name');
         if (name && snapshot.project) name.value = snapshot.project;
-        framework.frameworkOverride = snapshot.framework || 'vanilla';
-        document.querySelectorAll('.fw-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.framework === framework.frameworkOverride));
+        document.querySelectorAll('.fw-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.framework === (framework?.frameworkOverride || 'vanilla')));
         persistWorkspace();
         toggleModal('history-modal', false);
         showToast('success', 'Version restored');
@@ -1840,7 +1937,7 @@ Format:
                     filePanel.style.width = newWidth + 'px';
                     filePanel.style.flexShrink = '0';
                     filePanel.style.flexGrow = '0';
-                    editor.refresh();
+                    editor?.refresh();
                 }
             });
         }
@@ -1853,7 +1950,7 @@ Format:
                 const newPreviewWidth = previewRect.width - dx;
                 if (newEditorWidth >= 300 && newPreviewWidth >= 300) {
                     editorPanel.style.flex = `0 0 ${newEditorWidth}px`;
-                    editor.refresh();
+                    editor?.refresh();
                 }
             });
         }
@@ -1886,6 +1983,18 @@ Format:
     }
 
     /* ===== CONVERSION LAB & LIVE AGENT ===== */
+    function updateFileTree(files) {
+        const next = files || framework?.memory?.generatedFiles || editor?.getAllFiles() || {};
+        if (fileSystem) fileSystem.setFiles(next);
+        if (editor) editor.setFiles(next);
+    }
+
+    function updatePreview(files) {
+        const next = files || framework?.memory?.generatedFiles || editor?.getAllFiles() || {};
+        if (preview) preview.render(next);
+        scheduleWorkspaceSave();
+    }
+
     function setupConversionLab() {
         const labUI = document.getElementById('conversion-lab-ui');
         const variantBtns = document.querySelectorAll('.lab-variant-btn');
@@ -1914,16 +2023,16 @@ Format:
                 btn.classList.add('active');
 
                 const variantId = btn.getAttribute('data-variant');
-                if (framework && framework.memory.studioIntelligence && framework.memory.studioIntelligence.conversionLab) {
-                    const variant = framework.memory.studioIntelligence.conversionLab.variants.find(v => v.id === variantId);
+                const lab = framework?.memory?.studioIntelligence?.conversionLab;
+                if (framework && lab?.variants) {
+                    const variant = lab.variants.find(v => v.id === variantId);
                     if (variant) {
-                        appendChatMessage('system', `<strong>Conversion Lab:</strong> Switched to ${variant.id} strategy.<br><small>${variant.hypothesis}</small>`);
+                        addChatMessage('system', `<strong>Conversion Lab:</strong> Switched to ${escapeHtml(variant.id)} strategy.<br><small>${escapeHtml(variant.hypothesis || '')}</small>`, true);
 
-                        // If we had a mechanism to dynamically re-render the hero section here, we would trigger it.
-                        // For now, we simulate the AI agent updating the hero block.
+                        // Queue a refine request for the selected conversion strategy.
                         const promptInput = document.getElementById('chat-input');
                         if (promptInput) {
-                            promptInput.value = `Update the hero section to match the ${variant.id} strategy: ${variant.uiStrategy}`;
+                            promptInput.value = `Update the hero section to match the ${variant.id} strategy: ${variant.uiStrategy || variant.hypothesis || ''}`;
                             document.getElementById('chat-send')?.click();
                         }
                     }
@@ -1938,24 +2047,27 @@ Format:
                     return;
                 }
 
-                appendChatMessage('system', 'Starting Live Browser Agent autonomous audit...');
-                const fixedFiles = await framework.liveBrowserAgent.runAutonomousAudit(
-                    framework.agents['healer'],
-                    framework.memory.generatedFiles
-                );
+                addChatMessage('system', 'Starting Live Browser Agent autonomous audit...', true);
+                try {
+                    const fixedFiles = await framework.liveBrowserAgent.runAutonomousAudit(
+                        framework.agents['healer'],
+                        framework.memory.generatedFiles
+                    );
 
-                if (fixedFiles) {
-                    appendChatMessage('system', 'Live Agent found errors and Healer patched them. Updating preview...');
-                    framework.memory.generatedFiles = { ...framework.memory.generatedFiles, ...fixedFiles };
-                    updateFileTree();
-                    updatePreview();
-                } else {
-                    appendChatMessage('system', 'Live Agent audit completed successfully with no runtime errors.');
+                    if (fixedFiles && Object.keys(fixedFiles).length) {
+                        addChatMessage('system', 'Live Agent found errors and Healer patched them. Updating preview...', true);
+                        framework.memory.generatedFiles = { ...framework.memory.generatedFiles, ...fixedFiles };
+                        updateFileTree(framework.memory.generatedFiles);
+                        updatePreview(framework.memory.generatedFiles);
+                    } else {
+                        addChatMessage('system', 'Live Agent audit completed successfully with no runtime errors.', true);
+                    }
+                } catch (error) {
+                    addChatMessage('system', `Live Agent failed: ${escapeHtml(error.message || String(error))}`, true);
+                    showToast('error', 'Live Browser audit failed');
                 }
             });
         }
     }
-
-    setupConversionLab();
 
 })();

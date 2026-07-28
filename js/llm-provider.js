@@ -234,10 +234,22 @@ class LLMProvider {
     }
 
     /* ===== GOOGLE GEMINI ADAPTER ===== */
+    _extractSystemPrompt(messages = [], options = {}) {
+        const fromMessages = (messages || [])
+            .filter((m) => m && m.role === 'system' && m.content)
+            .map((m) => String(m.content).trim())
+            .filter(Boolean)
+            .join('\n\n');
+        const fromOptions = String(options.systemPrompt || '').trim();
+        if (fromMessages && fromOptions) return `${fromOptions}\n\n${fromMessages}`;
+        return fromOptions || fromMessages || '';
+    }
+
     async _chatGemini(messages, model, apiKey, options) {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
         
         const contents = this._convertToGeminiFormat(messages);
+        const systemPrompt = this._extractSystemPrompt(messages, options);
         
         const body = {
             contents,
@@ -248,8 +260,8 @@ class LLMProvider {
             },
         };
 
-        if (options.systemPrompt) {
-            body.systemInstruction = { parts: [{ text: options.systemPrompt }] };
+        if (systemPrompt) {
+            body.systemInstruction = { parts: [{ text: systemPrompt }] };
         }
 
         const response = await fetch(url, {
@@ -264,7 +276,12 @@ class LLMProvider {
         }
 
         const data = await response.json();
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        // Gemini may return multiple parts; join them. Also surface blocked responses.
+        const parts = data.candidates?.[0]?.content?.parts || [];
+        const text = parts.map((p) => p.text || '').join('') || '';
+        if (!text && data.promptFeedback?.blockReason) {
+            throw new Error(`Gemini blocked the request: ${data.promptFeedback.blockReason}`);
+        }
         
         this._trackTokens(text.length / 4); // rough estimate
         return text;
@@ -274,6 +291,7 @@ class LLMProvider {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
         
         const contents = this._convertToGeminiFormat(messages);
+        const systemPrompt = this._extractSystemPrompt(messages, options);
         const body = {
             contents,
             generationConfig: {
@@ -282,8 +300,8 @@ class LLMProvider {
             },
         };
 
-        if (options.systemPrompt) {
-            body.systemInstruction = { parts: [{ text: options.systemPrompt }] };
+        if (systemPrompt) {
+            body.systemInstruction = { parts: [{ text: systemPrompt }] };
         }
 
         const response = await fetch(url, {
@@ -461,18 +479,23 @@ class LLMProvider {
     /* ===== ANTHROPIC ADAPTER ===== */
     async _chatAnthropic(messages, model, apiKey, options) {
         const url = 'https://api.anthropic.com/v1/messages';
+        const systemPrompt = this._extractSystemPrompt(messages, options);
+        // Anthropic rejects role:"system" inside messages — keep only user/assistant turns.
+        const conversation = (messages || [])
+            .filter((m) => m && m.role !== 'system')
+            .map((m) => ({
+                role: m.role === 'assistant' ? 'assistant' : 'user',
+                content: m.content,
+            }));
         
         const body = {
             model,
             max_tokens: options.maxTokens || 32768,
-            messages: messages.map(m => ({
-                role: m.role,
-                content: m.content,
-            })),
+            messages: conversation,
         };
 
-        if (options.systemPrompt) {
-            body.system = options.systemPrompt;
+        if (systemPrompt) {
+            body.system = systemPrompt;
         }
 
         const response = await fetch(url, {
@@ -499,19 +522,23 @@ class LLMProvider {
 
     async _streamAnthropic(messages, model, apiKey, options, onChunk) {
         const url = 'https://api.anthropic.com/v1/messages';
+        const systemPrompt = this._extractSystemPrompt(messages, options);
+        const conversation = (messages || [])
+            .filter((m) => m && m.role !== 'system')
+            .map((m) => ({
+                role: m.role === 'assistant' ? 'assistant' : 'user',
+                content: m.content,
+            }));
         
         const body = {
             model,
             max_tokens: options.maxTokens || 32768,
             stream: true,
-            messages: messages.map(m => ({
-                role: m.role,
-                content: m.content,
-            })),
+            messages: conversation,
         };
 
-        if (options.systemPrompt) {
-            body.system = options.systemPrompt;
+        if (systemPrompt) {
+            body.system = systemPrompt;
         }
 
         const response = await fetch(url, {

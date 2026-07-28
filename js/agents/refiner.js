@@ -49,11 +49,15 @@ ${projectContext.executionPlan.summary}
 Steps: ${projectContext.executionPlan.steps.map((step, index) => `${index + 1}. ${step}`).join(' ')}
 Focused files: ${projectContext.files.map(item => `${item.path} (${item.reason})`).join(', ')}` : '';
 
+        const midFlight = Array.isArray(specification?.midFlightNotes) && specification.midFlightNotes.length
+            ? `\nMID-FLIGHT USER NOTES (must honor):\n${specification.midFlightNotes.map((n, i) => `${i + 1}. ${n}`).join('\n')}\n`
+            : '';
+
         const message = `Modify this ${stack} project.
 
 MODIFICATION REQUEST:
 "${modificationPrompt}"
-
+${midFlight}
 MODIFICATION COMPLEXITY: ${isComplexMod ? 'COMPLEX — structural / multi-file / product-level' : 'TARGETED — style/content/interaction polish'}
 
 SPEC CONTEXT:

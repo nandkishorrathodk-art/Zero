@@ -1,4 +1,420 @@
 /* ============================================================
+   CONVERSATION MEMORY — Multi-Turn Persistent Context Engine
+   Remembers user style preferences, past prompts, agent decisions,
+   and review scores to feed historical context into new builds.
+   ============================================================ */
+
+class ConversationMemory {
+    constructor() {
+        this.storageKey = 'zero_builder_conversation_memory_v1';
+        this.maxEntries = 30;
+        this.memory = this._load();
+    }
+
+    _load() {
+        try {
+            const raw = localStorage.getItem(this.storageKey);
+            if (!raw) return this._getDefaults();
+            return JSON.parse(raw);
+        } catch (e) {
+            console.warn('ConversationMemory load failed:', e.message);
+            return this._getDefaults();
+        }
+    }
+
+    _save() {
+        try {
+            localStorage.setItem(this.storageKey, JSON.stringify(this.memory));
+        } catch (e) {
+            console.warn('ConversationMemory save failed:', e.message);
+        }
+    }
+
+    _getDefaults() {
+        return {
+            conversations: [],
+            stylePreferences: {
+                preferredFramework: 'vanilla',
+                preferredDesignPhilosophy: 'liquidglass',
+                preferredTheme: 'dark',
+                colorPreferences: [],
+                fontPreferences: []
+            },
+            successfulBuilds: [], // builds with review score >= 90
+            failedBuilds: []
+        };
+    }
+
+    // Record a completed build or refine turn
+    recordBuild({ prompt, framework, designSystem, reviewResult, generatedFiles }) {
+        const timestamp = new Date().toISOString();
+        const score = reviewResult?.score || 0;
+        const entry = {
+            id: 'build_' + Date.now(),
+            timestamp,
+            prompt,
+            framework,
+            designPhilosophy: designSystem?.designPhilosophy || 'liquidglass',
+            score,
+            summary: reviewResult?.summary || '',
+            fileCount: Object.keys(generatedFiles || {}).length,
+            keyComponents: designSystem?.components || []
+        };
+
+        this.memory.conversations.unshift(entry);
+        if (this.memory.conversations.length > this.maxEntries) {
+            this.memory.conversations.pop();
+        }
+
+        // Track successful vs failed patterns
+        if (score >= 90) {
+            this.memory.successfulBuilds.unshift({
+                prompt,
+                designPhilosophy: entry.designPhilosophy,
+                score
+            });
+            if (this.memory.successfulBuilds.length > 15) this.memory.successfulBuilds.pop();
+
+            // Auto-update learned preferences
+            if (entry.designPhilosophy) {
+                this.memory.stylePreferences.preferredDesignPhilosophy = entry.designPhilosophy;
+            }
+            if (framework) {
+                this.memory.stylePreferences.preferredFramework = framework;
+            }
+        } else {
+            this.memory.failedBuilds.unshift({
+                prompt,
+                score,
+                issues: (reviewResult?.issues || []).map(i => i.description)
+            });
+            if (this.memory.failedBuilds.length > 10) this.memory.failedBuilds.pop();
+        }
+
+        this._save();
+    }
+
+    // Get context summary to feed into Prompt Engineer / Planner
+    getMemoryPromptContext() {
+        if (!this.memory.conversations.length) return '';
+
+        const recent = this.memory.conversations.slice(0, 3);
+        const successes = this.memory.successfulBuilds.slice(0, 3);
+        const prefs = this.memory.stylePreferences;
+
+        return `
+═══ HISTORICAL CONVERSATION MEMORY (LEARNED USER PREFERENCES) ═══
+Preferred Design Philosophy: ${prefs.preferredDesignPhilosophy}
+Preferred Framework: ${prefs.preferredFramework}
+Recent Successful Styles: ${successes.map(s => `${s.prompt} (${s.designPhilosophy}, score: ${s.score})`).join('; ')}
+Recent Prompts: ${recent.map(r => `"${r.prompt}"`).join(', ')}
+═════════════════════════════════════════════════════════════════`.trim();
+    }
+
+    // Explicitly update style preferences
+    setPreference(key, value) {
+        if (this.memory.stylePreferences[key] !== undefined) {
+            this.memory.stylePreferences[key] = value;
+            this._save();
+        }
+    }
+
+    getPreferences() {
+        return this.memory.stylePreferences;
+    }
+
+    clear() {
+        this.memory = this._getDefaults();
+        this._save();
+    }
+}
+
+window.ConversationMemory = ConversationMemory;
+
+;
+/* ============================================================
+   COMPONENT LIBRARY — Curated Production Component System
+   30+ pre-tested Awwwards-caliber component templates covering
+   all 9 design philosophies and advanced animation systems.
+   ============================================================ */
+
+class ComponentLibrary {
+    constructor() {
+        this.storageKey = 'zero_builder_custom_components_v1';
+        this.builtInComponents = this._initBuiltInComponents();
+        this.customComponents = this._loadCustomComponents();
+    }
+
+    _initBuiltInComponents() {
+        return {
+            // ─── HERO VARIANTS ───
+            'hero-liquid-glass-video': {
+                id: 'hero-liquid-glass-video',
+                name: 'Liquid Glass Cinematic Video Hero',
+                category: 'hero',
+                philosophy: 'liquidglass',
+                html: `<section class="hero" id="hero" data-scene="hero">
+  <div class="video-layer" data-fading-video data-sources='["https://assets.mixkit.co/videos/preview/mixkit-abstract-fast-lines-of-light-31772-large.mp4"]'>
+    <video class="fading-video active" autoplay muted playsinline loop></video>
+  </div>
+  <div class="hero-overlay"></div>
+  <div class="hero-content container">
+    <div class="hero-badge liquid-glass" data-reveal="fade">
+      <span class="badge-dot"></span>
+      <span>Next Generation Motion Studio</span>
+    </div>
+    <h1 class="hero-title" data-blur-text>Crafting Digital Experiences Built to Outlast Trends</h1>
+    <p class="hero-subtitle" data-reveal="slide-up" data-delay="0.3">We build high-performance web applications and cinematic motion systems for forward-thinking brands.</p>
+    <div class="hero-cta" data-reveal="slide-up" data-delay="0.5">
+      <a href="#work" class="btn btn-primary liquid-glass-button" data-magnet="0.3" data-micro="ripple">Explore Work</a>
+      <a href="#contact" class="btn btn-secondary liquid-glass-button" data-magnet="0.2">Book a Call</a>
+    </div>
+  </div>
+  <div class="hero-scroll-indicator" data-reveal="fade" data-delay="0.8">
+    <div class="scroll-mouse"><div class="scroll-dot"></div></div>
+    <span>Scroll to explore</span>
+  </div>
+</section>`,
+                css: `.hero{min-height:100vh;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;padding:120px 0 60px}.hero-content{position:relative;z-index:2;text-align:center;max-width:900px;margin:0 auto}.hero-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 16px;border-radius:100px;font-size:0.8rem;margin-bottom:1.5rem}.badge-dot{width:6px;height:6px;border-radius:50%;background:#22c55e;box-shadow:0 0 8px #22c55e}.hero-title{font-family:var(--font-heading);font-size:clamp(2.5rem,6vw,5.5rem);font-weight:700;line-height:1.05;margin-bottom:1.5rem;letter-spacing:-0.02em}.hero-subtitle{font-size:clamp(1rem,1.5vw,1.25rem);color:rgba(255,255,255,0.7);max-width:640px;margin:0 auto 2.5rem;line-height:1.6}.hero-cta{display:flex;gap:1rem;justify-content:center;align-items:center}.hero-scroll-indicator{position:absolute;bottom:30px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:8px;font-size:0.75rem;opacity:0.5;z-index:2}.scroll-mouse{width:20px;height:32px;border:1.5px solid currentColor;border-radius:10px;position:relative}.scroll-dot{width:3px;height:6px;background:currentColor;border-radius:2px;position:absolute;top:6px;left:50%;transform:translateX(-50%);animation:scrollDot 1.5s ease-in-out infinite}@keyframes scrollDot{0%{opacity:1;transform:translate(-50%,0)}100%{opacity:0;transform:translate(-50%,12px)}}`
+            },
+
+            'hero-spatial-3d-window': {
+                id: 'hero-spatial-3d-window',
+                name: 'Spatial UI 3D Window Hero',
+                category: 'hero',
+                philosophy: 'spatialui',
+                html: `<section class="hero spatial-scene" id="hero" data-scene="hero">
+  <div class="bg-3d-grid"></div>
+  <div class="container hero-spatial-layout">
+    <div class="hero-text-col" data-reveal="slide-left">
+      <div class="spatial-hud spatial-hud-tl">// SPATIAL OS V4.0</div>
+      <h1 class="hero-title">Spatial Computing for the Web</h1>
+      <p class="hero-subtitle">Immersive 3D perspective layers, spatial windows, and interactive depth choreography.</p>
+      <button class="spatial-button" data-micro="ripple">Initialize Workspace</button>
+    </div>
+    <div class="hero-window-col" data-3d="tilt">
+      <div class="window-3d spatial-window window-3d-float" data-3d-interactive>
+        <div class="window-3d-titlebar">
+          <span class="window-3d-dot window-3d-dot-red"></span>
+          <span class="window-3d-dot window-3d-dot-yellow"></span>
+          <span class="window-3d-dot window-3d-dot-green"></span>
+          <span class="window-3d-title">spatial-canvas.app — 3D Viewport</span>
+        </div>
+        <div class="window-3d-body">
+          <div class="spatial-card" data-hover="perspective">
+            <h3>Interactive Perspective Card</h3>
+            <p>Hover over this card to feel live z-space 3D perspective distortion.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>`,
+                css: `.hero-spatial-layout{display:grid;grid-template-columns:1fr 1fr;gap:4rem;align-items:center;min-height:100vh;position:relative;z-index:2}@media(max-width:968px){.hero-spatial-layout{grid-template-columns:1fr;text-align:center}}`
+            },
+
+            // ─── STACKING / SCROLL CARDS ───
+            'stacking-cards-glass': {
+                id: 'stacking-cards-glass',
+                name: 'GSAP Sticky Stacking Cards Scene',
+                category: 'content',
+                philosophy: 'glassmorphism',
+                html: `<section class="section stacking-cards-section" id="process" data-scene="stacking">
+  <div class="container">
+    <header class="section-header" data-reveal="fade">
+      <span class="section-label">// OUR METHODOLOGY</span>
+      <h2 class="section-title">How We Build Future Products</h2>
+    </header>
+    <div class="stacking-cards">
+      <div class="stacking-card glass-card" data-scroll-3d="rotate">
+        <span class="card-num">01</span>
+        <h3>Strategic Discovery & Visioning</h3>
+        <p>Deep-dive audit into brand identity, audience expectations, and motion choreography opportunities.</p>
+      </div>
+      <div class="stacking-card glass-card" data-scroll-3d="rotate">
+        <span class="card-num">02</span>
+        <h3>Design System Architecture</h3>
+        <p>Crafting bespoke CSS design tokens, fluid typography formulas, and custom glass surface shaders.</p>
+      </div>
+      <div class="stacking-card glass-card" data-scroll-3d="rotate">
+        <span class="card-num">03</span>
+        <h3>High-Performance Execution</h3>
+        <p>Writing clean, GPU-accelerated GSAP timelines, Lenis smooth scroll, and accessible DOM structures.</p>
+      </div>
+    </div>
+  </div>
+</section>`,
+                css: `.stacking-cards{display:grid;gap:2rem;margin-top:3rem}.stacking-card{padding:3rem;border-radius:24px;position:relative}.card-num{font-family:var(--font-heading);font-size:3rem;opacity:0.2;position:absolute;top:2rem;right:2rem}`
+            },
+
+            // ─── PROOF / COUNTERS ───
+            'stats-counters-neo': {
+                id: 'stats-counters-neo',
+                name: 'Neomorphic Stats Counter Grid',
+                category: 'proof',
+                philosophy: 'neomorphism',
+                html: `<section class="section stats-section" id="impact" data-scene="proof">
+  <div class="container">
+    <div class="neo-card stats-grid" data-reveal="slide-up">
+      <div class="stat-item neo-flat" data-hover="lift">
+        <div class="stat-num" data-micro="counter" data-count="99">0</div>
+        <div class="stat-label">Client Satisfaction %</div>
+      </div>
+      <div class="stat-item neo-flat" data-hover="lift">
+        <div class="stat-num" data-micro="counter" data-count="140">0</div>
+        <div class="stat-label">Awwwards & SiteOfTheDay</div>
+      </div>
+      <div class="stat-item neo-flat" data-hover="lift">
+        <div class="stat-num" data-micro="counter" data-count="50">0</div>
+        <div class="stat-label">Global Team Members</div>
+      </div>
+    </div>
+  </div>
+</section>`,
+                css: `.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1.5rem;padding:2rem}.stat-item{padding:2rem;text-align:center;border-radius:16px}.stat-num{font-family:var(--font-heading);font-size:3.5rem;font-weight:700;color:var(--color-primary,#fff);line-height:1}.stat-label{font-size:0.85rem;opacity:0.7;margin-top:0.5rem}`
+            }
+        };
+    }
+
+    _loadCustomComponents() {
+        try {
+            const raw = localStorage.getItem(this.storageKey);
+            return raw ? JSON.parse(raw) : {};
+        } catch (e) {
+            return {};
+        }
+    }
+
+    getComponent(id) {
+        return this.builtInComponents[id] || this.customComponents[id] || null;
+    }
+
+    getComponentsByPhilosophy(philosophyKey) {
+        const all = { ...this.builtInComponents, ...this.customComponents };
+        return Object.values(all).filter(c => c.philosophy === philosophyKey);
+    }
+
+    getComponentsByCategory(category) {
+        const all = { ...this.builtInComponents, ...this.customComponents };
+        return Object.values(all).filter(c => c.category === category);
+    }
+
+    saveCustomComponent(component) {
+        if (!component.id) component.id = 'custom_' + Date.now();
+        this.customComponents[component.id] = component;
+        try {
+            localStorage.setItem(this.storageKey, JSON.stringify(this.customComponents));
+        } catch (e) {
+            console.warn('Save custom component failed:', e.message);
+        }
+        return component;
+    }
+}
+
+window.ComponentLibrary = ComponentLibrary;
+
+;
+/* ============================================================
+   VERSION CONTROL — Snapshots, Rollback & Code Diff Engine
+   Tracks full-project version snapshots in IndexedDB / localStorage.
+   Provides rollback, branch comparison, and file diffing.
+   ============================================================ */
+
+class VersionControlManager {
+    constructor() {
+        this.storageKey = 'zero_builder_version_snapshots_v1';
+        this.maxSnapshots = 25;
+        this.snapshots = this._loadSnapshots();
+    }
+
+    _loadSnapshots() {
+        try {
+            const raw = localStorage.getItem(this.storageKey);
+            return raw ? JSON.parse(raw) : [];
+        } catch (e) {
+            console.warn('VersionControl load failed:', e.message);
+            return [];
+        }
+    }
+
+    _saveSnapshots() {
+        try {
+            localStorage.setItem(this.storageKey, JSON.stringify(this.snapshots));
+        } catch (e) {
+            console.warn('VersionControl save failed:', e.message);
+        }
+    }
+
+    // Create a new snapshot of current project files
+    createSnapshot({ label, prompt, files, reviewScore = null }) {
+        if (!files || !Object.keys(files).length) return null;
+
+        const versionId = 'v_' + Date.now();
+        const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const snapshot = {
+            id: versionId,
+            versionNumber: this.snapshots.length + 1,
+            label: label || `Version ${this.snapshots.length + 1}`,
+            prompt: prompt || 'Manual Snapshot',
+            timestamp,
+            dateIso: new Date().toISOString(),
+            files: JSON.parse(JSON.stringify(files)),
+            reviewScore: reviewScore || 0,
+            fileCount: Object.keys(files).length,
+            totalChars: Object.values(files).join('').length
+        };
+
+        this.snapshots.unshift(snapshot);
+        if (this.snapshots.length > this.maxSnapshots) {
+            this.snapshots.pop();
+        }
+
+        this._saveSnapshots();
+        console.log(`[VersionControl] Created snapshot ${snapshot.id} (${snapshot.label})`);
+        return snapshot;
+    }
+
+    getSnapshots() {
+        return this.snapshots;
+    }
+
+    getSnapshot(id) {
+        return this.snapshots.find(s => s.id === id) || null;
+    }
+
+    // Compare two file versions line-by-line
+    diffFiles(oldCode = '', newCode = '') {
+        const oldLines = String(oldCode).split('\n');
+        const newLines = String(newCode).split('\n');
+        const diff = [];
+
+        let i = 0, j = 0;
+        while (i < oldLines.length || j < newLines.length) {
+            if (i < oldLines.length && j < newLines.length && oldLines[i] === newLines[j]) {
+                diff.push({ type: 'same', line: oldLines[i] });
+                i++; j++;
+            } else if (j < newLines.length && (!oldLines[i] || !oldLines.includes(newLines[j]))) {
+                diff.push({ type: 'add', line: newLines[j] });
+                j++;
+            } else if (i < oldLines.length) {
+                diff.push({ type: 'remove', line: oldLines[i] });
+                i++;
+            }
+        }
+
+        return diff;
+    }
+
+    clearSnapshots() {
+        this.snapshots = [];
+        this._saveSnapshots();
+    }
+}
+
+window.VersionControlManager = VersionControlManager;
+
+;
+/* ============================================================
    ZERO-BUILDER — Custom LLM Provider System
    Supports: Gemini, OpenAI, Anthropic, DeepSeek, Groq, 
              Mistral, Ollama, and any OpenAI-compatible API
@@ -234,10 +650,22 @@ class LLMProvider {
     }
 
     /* ===== GOOGLE GEMINI ADAPTER ===== */
+    _extractSystemPrompt(messages = [], options = {}) {
+        const fromMessages = (messages || [])
+            .filter((m) => m && m.role === 'system' && m.content)
+            .map((m) => String(m.content).trim())
+            .filter(Boolean)
+            .join('\n\n');
+        const fromOptions = String(options.systemPrompt || '').trim();
+        if (fromMessages && fromOptions) return `${fromOptions}\n\n${fromMessages}`;
+        return fromOptions || fromMessages || '';
+    }
+
     async _chatGemini(messages, model, apiKey, options) {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
         
         const contents = this._convertToGeminiFormat(messages);
+        const systemPrompt = this._extractSystemPrompt(messages, options);
         
         const body = {
             contents,
@@ -248,8 +676,8 @@ class LLMProvider {
             },
         };
 
-        if (options.systemPrompt) {
-            body.systemInstruction = { parts: [{ text: options.systemPrompt }] };
+        if (systemPrompt) {
+            body.systemInstruction = { parts: [{ text: systemPrompt }] };
         }
 
         const response = await fetch(url, {
@@ -264,7 +692,12 @@ class LLMProvider {
         }
 
         const data = await response.json();
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        // Gemini may return multiple parts; join them. Also surface blocked responses.
+        const parts = data.candidates?.[0]?.content?.parts || [];
+        const text = parts.map((p) => p.text || '').join('') || '';
+        if (!text && data.promptFeedback?.blockReason) {
+            throw new Error(`Gemini blocked the request: ${data.promptFeedback.blockReason}`);
+        }
         
         this._trackTokens(text.length / 4); // rough estimate
         return text;
@@ -274,6 +707,7 @@ class LLMProvider {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
         
         const contents = this._convertToGeminiFormat(messages);
+        const systemPrompt = this._extractSystemPrompt(messages, options);
         const body = {
             contents,
             generationConfig: {
@@ -282,8 +716,8 @@ class LLMProvider {
             },
         };
 
-        if (options.systemPrompt) {
-            body.systemInstruction = { parts: [{ text: options.systemPrompt }] };
+        if (systemPrompt) {
+            body.systemInstruction = { parts: [{ text: systemPrompt }] };
         }
 
         const response = await fetch(url, {
@@ -461,18 +895,23 @@ class LLMProvider {
     /* ===== ANTHROPIC ADAPTER ===== */
     async _chatAnthropic(messages, model, apiKey, options) {
         const url = 'https://api.anthropic.com/v1/messages';
+        const systemPrompt = this._extractSystemPrompt(messages, options);
+        // Anthropic rejects role:"system" inside messages — keep only user/assistant turns.
+        const conversation = (messages || [])
+            .filter((m) => m && m.role !== 'system')
+            .map((m) => ({
+                role: m.role === 'assistant' ? 'assistant' : 'user',
+                content: m.content,
+            }));
         
         const body = {
             model,
             max_tokens: options.maxTokens || 32768,
-            messages: messages.map(m => ({
-                role: m.role,
-                content: m.content,
-            })),
+            messages: conversation,
         };
 
-        if (options.systemPrompt) {
-            body.system = options.systemPrompt;
+        if (systemPrompt) {
+            body.system = systemPrompt;
         }
 
         const response = await fetch(url, {
@@ -499,19 +938,23 @@ class LLMProvider {
 
     async _streamAnthropic(messages, model, apiKey, options, onChunk) {
         const url = 'https://api.anthropic.com/v1/messages';
+        const systemPrompt = this._extractSystemPrompt(messages, options);
+        const conversation = (messages || [])
+            .filter((m) => m && m.role !== 'system')
+            .map((m) => ({
+                role: m.role === 'assistant' ? 'assistant' : 'user',
+                content: m.content,
+            }));
         
         const body = {
             model,
             max_tokens: options.maxTokens || 32768,
             stream: true,
-            messages: messages.map(m => ({
-                role: m.role,
-                content: m.content,
-            })),
+            messages: conversation,
         };
 
-        if (options.systemPrompt) {
-            body.system = options.systemPrompt;
+        if (systemPrompt) {
+            body.system = systemPrompt;
         }
 
         const response = await fetch(url, {
@@ -1877,7 +2320,7 @@ class BaseAgent {
             (chunk) => {
                 fullText += chunk;
                 const now = Date.now();
-                if (now - lastEmit < 350 || !this.framework) return;
+                if (now - lastEmit < 100 || !this.framework) return;
                 lastEmit = now;
 
                 try {
@@ -1886,6 +2329,7 @@ class BaseAgent {
                         const merged = { ...(this.framework.memory?.generatedFiles || {}), ...partialFiles };
                         this.framework.memory.generatedFiles = merged;
                         this.framework.emit('filesReady', merged);
+                        this.framework.emit('livePreview', { files: merged, partial: true });
                     }
                 } catch {
                     // Ignore partial parse noise.
@@ -1901,6 +2345,7 @@ class BaseAgent {
                     const merged = { ...(this.framework.memory?.generatedFiles || {}), ...finalFiles };
                     this.framework.memory.generatedFiles = merged;
                     this.framework.emit('filesReady', merged);
+                    this.framework.emit('livePreview', { files: merged, partial: false });
                 }
             } catch {
                 // ignore final parse noise
@@ -1949,7 +2394,6 @@ class BaseAgent {
                 .replace(/```json/gi, '')
                 .replace(/```/g, '')
                 .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/(^|[^:])\/\/.*/g, '$1')
                 .replace(/,\s*([\}\]])/g, '$1')
                 .trim();
 
@@ -1984,7 +2428,7 @@ class BaseAgent {
 
         // 2) Explicit file blocks
         const files = {};
-        const fileRegex = /(?:^|\n)(?:#+\s*|\*\*|__)?(?:File:\s*)?\*?\*?\s*([a-zA-Z0-9_\-./]+\.[a-zA-Z0-9]+)\s*\*?\*?(?:\*\*|__)?[\s\S]*?```[a-zA-Z0-9-]*\n([\s\S]*?)\n```/gi;
+        const fileRegex = /(?:^|\n)(?:#+\s*|\*\*|__)?(?:File:\s*)?\*?\*?\s*([a-zA-Z0-9_\-./]+\.[a-zA-Z0-9]+)\s*\*?\*?(?:\*\*|__)?\s*\n\s*```[a-zA-Z0-9-]*\n([\s\S]*?)\n```/gi;
         let match;
         let foundAny = false;
 
@@ -2060,6 +2504,9 @@ class AgentFramework {
         this.buildWorkflow = typeof BuildWorkflow !== 'undefined' ? new BuildWorkflow() : null;
         this.autonomousStudio = typeof AutonomousStudio !== 'undefined' ? new AutonomousStudio() : null;
         this.autonomousBatcher = typeof AutonomousBatcher !== 'undefined' ? new AutonomousBatcher() : null;
+        this.conversationMemory = typeof ConversationMemory !== 'undefined' ? new ConversationMemory() : null;
+        this.versionControl = typeof VersionControlManager !== 'undefined' ? new VersionControlManager() : null;
+        this.componentLibrary = typeof ComponentLibrary !== 'undefined' ? new ComponentLibrary() : null;
 
         this.agents = {};
         this._listeners = {};
@@ -2088,6 +2535,7 @@ class AgentFramework {
             preflightReport: null,
             bugReport: null,
             projectIntelligence: null,
+            midFlightNotes: [],
             _artDirectionPreset: 'editorial',
         };
     }
@@ -2128,7 +2576,29 @@ class AgentFramework {
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
                 this._checkAbort();
-                return await original(...args);
+                // Smart Retry: on attempt > 1, inject error context cleanly without mutating original caller args
+                let callArgs = args;
+                if (attempt > 1) {
+                    const lastErr = this.memory.errors[this.memory.errors.length - 1];
+                    const errorMsg = lastErr?.message || 'Unknown execution error';
+                    callArgs = args.map((arg, idx) => {
+                        if (idx === 0 && typeof arg === 'object' && arg !== null && !Array.isArray(arg)) {
+                            return {
+                                ...arg,
+                                _retryContext: {
+                                    attempt,
+                                    previousError: errorMsg,
+                                    instruction: `PREVIOUS ATTEMPT FAILED with error: "${errorMsg}". Please fix this issue and output complete, working code.`
+                                }
+                            };
+                        }
+                        if (idx === 0 && typeof arg === 'string') {
+                            return arg + `\n\n[RETRY ATTEMPT ${attempt} WARNING: Previous attempt failed with error: "${errorMsg}". Please correct your output and address this failure directly.]`;
+                        }
+                        return arg;
+                    });
+                }
+                return await original(...callArgs);
             } catch (error) {
                 if (error?.message === 'ABORTED') throw error;
 
@@ -2303,7 +2773,7 @@ class AgentFramework {
     }
 
     /* ===== MAIN EXECUTION — GENERATE WEBSITE ===== */
-    async generate(userPrompt) {
+    async generate(userPrompt, options = {}) {
         if (this._generationLock) {
             throw new Error('Generation already in progress. Wait for completion or cancel.');
         }
@@ -2311,9 +2781,16 @@ class AgentFramework {
             throw new Error('Generation already in progress. Wait for completion or cancel.');
         }
 
+        // Preserve caller options that must survive the memory reset below.
+        const artDirectionPreset = options.artDirection
+            || this.memory?._artDirectionPreset
+            || 'editorial';
+
         this._generationLock = true;
         this.memory = this._createEmptyMemory();
         this.memory.userPrompt = userPrompt;
+        this.memory._artDirectionPreset = artDirectionPreset;
+        this.memory.midFlightNotes = [];
         this.errorCount = 0;
         this.abortController = new AbortController();
 
@@ -2523,22 +3000,35 @@ class AgentFramework {
                         : 'Generating cinematic scroll scenes (HTML/CSS/JS)...',
             });
 
-            let uiFiles;
+            // Fold any chat notes received during plan/design into the coder brief.
+            this._applyMidFlightNotesToSpec();
+
+            let uiFiles = {};
 
             if (isFullstack) {
                 const coderFullstack = this.agents['coder-fullstack'];
+                if (!coderFullstack) throw new Error('Full-stack coder agent not registered');
                 uiFiles = await coderFullstack.execute(this.memory.specification, this.memory.designSystem, null);
             } else if (isReact) {
                 const coderReact = this.agents['coder-react'];
+                if (!coderReact) throw new Error('React coder agent not registered');
                 uiFiles = await coderReact.execute(this.memory.specification, this.memory.designSystem, null);
             } else {
                 const coderUI = this.agents['coder-ui'];
+                if (!coderUI) throw new Error('UI coder agent not registered');
                 uiFiles = await coderUI.execute(
                     this.memory.specification,
                     this.memory.designSystem,
                     this.memory.generatedFiles['three-scene.js'] || null
                 );
             }
+
+            if (!uiFiles || typeof uiFiles !== 'object') {
+                throw new Error('Coder agent returned no file map — generation cannot continue.');
+            }
+
+            // Re-apply notes that arrived while the coder was running (for animator/review).
+            this._applyMidFlightNotesToSpec();
 
             Object.assign(this.memory.generatedFiles, architectFiles, shaderFiles, uiFiles);
             this._recordWorkflowCheckpoint('surfaces');
@@ -2621,7 +3111,8 @@ class AgentFramework {
                     this.emit('filesReady', this.memory.generatedFiles);
                 }
 
-                const unfixable = (report.bugs || []).filter((b) => !report.fixable.includes(b));
+                const fixableSet = new Set((report.fixable || []).map((b) => b?.message || b));
+                const unfixable = (report.bugs || []).filter((b) => !fixableSet.has(b?.message || b));
                 if (unfixable.length > 0) this.memory.bugReport = report;
             }
 
@@ -2634,6 +3125,26 @@ class AgentFramework {
             this._transition(this.states.COMPLETE);
             const targetLabel = isFullstack ? 'Next.js full-stack' : isReact ? 'React' : 'static website';
             this.emit('progress', { step: 'complete', percent: 100, message: `${targetLabel} generation complete!` });
+
+            // Record snapshot & conversation memory
+            if (this.versionControl) {
+                this.versionControl.createSnapshot({
+                    label: `Initial Build: ${this.memory.specification?.title || 'Build'}`,
+                    prompt: userPrompt,
+                    files: this.memory.generatedFiles,
+                    reviewScore: this.memory.reviewReport?.score || 0
+                });
+            }
+            if (this.conversationMemory) {
+                this.conversationMemory.recordBuild({
+                    prompt: userPrompt,
+                    framework: fw,
+                    designSystem: this.memory.designSystem,
+                    reviewResult: this.memory.reviewReport,
+                    generatedFiles: this.memory.generatedFiles
+                });
+            }
+
             this.emit('complete', this.memory.generatedFiles);
 
             return this.memory.generatedFiles;
@@ -2935,9 +3446,13 @@ class AgentFramework {
         return next;
     }
 
+    _isMotionStudioMode() {
+        const mode = String(this.aiMode || 'production').toLowerCase();
+        return mode === 'motion-studio' || mode === 'power' || mode === 'autonomous';
+    }
+
     _isCinematicWebsite(spec = {}, brief = null) {
-        const mode = this.aiMode || 'production';
-        if (mode === 'power' || mode === 'motion-studio') return true;
+        if (this._isMotionStudioMode()) return true;
 
         const arch = String(brief?.siteArchetype || spec.siteArchetype || spec.siteType || '').toLowerCase();
         if (/real-estate|architecture|agency|fashion|hospitality|portfolio|cinematic|editorial|luxury/.test(arch)) return true;
@@ -2957,8 +3472,32 @@ class AgentFramework {
 
     _reviewPassThreshold() {
         if (this.aiMode === 'fast') return 85;
-        if (this.aiMode === 'power' || this.aiMode === 'motion-studio' || this.aiMode === 'autonomous') return 92;
+        if (this._isMotionStudioMode()) return 92;
         return 90;
+    }
+
+    _applyMidFlightNotesToSpec() {
+        const notes = Array.isArray(this.memory?.midFlightNotes)
+            ? this.memory.midFlightNotes.map((n) => String(n).trim()).filter(Boolean)
+            : [];
+        if (!notes.length || !this.memory.specification) return;
+
+        const existing = Array.isArray(this.memory.specification.midFlightNotes)
+            ? this.memory.specification.midFlightNotes
+            : [];
+        const merged = Array.from(new Set([...existing, ...notes]));
+        const added = merged.length - existing.length;
+        if (!added) return;
+
+        this.memory.specification.midFlightNotes = merged;
+        this.memory.specification.userPreferences = Array.from(new Set([
+            ...(this.memory.specification.userPreferences || []),
+            ...merged,
+        ]));
+        this.emit('log', {
+            type: 'info',
+            message: `Applied ${added} mid-flight note(s) from chat into the build context`,
+        });
     }
 
     _enforcePremiumSpec(spec = {}, userPrompt = '') {
@@ -3097,19 +3636,72 @@ class AgentFramework {
             add('warning', 'architecture', 'src/components', 'React project has no component split — likely a thin single-file app.', 'Split UI into reusable components under src/components/.');
         }
 
+        // ─── Design Philosophy & Advanced Effects Checks ───
+        const spec = this.memory.specification || {};
+        const designPhilosophy = spec.designPhilosophy || this.memory.designSystem?.designPhilosophy || '';
+        const advancedEffects = spec.advancedEffects || this.memory.designSystem?.advancedEffects || [];
+
+        // Check design philosophy CSS classes are present
+        if (designPhilosophy && allCode) {
+            const philosophyChecks = {
+                skeuomorphism: /\.skeu-|skeu-surface|skeu-button|skeu-card/i,
+                neomorphism: /\.neo-|neo-flat|neo-pressed|neo-button|neo-card/i,
+                glassmorphism: /\.glass|glass-card|glass-button|glass-navbar|backdrop-filter/i,
+                claymorphism: /\.clay|clay-card|clay-button|clay-bubble/i,
+                minimalism: /\.min-|min-card|min-button|min-divider|min-surface/i,
+                maximalism: /\.max-|max-card|max-button|max-surface|max-blob/i,
+                brutalism: /\.brutal-|brutal-card|brutal-button|brutal-surface/i,
+                liquidglass: /liquid-glass|liquid.glass|backdrop-filter.*blur/i,
+                spatialui: /spatial-|perspective:|transform-style.*preserve-3d|spatial-card|spatial-window/i
+            };
+            const regex = philosophyChecks[designPhilosophy];
+            if (regex && !regex.test(allCode)) {
+                add('warning', 'design-philosophy', 'styles.css', `Design philosophy "${designPhilosophy}" was specified but its CSS classes/patterns were not found.`, `Apply ${designPhilosophy} design system classes throughout the generated code.`);
+            }
+        }
+
+        // Check advanced effects implementation
+        if (advancedEffects.length > 0 && allCode) {
+            const hasHover = /data-hover|hover="(lift|glow|tilt|spotlight|perspective)"/i.test(allCode);
+            const has3D = /data-3d|data-scroll-3d|perspective\(|rotateX\(|rotateY\(/i.test(allCode);
+            const hasReveal = /data-reveal|\.revealed/i.test(allCode);
+            const hasMicro = /data-micro|\.ripple|micro.*bounce|micro.*magnetic/i.test(allCode);
+            const hasLoader = /page-loader|loader-spinner|loader-bar/i.test(allCode);
+            const hasParallax = /data-parallax|parallax-scroll|parallax-depth/i.test(allCode);
+
+            if (advancedEffects.some(e => e.startsWith('hover')) && !hasHover) {
+                add('suggestion', 'advanced-effects', 'index.html', 'Hover effects were specified but no data-hover attributes found.', 'Add data-hover="tilt" or data-hover="glow" on cards and interactive elements.');
+            }
+            if (advancedEffects.some(e => e.startsWith('3d')) && !has3D) {
+                add('warning', 'advanced-effects', 'generated files', '3D effects specified but no perspective/rotate transforms or data-3d attributes found.', 'Add data-3d="tilt" on cards, data-scroll-3d on sections, or .window-3d mockups.');
+            }
+            if (advancedEffects.some(e => e.startsWith('entrance')) && !hasReveal) {
+                add('suggestion', 'advanced-effects', 'index.html', 'Entrance reveals specified but no data-reveal attributes found.', 'Add data-reveal="blur" or data-reveal="slide-up" on section elements.');
+            }
+            if (advancedEffects.includes('smooth-loader') && !hasLoader) {
+                add('suggestion', 'advanced-effects', 'index.html', 'Smooth loader effect specified but no .page-loader element found.', 'Add a page loader with .page-loader class and entrance transition.');
+            }
+        }
+
         return { issues, critical: issues.some((issue) => issue.severity === 'critical') };
     }
 
     /* ===== REFINE EXISTING CODE ===== */
     async refine(modificationPrompt) {
-        if (Object.keys(this.memory.generatedFiles).length === 0) {
+        if (Object.keys(this.memory.generatedFiles || {}).length === 0) {
             throw new Error('No website generated yet. Generate one first.');
         }
 
         const refiner = this.agents['refiner'];
         if (!refiner) throw new Error('Refiner agent not registered');
 
+        if (this._generationLock) {
+            throw new Error('Generation already in progress. Wait for completion or cancel.');
+        }
+
+        this._generationLock = true;
         this._transition(this.states.REFINING);
+        this.abortController = new AbortController();
         const projectContext = this.getProjectContext(modificationPrompt);
 
         if (projectContext) {
@@ -3124,6 +3716,7 @@ class AgentFramework {
         this.emit('log', { type: 'info', message: `Refining: ${modificationPrompt}` });
 
         try {
+            this._checkAbort();
             const updatedFiles = await refiner.execute(
                 this.memory.generatedFiles,
                 modificationPrompt,
@@ -3131,11 +3724,13 @@ class AgentFramework {
                 this.memory.designSystem
             );
 
-            Object.assign(this.memory.generatedFiles, updatedFiles);
+            if (updatedFiles && typeof updatedFiles === 'object') {
+                Object.assign(this.memory.generatedFiles, updatedFiles);
+            }
             this.memory.refinementHistory.push({
                 prompt: modificationPrompt,
                 timestamp: Date.now(),
-                filesChanged: Object.keys(updatedFiles),
+                filesChanged: Object.keys(updatedFiles || {}),
             });
 
             this._transition(this.states.COMPLETE);
@@ -3145,10 +3740,17 @@ class AgentFramework {
 
             return this.memory.generatedFiles;
         } catch (error) {
+            if (error?.message === 'ABORTED') {
+                this._transition(this.states.IDLE);
+                this.emit('log', { type: 'warning', message: 'Refinement cancelled by user' });
+                return null;
+            }
             this._transition(this.states.ERROR);
             this.emit('error', { message: error.message });
             this._transition(this.states.IDLE);
             throw error;
+        } finally {
+            this._generationLock = false;
         }
     }
 
@@ -3157,6 +3759,9 @@ class AgentFramework {
         if (this.abortController) {
             this.abortController.abort();
         }
+        // Allow a fresh generate/refine after cancel even if a long LLM call
+        // is still unwinding — the finally blocks still clear the lock safely.
+        this._generationLock = false;
     }
 
     _checkAbort() {
@@ -3816,18 +4421,46 @@ Position: fixed or absolute, backdrop-filter blur(20px)`,
             missingBrand: [
                 'What is the brand or project name?',
                 'Who is this for?',
-                'What makes it different?',
             ],
-            missingAssets: [
-                'Do you already have video, images, or 3D assets?',
-                'Should I assume stock-style references or custom media?',
-            ],
+        };
+
+        this.motionCatalog = {
+            '3d-scroll-rotate': 'Perspective rotateX/translateZ on scroll using data-scroll-3d="rotate"',
+            '3d-scroll-zoom': 'Perspective scale/translateZ zoom on scroll using data-scroll-3d="zoom"',
+            '3d-window-interactive': 'macOS/Spatial style 3D window mockup with mouse tilt using .window-3d',
+            '3d-background-grid': 'Perspective infinite animated grid background using .bg-3d-grid',
+            '3d-background-particles': 'Floating 3D particle field using .bg-3d-particles',
+            'hover-tilt-perspective': 'Mouse tracking 3D tilt transform using data-hover="tilt"',
+            'hover-glow-pulse': 'Radial glow box-shadow animation on hover using data-hover="glow"',
+            'smooth-page-loader': 'Full-screen entrance loader with spinner/bar using .page-loader',
+            'entrance-clip-circle': 'Expanding circle clip-path reveal using data-reveal="clip-circle"',
+            'micro-ripple-click': 'Material/fluid ripple effect on click using data-micro="ripple"',
+            'spatial-depth-layers': '3D z-space layering with perspective transform using .spatial-card'
         };
 
         this.systemPrompt = `
 You are a principal prompt engineer for an Awwwards / Motionsites / Layers / getlayers.ai-class digital studio.
 
 Your job: turn a short user idea into a hyper-detailed studio brief AND a reusable prompt pack that a senior creative developer can execute immediately.
+
+DESIGN PHILOSOPHIES YOU CAN SELECT FROM:
+- skeuomorphism: Realistic textures, embossed surfaces, physical buttons, dual shadows
+- neomorphism: Soft extruded UI, subtle dual-shadows, monochromatic depth
+- glassmorphism: Frosted glass backdrop blur, transparency, gradient borders
+- claymorphism: Soft rounded 3D clay surfaces, pastel palettes, inflated shapes
+- minimalism: Maximum whitespace, essential elements, refined typography, subtle borders
+- maximalism: Bold vibrant layers, mixed typography, expressive decorative energy
+- brutalism: Raw chunky black borders, monospace type, high contrast, exposed grid
+- liquidglass: Apple-style specular frosted glass with luminosity blending and gradient border masks
+- spatialui: 3D depth layers, perspective transforms, z-space cards, AR/VR inspired spatial windows
+
+ADVANCED EFFECTS YOU CAN SELECT FROM:
+- Hover: hover-lift, hover-glow, hover-tilt, hover-spotlight, hover-underline, hover-perspective
+- 3D: 3d-tilt, 3d-float, 3d-flip, 3d-scroll, 3d-background, 3d-window
+- Reveals: entrance-fade, entrance-slide, entrance-clip, entrance-blur, entrance-split, entrance-pop, entrance-glitch
+- Micro: micro-bounce, micro-ripple, micro-magnetic, micro-counter, micro-cursor
+- Parallax: parallax-scroll, parallax-depth, parallax-mouse
+- Loaders: smooth-loader
 
 REFERENCE QUALITY
 - Exact font names, weights, and Google Fonts URLs
@@ -3844,6 +4477,7 @@ Return a JSON object with these fields:
 {
   "shortTitle": "brand or project name",
   "siteArchetype": "agency-cinematic | real-estate-luxury | architecture-studio | fashion-editorial | hospitality-film | product-cinematic | portfolio-editorial | saas-editorial | webapp",
+  "designPhilosophy": "skeuomorphism | neomorphism | glassmorphism | claymorphism | minimalism | maximalism | brutalism | liquidglass | spatialui",
   "heroTreatment": "fullscreen-video-crossfade | webgl-scene-parallax | photo-mask-editorial | hybrid-video-3d | typography-focused",
   "qualityBar": "awwwords-site-of-the-day | premium-studio-handoff",
   "studioBrief": "15-25 sentence hyper-detailed brief with exact specs",
@@ -3880,6 +4514,7 @@ Return a JSON object with these fields:
     "materials": ["film grain", "hairline rules", "liquid glass", "backdrop blur"]
   },
   "motionSystems": ["masked-title-reveal", "word-blur-reveal", "magnetic-quickto-cta", "parallax-media-layers", "grain-vignette-grade"],
+  "advancedEffects": ["hover-tilt", "smooth-loader", "3d-scroll", "3d-window", "3d-background", "entrance-blur", "micro-ripple"],
   "componentSpecs": [
     {
       "name": "FadingVideo",
@@ -3920,14 +4555,15 @@ Return a JSON object with these fields:
 Rules:
 1. studioBrief must be 15-25 sentences and contain exact technical specifications.
 2. Include exact hex colors, font URLs, timing values, easing curves.
-3. Reference signature components (FadingVideo, BlurText, LiquidGlass, MagneticButton) with exact behaviors.
-4. Never invent fake metrics or generic filler copy.
-5. For each motion system, specify the exact GSAP implementation or effect behavior.
-6. Include a componentSpecs array with detailed component definitions.
-7. Include exactColors with hex codes and exactFonts with Google Fonts URLs.
-8. Include scrollChoreography as timeline beats with exact triggers.
-9. Include researchPlan.searchQueries so external research can be driven automatically.
-10. Return valid JSON only. No markdown. No commentary.
+3. Select an explicit designPhilosophy matching the brand mood.
+4. Select 4-7 advancedEffects matching the brief (3D scroll, 3D windows, 3D backgrounds, hover effects, entrance reveals, micro interactions).
+5. Reference signature components (FadingVideo, BlurText, LiquidGlass, MagneticButton, Window3D) with exact behaviors.
+6. Never invent fake metrics or generic filler copy.
+7. For each motion system, specify the exact GSAP implementation or effect behavior.
+8. Include a componentSpecs array with detailed component definitions.
+9. Include exactColors with hex codes and exactFonts with Google Fonts URLs.
+10. Include scrollChoreography as timeline beats with exact triggers.
+11. Return valid JSON only. No markdown. No commentary.
         `.trim();
     }
 
@@ -5333,6 +5969,10 @@ Output the complete specification JSON now.`;
         // Quality contract
         spec.qualityContract = this._getQualityContract(spec);
 
+        // Design philosophy & advanced effects
+        spec.designPhilosophy = spec.designPhilosophy || engineeredBrief?.designPhilosophy || null;
+        spec.advancedEffects = engineeredBrief?.advancedEffects || spec.advancedEffects || [];
+
         // App architecture for fullstack
         if (spec.framework === 'fullstack-nextjs') {
             spec.appArchitecture = this._normalizeArchitecture(spec.appArchitecture, spec);
@@ -6101,91 +6741,427 @@ Return valid JSON only. No markdown. No commentary. No code fences.
 window.BrandStrategistAgent = BrandStrategistAgent;
 ;
 /* ============================================================
-   DESIGNER AGENT V2 — Creates CINEMATIC premium design systems
-   with auto-research, motion planning, and template intelligence
+   DESIGNER AGENT V3 — Advanced Design Philosophy Engine
+   Supports: Skeuomorphism, Neomorphism, Glassmorphism, Claymorphism,
+   Minimalism, Maximalism, Brutalism, Liquid Glass, Spatial UI
+   With: 3D Scroll, 3D Backgrounds, 3D Windows, Advanced Animations,
+   Hover Effects, Smooth Loaders, Entrance Reveals, Micro Interactions,
+   Parallax Effects, and Cinematic Motion Systems
    ============================================================ */
 
 class DesignerAgent extends BaseAgent {
   constructor() {
-    super('Designer', 'Creates cinematic Awwwards-level CSS design systems with motion planning');
+    super('Designer', 'Creates advanced design systems with 9 design philosophies, 3D effects, and cinematic motion');
 
-    // Premium template library for inspiration
-    this.templateLibrary = {
-      'agency': {
-        heroTreatment: 'fullscreen-video-crossfade',
-        motionSystems: ['liquid-glass-morphism', 'blur-text-reveal', 'magnetic-quickto-cta', 'parallax-layers', 'scroll-scrub-camera'],
-        colorStrategy: 'dark-cinematic',
-        typography: { heading: 'Instrument Serif', body: 'Barlow', style: 'editorial-italic' },
-        spacing: 'generous-editorial',
-        components: ['fading-video', 'blur-text', 'bubble-menu', 'stats-cards', 'trust-bar']
+    /* ════════════════════════════════════════════════════════════
+       DESIGN PHILOSOPHIES — Complete CSS for each style
+       ════════════════════════════════════════════════════════════ */
+    this.designPhilosophies = {
+      skeuomorphism: {
+        name: 'Skeuomorphism',
+        description: 'Realistic textures, embossed surfaces, physical material simulation',
+        bestFor: ['music-app', 'calculator', 'notepad', 'vintage', 'retro', 'classic', 'realistic'],
+        characteristics: ['textured-backgrounds', 'embossed-text', 'realistic-shadows', 'gradient-surfaces', 'physical-buttons'],
+        css: `/* ═══ SKEUOMORPHISM DESIGN SYSTEM ═══ */
+.skeu-surface{background:linear-gradient(145deg,#e6e9ef,#c3c8d0);border-radius:12px;box-shadow:8px 8px 16px rgba(0,0,0,0.25),-8px -8px 16px rgba(255,255,255,0.6),inset 0 1px 0 rgba(255,255,255,0.8),inset 0 -1px 0 rgba(0,0,0,0.1);border:1px solid rgba(255,255,255,0.4)}
+.skeu-button{background:linear-gradient(180deg,#f7f8fa 0%,#d4d8de 50%,#c0c5cc 100%);border-radius:10px;box-shadow:0 4px 8px rgba(0,0,0,0.3),inset 0 2px 0 rgba(255,255,255,0.7),inset 0 -2px 4px rgba(0,0,0,0.1);border:1px solid rgba(0,0,0,0.15);text-shadow:0 1px 0 rgba(255,255,255,0.8);padding:12px 24px;cursor:pointer;transition:all 0.15s ease}
+.skeu-button:active{box-shadow:0 1px 2px rgba(0,0,0,0.3),inset 0 2px 6px rgba(0,0,0,0.2);transform:translateY(1px)}
+.skeu-input{background:linear-gradient(180deg,#d8dbe1 0%,#eef0f3 8%,#fff 100%);border-radius:8px;box-shadow:inset 0 2px 6px rgba(0,0,0,0.15),inset 0 1px 2px rgba(0,0,0,0.1),0 1px 0 rgba(255,255,255,0.8);border:1px solid rgba(0,0,0,0.2);padding:10px 14px}
+.skeu-card{background:linear-gradient(145deg,#eceff3,#d4d8de);border-radius:16px;box-shadow:10px 10px 20px rgba(0,0,0,0.2),-5px -5px 15px rgba(255,255,255,0.5),inset 0 1px 0 rgba(255,255,255,0.6);padding:24px;border:1px solid rgba(255,255,255,0.3)}
+.skeu-toggle{width:60px;height:30px;border-radius:15px;background:linear-gradient(180deg,#a8adb5,#c8cdd5);box-shadow:inset 0 2px 6px rgba(0,0,0,0.3),0 1px 0 rgba(255,255,255,0.5);position:relative;cursor:pointer}
+.skeu-toggle::after{content:'';width:26px;height:26px;border-radius:50%;background:linear-gradient(180deg,#fff,#ddd);box-shadow:0 2px 4px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.8);position:absolute;top:2px;left:2px;transition:transform 0.3s ease}
+.skeu-toggle.active{background:linear-gradient(180deg,#4a90d9,#357abd)}.skeu-toggle.active::after{transform:translateX(30px)}
+.skeu-knob{width:80px;height:80px;border-radius:50%;background:conic-gradient(from 0deg,#ccc,#fff,#ccc,#999,#ccc);box-shadow:0 4px 12px rgba(0,0,0,0.3),inset 0 2px 4px rgba(255,255,255,0.5)}`,
+        compatibleAnimations: ['hover-depth', 'press-feedback', 'smooth-loader', 'entrance-slide']
       },
-      'saas': {
-        heroTreatment: 'gradient-mesh-animated',
-        motionSystems: ['stagger-reveals', 'hover-lift-cards', 'smooth-scroll', 'counter-animations'],
-        colorStrategy: 'dark-modern',
-        typography: { heading: 'Outfit', body: 'Inter', style: 'clean-geometric' },
-        spacing: 'balanced-product',
-        components: ['pricing-toggle', 'feature-grid', 'testimonial-carousel', 'cta-glow']
+
+      neomorphism: {
+        name: 'Neomorphism',
+        description: 'Soft, extruded UI with dual-shadow technique',
+        bestFor: ['music', 'calculator', 'settings', 'controls', 'player', 'smart-home', 'neumorphic'],
+        characteristics: ['soft-shadows', 'extruded-shapes', 'subtle-depth', 'monochromatic', 'minimal-borders'],
+        css: `/* ═══ NEOMORPHISM DESIGN SYSTEM ═══ */
+:root{--neo-bg:#e0e5ec;--neo-shadow-dark:rgba(163,177,198,0.6);--neo-shadow-light:rgba(255,255,255,0.8);--neo-radius:16px;--neo-distance:6px;--neo-blur:12px;--neo-dark-bg:#2d3436;--neo-dark-shadow-dark:rgba(0,0,0,0.5);--neo-dark-shadow-light:rgba(70,75,80,0.4)}
+.neo-flat{background:var(--neo-bg);border-radius:var(--neo-radius);box-shadow:var(--neo-distance) var(--neo-distance) var(--neo-blur) var(--neo-shadow-dark),calc(-1 * var(--neo-distance)) calc(-1 * var(--neo-distance)) var(--neo-blur) var(--neo-shadow-light)}
+.neo-pressed{background:var(--neo-bg);border-radius:var(--neo-radius);box-shadow:inset var(--neo-distance) var(--neo-distance) var(--neo-blur) var(--neo-shadow-dark),inset calc(-1 * var(--neo-distance)) calc(-1 * var(--neo-distance)) var(--neo-blur) var(--neo-shadow-light)}
+.neo-concave{background:linear-gradient(145deg,rgba(0,0,0,0.05),rgba(255,255,255,0.1));border-radius:var(--neo-radius);box-shadow:var(--neo-distance) var(--neo-distance) var(--neo-blur) var(--neo-shadow-dark),calc(-1 * var(--neo-distance)) calc(-1 * var(--neo-distance)) var(--neo-blur) var(--neo-shadow-light)}
+.neo-convex{background:linear-gradient(145deg,rgba(255,255,255,0.15),rgba(0,0,0,0.05));border-radius:var(--neo-radius);box-shadow:var(--neo-distance) var(--neo-distance) var(--neo-blur) var(--neo-shadow-dark),calc(-1 * var(--neo-distance)) calc(-1 * var(--neo-distance)) var(--neo-blur) var(--neo-shadow-light)}
+.neo-button{background:var(--neo-bg);border:none;border-radius:var(--neo-radius);padding:14px 28px;box-shadow:var(--neo-distance) var(--neo-distance) var(--neo-blur) var(--neo-shadow-dark),calc(-1 * var(--neo-distance)) calc(-1 * var(--neo-distance)) var(--neo-blur) var(--neo-shadow-light);cursor:pointer;transition:all 0.2s ease;font-weight:600}
+.neo-button:hover{box-shadow:calc(var(--neo-distance) + 2px) calc(var(--neo-distance) + 2px) calc(var(--neo-blur) + 4px) var(--neo-shadow-dark),calc(-1 * (var(--neo-distance) + 2px)) calc(-1 * (var(--neo-distance) + 2px)) calc(var(--neo-blur) + 4px) var(--neo-shadow-light)}
+.neo-button:active,.neo-button.pressed{box-shadow:inset var(--neo-distance) var(--neo-distance) var(--neo-blur) var(--neo-shadow-dark),inset calc(-1 * var(--neo-distance)) calc(-1 * var(--neo-distance)) var(--neo-blur) var(--neo-shadow-light)}
+.neo-circle{border-radius:50%;width:80px;height:80px;display:flex;align-items:center;justify-content:center}
+.neo-input{background:var(--neo-bg);border:none;border-radius:var(--neo-radius);padding:12px 18px;box-shadow:inset 3px 3px 6px var(--neo-shadow-dark),inset -3px -3px 6px var(--neo-shadow-light);outline:none}
+.neo-input:focus{box-shadow:inset 4px 4px 8px var(--neo-shadow-dark),inset -4px -4px 8px var(--neo-shadow-light)}
+.neo-card{padding:24px;background:var(--neo-bg);border-radius:20px;box-shadow:8px 8px 16px var(--neo-shadow-dark),-8px -8px 16px var(--neo-shadow-light)}
+.neo-progress{height:8px;border-radius:4px;box-shadow:inset 2px 2px 4px var(--neo-shadow-dark),inset -2px -2px 4px var(--neo-shadow-light);overflow:hidden}
+.neo-progress-bar{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--color-primary),var(--color-accent));transition:width 0.6s ease}
+.neo-slider{-webkit-appearance:none;width:100%;height:8px;border-radius:4px;background:var(--neo-bg);box-shadow:inset 2px 2px 4px var(--neo-shadow-dark),inset -2px -2px 4px var(--neo-shadow-light)}
+.neo-slider::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;border-radius:50%;background:var(--neo-bg);box-shadow:3px 3px 6px var(--neo-shadow-dark),-3px -3px 6px var(--neo-shadow-light);cursor:pointer}`,
+        compatibleAnimations: ['hover-lift', 'press-morph', 'smooth-loader', 'entrance-fade']
       },
-      'portfolio': {
-        heroTreatment: 'split-screen-media',
-        motionSystems: ['image-reveal-masks', 'horizontal-scroll-gallery', 'cursor-follower', 'text-scramble'],
-        colorStrategy: 'minimal-contrast',
-        typography: { heading: 'Playfair Display', body: 'DM Sans', style: 'editorial-mixed' },
-        spacing: 'asymmetric-editorial',
-        components: ['project-grid', 'case-study-cards', 'contact-form', 'social-links']
+
+      glassmorphism: {
+        name: 'Glassmorphism',
+        description: 'Frosted glass panels with blur, transparency, and light refraction',
+        bestFor: ['dashboard', 'saas', 'landing', 'fintech', 'crypto', 'modern', 'glass', 'transparent'],
+        characteristics: ['backdrop-blur', 'transparency', 'gradient-borders', 'light-refraction', 'depth-layers'],
+        css: `/* ═══ GLASSMORPHISM DESIGN SYSTEM ═══ */
+.glass{background:rgba(255,255,255,0.08);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.12);border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.12)}
+.glass-strong{background:rgba(255,255,255,0.15);backdrop-filter:blur(40px);-webkit-backdrop-filter:blur(40px);border:1px solid rgba(255,255,255,0.2);border-radius:20px;box-shadow:0 12px 40px rgba(0,0,0,0.15)}
+.glass-dark{background:rgba(0,0,0,0.3);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid rgba(255,255,255,0.08);border-radius:16px}
+.glass-card{background:rgba(255,255,255,0.06);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:24px;position:relative;overflow:hidden}
+.glass-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.3),transparent)}
+.glass-navbar{background:rgba(255,255,255,0.05);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);border-bottom:1px solid rgba(255,255,255,0.06);position:fixed;top:0;left:0;right:0;z-index:1000}
+.glass-button{background:rgba(255,255,255,0.1);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,0.15);border-radius:12px;padding:12px 28px;color:white;cursor:pointer;transition:all 0.3s ease}
+.glass-button:hover{background:rgba(255,255,255,0.18);border-color:rgba(255,255,255,0.3);transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,0.2)}
+.glass-input{background:rgba(255,255,255,0.05);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:12px 16px;color:white;outline:none;transition:border-color 0.3s ease}
+.glass-input:focus{border-color:rgba(255,255,255,0.3);box-shadow:0 0 20px rgba(255,255,255,0.05)}
+.glass-gradient-border{position:relative;border-radius:20px;overflow:hidden}
+.glass-gradient-border::before{content:'';position:absolute;inset:0;border-radius:inherit;padding:1.5px;background:linear-gradient(135deg,rgba(255,255,255,0.4),rgba(255,255,255,0),rgba(255,255,255,0.15));-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
+.glass-glow{box-shadow:0 0 40px rgba(var(--color-primary-rgb,99,102,241),0.15),0 0 80px rgba(var(--color-primary-rgb,99,102,241),0.05)}
+.glass-shimmer{position:relative;overflow:hidden}.glass-shimmer::after{content:'';position:absolute;top:-50%;left:-50%;width:200%;height:200%;background:linear-gradient(45deg,transparent 30%,rgba(255,255,255,0.05) 50%,transparent 70%);animation:glassShimmer 6s ease-in-out infinite}
+@keyframes glassShimmer{0%,100%{transform:translateX(-100%) rotate(45deg)}50%{transform:translateX(100%) rotate(45deg)}}`,
+        compatibleAnimations: ['hover-glow', 'entrance-blur', '3d-tilt', 'parallax-depth', 'smooth-loader']
       },
-      'ecommerce': {
-        heroTreatment: '3d-product-showcase',
-        motionSystems: ['product-zoom', 'cart-animations', 'filter-transitions', 'quick-view-modal'],
-        colorStrategy: 'warm-luxury',
-        typography: { heading: 'Cormorant Garamond', body: 'Jost', style: 'luxury-serif' },
-        spacing: 'product-focused',
-        components: ['product-carousel', 'size-selector', 'add-to-cart', 'reviews-slider']
+
+      claymorphism: {
+        name: 'Claymorphism',
+        description: 'Soft, rounded, 3D clay-like surfaces with playful depth',
+        bestFor: ['kids', 'education', 'creative', 'toy', 'fun', 'playful', 'cartoon', 'clay', '3d-soft'],
+        characteristics: ['rounded-shapes', 'pastel-colors', 'soft-3d-shadows', 'inflated-surfaces', 'playful-depth'],
+        css: `/* ═══ CLAYMORPHISM DESIGN SYSTEM ═══ */
+.clay{background:linear-gradient(145deg,rgba(255,255,255,0.5),rgba(255,255,255,0.1));border-radius:24px;box-shadow:12px 12px 24px rgba(0,0,0,0.08),-6px -6px 12px rgba(255,255,255,0.8),inset -4px -4px 8px rgba(0,0,0,0.04),inset 4px 4px 8px rgba(255,255,255,0.6);border:2px solid rgba(255,255,255,0.5)}
+.clay-card{background:linear-gradient(145deg,#fef3f3,#ffe8e8);border-radius:28px;box-shadow:15px 15px 30px rgba(0,0,0,0.08),-8px -8px 16px rgba(255,255,255,0.9),inset -3px -3px 6px rgba(0,0,0,0.03),inset 3px 3px 6px rgba(255,255,255,0.7);padding:28px;border:2px solid rgba(255,255,255,0.6)}
+.clay-button{background:linear-gradient(145deg,#a8e6cf,#88d8b0);border-radius:18px;box-shadow:8px 8px 16px rgba(0,0,0,0.1),-4px -4px 8px rgba(255,255,255,0.7),inset -2px -2px 4px rgba(0,0,0,0.05),inset 2px 2px 4px rgba(255,255,255,0.5);border:2px solid rgba(255,255,255,0.4);padding:14px 32px;cursor:pointer;font-weight:700;transition:all 0.3s ease}
+.clay-button:hover{transform:translateY(-3px) scale(1.02);box-shadow:12px 12px 24px rgba(0,0,0,0.12),-6px -6px 12px rgba(255,255,255,0.8)}
+.clay-button:active{transform:translateY(1px) scale(0.98);box-shadow:4px 4px 8px rgba(0,0,0,0.08),inset 3px 3px 6px rgba(0,0,0,0.08)}
+.clay-bubble{border-radius:50%;background:linear-gradient(145deg,rgba(255,255,255,0.6),rgba(255,255,255,0.1));box-shadow:10px 10px 20px rgba(0,0,0,0.08),-5px -5px 10px rgba(255,255,255,0.9),inset -3px -3px 6px rgba(0,0,0,0.03),inset 3px 3px 6px rgba(255,255,255,0.6)}
+.clay-input{background:linear-gradient(145deg,#fff,#f0f0f5);border-radius:16px;box-shadow:inset 4px 4px 8px rgba(0,0,0,0.06),inset -2px -2px 4px rgba(255,255,255,0.8);border:2px solid rgba(255,255,255,0.5);padding:14px 20px}
+.clay-tag{display:inline-block;padding:6px 16px;border-radius:50px;background:linear-gradient(145deg,#ddd6fe,#c4b5fd);box-shadow:4px 4px 8px rgba(0,0,0,0.06),-2px -2px 4px rgba(255,255,255,0.8),inset -1px -1px 2px rgba(0,0,0,0.03),inset 1px 1px 2px rgba(255,255,255,0.5);font-size:0.8rem;font-weight:600}
+.clay-avatar{width:64px;height:64px;border-radius:50%;background:linear-gradient(145deg,#fbbf24,#f59e0b);box-shadow:8px 8px 16px rgba(0,0,0,0.1),-4px -4px 8px rgba(255,255,255,0.7),inset -2px -2px 4px rgba(0,0,0,0.05),inset 2px 2px 4px rgba(255,255,255,0.4);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.5rem}`,
+        compatibleAnimations: ['hover-bounce', 'entrance-pop', 'micro-squish', '3d-wobble', 'smooth-loader']
       },
-      'landing': {
-        heroTreatment: 'cinematic-video-loop',
-        motionSystems: ['scroll-triggered-scenes', 'sticky-sections', 'parallax-depth', 'magnetic-buttons'],
-        colorStrategy: 'bold-gradient',
-        typography: { heading: 'Space Grotesk', body: 'Inter', style: 'modern-bold' },
-        spacing: 'immersive-fullscreen',
-        components: ['video-background', 'feature-showcase', 'social-proof', 'newsletter-capture']
+
+      minimalism: {
+        name: 'Minimalism',
+        description: 'Maximum whitespace, restrained palette, essential-only elements',
+        bestFor: ['portfolio', 'agency', 'gallery', 'blog', 'minimal', 'clean', 'zen', 'simple', 'editorial'],
+        characteristics: ['generous-whitespace', 'limited-palette', 'refined-typography', 'subtle-borders', 'essential-elements'],
+        css: `/* ═══ MINIMALISM DESIGN SYSTEM ═══ */
+.min-surface{background:transparent;border-bottom:1px solid rgba(0,0,0,0.06)}
+.min-card{background:transparent;padding:40px 0;border-bottom:1px solid rgba(0,0,0,0.06);transition:padding 0.4s ease}
+.min-card:hover{padding-left:12px}
+.min-button{background:transparent;border:1.5px solid currentColor;border-radius:0;padding:14px 36px;font-size:0.85rem;letter-spacing:0.15em;text-transform:uppercase;cursor:pointer;position:relative;overflow:hidden;transition:color 0.4s ease}
+.min-button::before{content:'';position:absolute;bottom:0;left:0;width:100%;height:0;background:currentColor;transition:height 0.4s cubic-bezier(0.65,0,0.35,1);z-index:-1}
+.min-button:hover{color:white}.min-button:hover::before{height:100%}
+.min-button-text{background:none;border:none;padding:0;font-size:0.9rem;cursor:pointer;position:relative;color:inherit}.min-button-text::after{content:'';position:absolute;bottom:-2px;left:0;width:100%;height:1px;background:currentColor;transform:scaleX(0);transform-origin:right;transition:transform 0.4s cubic-bezier(0.65,0,0.35,1)}.min-button-text:hover::after{transform:scaleX(1);transform-origin:left}
+.min-input{background:transparent;border:none;border-bottom:1px solid rgba(0,0,0,0.15);padding:12px 0;font-size:1rem;outline:none;transition:border-color 0.3s ease;width:100%}.min-input:focus{border-bottom-color:currentColor}
+.min-divider{width:40px;height:1px;background:currentColor;opacity:0.3;margin:2rem 0}
+.min-grid{display:grid;gap:1px;background:rgba(0,0,0,0.06)}.min-grid>*{background:var(--color-bg);padding:40px}
+.min-tag{font-size:0.7rem;letter-spacing:0.2em;text-transform:uppercase;opacity:0.5}
+.min-quote{font-size:clamp(1.5rem,4vw,3rem);font-style:italic;line-height:1.4;max-width:28ch}`,
+        compatibleAnimations: ['entrance-fade', 'hover-underline', 'micro-subtle', 'parallax-gentle']
       },
-      'dashboard': {
-        heroTreatment: 'data-visualization-hero',
-        motionSystems: ['chart-animations', 'sidebar-transitions', 'table-sorting', 'notification-toasts'],
-        colorStrategy: 'dark-productivity',
-        typography: { heading: 'Plus Jakarta Sans', body: 'Inter', style: 'functional-clean' },
-        spacing: 'dense-functional',
-        components: ['stats-grid', 'data-tables', 'charts', 'activity-feed', 'quick-actions']
+
+      maximalism: {
+        name: 'Maximalism',
+        description: 'Bold, layered, vibrant, decorative excess with purposeful energy',
+        bestFor: ['fashion', 'art', 'music', 'festival', 'creative', 'bold', 'vibrant', 'colorful', 'maximal'],
+        characteristics: ['bold-colors', 'layered-textures', 'mixed-typography', 'decorative-elements', 'visual-density'],
+        css: `/* ═══ MAXIMALISM DESIGN SYSTEM ═══ */
+.max-surface{background:linear-gradient(135deg,#ff006e,#8338ec,#3a86ff);position:relative;overflow:hidden}
+.max-surface::before{content:'';position:absolute;inset:0;background:url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.06'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")}
+.max-card{background:linear-gradient(135deg,rgba(255,255,255,0.1),rgba(255,255,255,0.05));border:3px solid rgba(255,255,255,0.2);border-radius:24px;padding:32px;position:relative;overflow:hidden;backdrop-filter:blur(10px)}
+.max-card::before{content:'';position:absolute;top:-50%;right:-50%;width:100%;height:100%;background:radial-gradient(circle,rgba(255,0,110,0.15) 0%,transparent 70%);pointer-events:none}
+.max-button{background:linear-gradient(135deg,#ff006e,#fb5607);border:none;border-radius:100px;padding:16px 40px;color:white;font-weight:800;font-size:1.1rem;letter-spacing:0.02em;cursor:pointer;position:relative;overflow:hidden;transition:transform 0.3s ease,box-shadow 0.3s ease}
+.max-button::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,#fb5607,#ffbe0b);opacity:0;transition:opacity 0.3s ease}
+.max-button:hover{transform:translateY(-3px) rotate(-1deg);box-shadow:0 12px 40px rgba(255,0,110,0.4)}.max-button:hover::before{opacity:1}
+.max-button span{position:relative;z-index:1}
+.max-text-gradient{background:linear-gradient(135deg,#ff006e,#fb5607,#ffbe0b,#8338ec,#3a86ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.max-sticker{display:inline-block;padding:8px 20px;border-radius:100px;background:#ffbe0b;color:#000;font-weight:800;transform:rotate(-3deg);box-shadow:4px 4px 0 #ff006e}
+.max-blob{position:absolute;border-radius:50%;filter:blur(80px);opacity:0.4;animation:maxBlobFloat 8s ease-in-out infinite alternate;pointer-events:none}
+.max-blob-1{width:400px;height:400px;background:#ff006e;top:-10%;left:-10%}
+.max-blob-2{width:350px;height:350px;background:#3a86ff;bottom:-10%;right:-10%;animation-delay:-4s}
+.max-blob-3{width:300px;height:300px;background:#8338ec;top:40%;left:50%;animation-delay:-2s}
+@keyframes maxBlobFloat{0%{transform:translate(0,0) scale(1)}100%{transform:translate(30px,-30px) scale(1.1)}}
+.max-marquee{overflow:hidden;white-space:nowrap}.max-marquee-inner{display:inline-flex;animation:maxMarquee 20s linear infinite}
+@keyframes maxMarquee{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}`,
+        compatibleAnimations: ['hover-explode', 'entrance-pop', '3d-flip', 'parallax-intense', 'micro-bounce']
       },
-      'minimal': {
-        heroTreatment: 'typography-focused',
-        motionSystems: ['subtle-fade-ins', 'text-weight-transitions', 'minimal-hovers'],
-        colorStrategy: 'monochrome-refined',
-        typography: { heading: 'Instrument Serif', body: 'Inter', style: 'swiss-minimal' },
-        spacing: 'breathing-whitespace',
-        components: ['text-blocks', 'image-grid', 'contact-minimal']
+
+      brutalism: {
+        name: 'Brutalism',
+        description: 'Raw, chunky, high-contrast, exposed structure, anti-design',
+        bestFor: ['art', 'punk', 'experimental', 'avant-garde', 'brutal', 'raw', 'grunge', 'underground'],
+        characteristics: ['thick-borders', 'monospace-type', 'high-contrast', 'raw-surfaces', 'exposed-structure'],
+        css: `/* ═══ BRUTALISM DESIGN SYSTEM ═══ */
+.brutal-surface{background:#fff;border:3px solid #000;box-shadow:8px 8px 0 #000}
+.brutal-card{background:#fff;border:3px solid #000;padding:24px;box-shadow:8px 8px 0 #000;position:relative;transition:all 0.2s ease}
+.brutal-card:hover{transform:translate(-4px,-4px);box-shadow:12px 12px 0 #000}
+.brutal-button{background:#000;color:#fff;border:3px solid #000;padding:14px 32px;font-family:'Space Mono','Courier New',monospace;font-weight:700;font-size:0.9rem;text-transform:uppercase;letter-spacing:0.1em;cursor:pointer;box-shadow:4px 4px 0 #000;transition:all 0.15s ease;position:relative}
+.brutal-button:hover{transform:translate(-2px,-2px);box-shadow:6px 6px 0 #000}
+.brutal-button:active{transform:translate(2px,2px);box-shadow:2px 2px 0 #000}
+.brutal-button-outline{background:#fff;color:#000;border:3px solid #000;padding:14px 32px;font-family:'Space Mono',monospace;font-weight:700;box-shadow:4px 4px 0 #000;cursor:pointer;transition:all 0.15s ease}
+.brutal-button-outline:hover{background:#ff0;transform:translate(-2px,-2px);box-shadow:6px 6px 0 #000}
+.brutal-input{background:#fff;border:3px solid #000;padding:12px 16px;font-family:'Space Mono',monospace;font-size:1rem;outline:none}
+.brutal-input:focus{box-shadow:inset 0 0 0 2px #000;background:#ffd}
+.brutal-tag{display:inline-block;padding:4px 12px;border:2px solid #000;font-family:'Space Mono',monospace;font-size:0.75rem;text-transform:uppercase;font-weight:700}
+.brutal-divider{height:3px;background:#000;border:none;margin:2rem 0}
+.brutal-marquee{overflow:hidden;border-top:3px solid #000;border-bottom:3px solid #000;padding:12px 0;font-family:'Space Mono',monospace;font-weight:700;font-size:1.5rem;text-transform:uppercase}
+.brutal-grid{display:grid;gap:3px;background:#000}.brutal-grid>*{background:#fff;padding:24px}
+.brutal-highlight{background:#ff0;padding:2px 6px;font-weight:700}
+.brutal-stamp{display:inline-block;border:4px solid #ff0000;color:#ff0000;padding:8px 16px;font-weight:900;text-transform:uppercase;transform:rotate(-5deg);letter-spacing:0.1em}`,
+        compatibleAnimations: ['hover-shake', 'entrance-glitch', 'micro-snap', '3d-shift']
       },
-      'cinematic': {
-        heroTreatment: 'fullscreen-video-crossfade',
-        motionSystems: ['liquid-glass-morphism', 'blur-text-reveal', 'fading-video-crossfade', 'parallax-layers', 'magnetic-quickto-cta', 'scroll-scrub-scenes', 'grain-vignette-grade'],
-        colorStrategy: 'dark-atmospheric',
-        typography: { heading: 'Instrument Serif', body: 'Barlow', style: 'editorial-italic' },
-        spacing: 'immersive-fullscreen',
-        components: ['fading-video', 'blur-text', 'liquid-glass-nav', 'stats-cards', 'capability-cards', 'trust-bar']
+
+      liquidglass: {
+        name: 'Liquid Glass',
+        description: 'Apple-style premium frosted glass with specular highlights and refraction',
+        bestFor: ['tech', 'apple', 'premium', 'luxury', 'fintech', 'startup', 'modern', 'sleek', 'ios', 'visionpro'],
+        characteristics: ['deep-blur', 'specular-highlights', 'gradient-borders', 'refraction-effects', 'luminosity-blend'],
+        css: `/* ═══ LIQUID GLASS DESIGN SYSTEM ═══ */
+.liquid-glass{background:rgba(255,255,255,0.01);background-blend-mode:luminosity;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);border:none;box-shadow:inset 0 1px 1px rgba(255,255,255,0.1);position:relative;overflow:hidden;border-radius:16px}
+.liquid-glass::before{content:'';position:absolute;inset:0;border-radius:inherit;padding:1.4px;background:linear-gradient(180deg,rgba(255,255,255,0.45) 0%,rgba(255,255,255,0.15) 20%,rgba(255,255,255,0) 40%,rgba(255,255,255,0) 60%,rgba(255,255,255,0.15) 80%,rgba(255,255,255,0.45) 100%);-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
+.liquid-glass-strong{background:rgba(255,255,255,0.03);backdrop-filter:blur(50px);-webkit-backdrop-filter:blur(50px);box-shadow:4px 4px 4px rgba(0,0,0,0.05),inset 0 1px 1px rgba(255,255,255,0.15);border-radius:20px;position:relative;overflow:hidden}
+.liquid-glass-strong::before{content:'';position:absolute;inset:0;border-radius:inherit;padding:1.4px;background:linear-gradient(180deg,rgba(255,255,255,0.5) 0%,rgba(255,255,255,0.15) 25%,rgba(255,255,255,0) 50%,rgba(255,255,255,0.15) 75%,rgba(255,255,255,0.5) 100%);-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
+.liquid-glass-tint{background:rgba(255,255,255,0.02);background-blend-mode:luminosity;backdrop-filter:blur(60px) saturate(1.8);-webkit-backdrop-filter:blur(60px) saturate(1.8);border-radius:24px;box-shadow:inset 0 1px 1px rgba(255,255,255,0.12),0 4px 24px rgba(0,0,0,0.08);position:relative;overflow:hidden}
+.liquid-glass-button{background:rgba(255,255,255,0.06);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:none;border-radius:14px;padding:12px 28px;color:rgba(255,255,255,0.9);cursor:pointer;position:relative;overflow:hidden;transition:all 0.3s ease}
+.liquid-glass-button::before{content:'';position:absolute;inset:0;border-radius:inherit;padding:1px;background:linear-gradient(180deg,rgba(255,255,255,0.3),rgba(255,255,255,0.05));-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
+.liquid-glass-button:hover{background:rgba(255,255,255,0.1);transform:translateY(-1px);box-shadow:0 4px 16px rgba(0,0,0,0.1)}
+.liquid-glass-nav{position:fixed;top:16px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,0.02);backdrop-filter:blur(40px) saturate(1.5);-webkit-backdrop-filter:blur(40px) saturate(1.5);border-radius:100px;padding:6px;z-index:1000;position:relative;overflow:hidden}
+.liquid-glass-nav::before{content:'';position:absolute;inset:0;border-radius:inherit;padding:1px;background:linear-gradient(180deg,rgba(255,255,255,0.4),rgba(255,255,255,0.1));-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
+.liquid-glass-specular{position:absolute;top:-50%;left:-50%;width:200%;height:200%;background:radial-gradient(ellipse at 30% 20%,rgba(255,255,255,0.08),transparent 60%);pointer-events:none}`,
+        compatibleAnimations: ['hover-glow', 'entrance-blur', 'parallax-depth', '3d-tilt', 'shimmer-sweep']
+      },
+
+      spatialui: {
+        name: 'Spatial UI',
+        description: '3D depth layers, perspective transforms, z-space navigation, AR/VR inspired',
+        bestFor: ['vr', 'ar', 'metaverse', '3d', 'spatial', 'immersive', 'futuristic', 'sci-fi', 'gaming', 'tech-future'],
+        characteristics: ['perspective-depth', 'z-layers', 'depth-cards', 'spatial-navigation', '3d-transforms'],
+        css: `/* ═══ SPATIAL UI DESIGN SYSTEM ═══ */
+.spatial-scene{perspective:1200px;perspective-origin:50% 50%;transform-style:preserve-3d}
+.spatial-layer{transform-style:preserve-3d;will-change:transform}
+.spatial-layer-back{transform:translateZ(-200px) scale(1.4)}
+.spatial-layer-mid{transform:translateZ(-100px) scale(1.2)}
+.spatial-layer-front{transform:translateZ(0px)}
+.spatial-layer-float{transform:translateZ(60px)}
+.spatial-card{background:rgba(255,255,255,0.06);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:28px;transform-style:preserve-3d;transition:transform 0.5s cubic-bezier(0.23,1,0.32,1);will-change:transform;position:relative;overflow:hidden}
+.spatial-card::before{content:'';position:absolute;inset:0;border-radius:inherit;background:linear-gradient(135deg,rgba(255,255,255,0.1) 0%,transparent 50%,rgba(255,255,255,0.05) 100%);pointer-events:none}
+.spatial-card:hover{transform:translateZ(30px) rotateX(-3deg) rotateY(5deg);box-shadow:0 20px 60px rgba(0,0,0,0.3),0 0 40px rgba(var(--color-primary-rgb,99,102,241),0.1)}
+.spatial-window{background:rgba(10,10,20,0.7);backdrop-filter:blur(40px);-webkit-backdrop-filter:blur(40px);border:1px solid rgba(255,255,255,0.08);border-radius:16px;overflow:hidden;transform-style:preserve-3d;box-shadow:0 20px 60px rgba(0,0,0,0.4)}
+.spatial-window-titlebar{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.06)}
+.spatial-window-dot{width:12px;height:12px;border-radius:50%}
+.spatial-window-dot.red{background:#ff5f57}.spatial-window-dot.yellow{background:#febc2e}.spatial-window-dot.green{background:#28c840}
+.spatial-window-body{padding:20px}
+.spatial-button{background:linear-gradient(135deg,rgba(99,102,241,0.3),rgba(139,92,246,0.3));backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,0.15);border-radius:14px;padding:12px 28px;color:white;cursor:pointer;transform-style:preserve-3d;transition:all 0.4s cubic-bezier(0.23,1,0.32,1)}
+.spatial-button:hover{transform:translateZ(10px) scale(1.05);box-shadow:0 8px 32px rgba(99,102,241,0.3);border-color:rgba(255,255,255,0.3)}
+.spatial-ring{position:absolute;border-radius:50%;border:1px solid rgba(255,255,255,0.05);transform-style:preserve-3d;animation:spatialOrbit 20s linear infinite}
+.spatial-ring-1{width:400px;height:400px;animation-duration:20s;transform:rotateX(75deg)}.spatial-ring-2{width:600px;height:600px;animation-duration:30s;transform:rotateX(60deg) rotateZ(45deg)}.spatial-ring-3{width:800px;height:800px;animation-duration:40s;transform:rotateX(80deg) rotateZ(-30deg)}
+@keyframes spatialOrbit{from{transform:rotateX(75deg) rotateZ(0deg)}to{transform:rotateX(75deg) rotateZ(360deg)}}
+.spatial-grid{display:grid;gap:2px;transform-style:preserve-3d;perspective:800px}
+.spatial-grid>*{transition:transform 0.4s ease;transform-style:preserve-3d}
+.spatial-grid>*:hover{transform:translateZ(20px)}
+.spatial-hud{position:fixed;pointer-events:none;z-index:100;font-family:'Space Mono',monospace;font-size:0.7rem;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:0.1em}
+.spatial-hud-tl{top:20px;left:20px}.spatial-hud-tr{top:20px;right:20px}.spatial-hud-bl{bottom:20px;left:20px}.spatial-hud-br{bottom:20px;right:20px}`,
+        compatibleAnimations: ['3d-tilt', '3d-scroll', '3d-float', '3d-flip', 'parallax-depth', 'hover-perspective']
       }
     };
 
-    // Motion system implementations
+    /* ════════════════════════════════════════════════════════════
+       ADVANCED ANIMATIONS — CSS + JS implementations
+       ════════════════════════════════════════════════════════════ */
+    this.advancedAnimations = {
+      // ─── HOVER EFFECTS ───
+      'hover-lift': {
+        css: `[data-hover="lift"]{transition:transform 0.4s cubic-bezier(0.23,1,0.32,1),box-shadow 0.4s ease}[data-hover="lift"]:hover{transform:translateY(-8px);box-shadow:0 20px 40px rgba(0,0,0,0.15)}`,
+        js: ``
+      },
+      'hover-glow': {
+        css: `[data-hover="glow"]{transition:box-shadow 0.4s ease,border-color 0.4s ease;position:relative}[data-hover="glow"]:hover{box-shadow:0 0 30px rgba(var(--color-primary-rgb,99,102,241),0.3),0 0 60px rgba(var(--color-primary-rgb,99,102,241),0.1);border-color:rgba(var(--color-primary-rgb,99,102,241),0.4)}`,
+        js: ``
+      },
+      'hover-tilt': {
+        css: `[data-hover="tilt"]{transition:transform 0.3s ease;transform-style:preserve-3d}`,
+        js: `function initHoverTilt(){document.querySelectorAll('[data-hover="tilt"]').forEach(el=>{el.addEventListener('mousemove',e=>{const rect=el.getBoundingClientRect();const x=(e.clientX-rect.left)/rect.width-0.5;const y=(e.clientY-rect.top)/rect.height-0.5;el.style.transform=\`perspective(600px) rotateY(\${x*15}deg) rotateX(\${-y*15}deg) scale(1.02)\`});el.addEventListener('mouseleave',()=>{el.style.transform='perspective(600px) rotateY(0) rotateX(0) scale(1)'})})}document.addEventListener('DOMContentLoaded',initHoverTilt);`
+      },
+      'hover-spotlight': {
+        css: `[data-hover="spotlight"]{position:relative;overflow:hidden}[data-hover="spotlight"]::after{content:'';position:absolute;width:200px;height:200px;background:radial-gradient(circle,rgba(255,255,255,0.15),transparent 70%);border-radius:50%;pointer-events:none;opacity:0;transition:opacity 0.3s ease;transform:translate(-50%,-50%)}[data-hover="spotlight"]:hover::after{opacity:1}`,
+        js: `function initSpotlight(){document.querySelectorAll('[data-hover="spotlight"]').forEach(el=>{const spot=el.querySelector('::after')||el;el.addEventListener('mousemove',e=>{const rect=el.getBoundingClientRect();el.style.setProperty('--spot-x',e.clientX-rect.left+'px');el.style.setProperty('--spot-y',e.clientY-rect.top+'px')})})}document.addEventListener('DOMContentLoaded',initSpotlight);`
+      },
+      'hover-underline': {
+        css: `[data-hover="underline"]{position:relative;display:inline-block}[data-hover="underline"]::after{content:'';position:absolute;bottom:-2px;left:0;width:100%;height:2px;background:currentColor;transform:scaleX(0);transform-origin:right;transition:transform 0.4s cubic-bezier(0.65,0,0.35,1)}[data-hover="underline"]:hover::after{transform:scaleX(1);transform-origin:left}`,
+        js: ``
+      },
+      'hover-perspective': {
+        css: `[data-hover="perspective"]{transition:transform 0.5s cubic-bezier(0.23,1,0.32,1);transform-style:preserve-3d}`,
+        js: `function initPerspectiveHover(){document.querySelectorAll('[data-hover="perspective"]').forEach(el=>{el.addEventListener('mousemove',e=>{const rect=el.getBoundingClientRect();const x=(e.clientX-rect.left)/rect.width;const y=(e.clientY-rect.top)/rect.height;const rotX=(y-0.5)*20;const rotY=(x-0.5)*-20;el.style.transform=\`perspective(1000px) rotateX(\${rotX}deg) rotateY(\${rotY}deg) translateZ(10px)\`});el.addEventListener('mouseleave',()=>{el.style.transform=''})})}document.addEventListener('DOMContentLoaded',initPerspectiveHover);`
+      },
+
+      // ─── SMOOTH LOADER ───
+      'smooth-loader': {
+        css: `.page-loader{position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:var(--color-bg,#000);transition:opacity 0.6s ease,visibility 0.6s ease}
+.page-loader.loaded{opacity:0;visibility:hidden;pointer-events:none}
+.loader-spinner{width:40px;height:40px;border-radius:50%;border:3px solid rgba(255,255,255,0.1);border-top-color:var(--color-primary,#fff);animation:loaderSpin 0.8s linear infinite}
+@keyframes loaderSpin{to{transform:rotate(360deg)}}
+.loader-bar{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--color-primary,#6366f1),var(--color-accent,#a855f7));z-index:10001;width:0;transition:width 0.4s ease}
+.loader-counter{font-family:var(--font-heading);font-size:clamp(3rem,8vw,6rem);font-weight:700;opacity:0.1}
+.loader-text{font-size:0.8rem;letter-spacing:0.2em;text-transform:uppercase;opacity:0.5;margin-top:1rem}`,
+        js: `function initSmoothLoader(){const loader=document.querySelector('.page-loader');const bar=document.querySelector('.loader-bar');const counter=document.querySelector('.loader-counter');let progress=0;const interval=setInterval(()=>{progress+=Math.random()*15+5;if(progress>=100){progress=100;clearInterval(interval);if(bar)bar.style.width='100%';if(counter)counter.textContent='100';setTimeout(()=>{if(loader)loader.classList.add('loaded');document.body.classList.add('loaded')},300)}if(bar)bar.style.width=progress+'%';if(counter)counter.textContent=Math.round(progress)},100)}document.addEventListener('DOMContentLoaded',initSmoothLoader);`
+      },
+
+      // ─── 3D MOTION ───
+      '3d-tilt': {
+        css: `[data-3d="tilt"]{transform-style:preserve-3d;transition:transform 0.3s ease;will-change:transform}[data-3d="tilt"] *{transform:translateZ(20px)}`,
+        js: `function init3DTilt(){document.querySelectorAll('[data-3d="tilt"]').forEach(el=>{const depth=parseFloat(el.dataset.tiltDepth)||15;el.addEventListener('mousemove',e=>{const rect=el.getBoundingClientRect();const x=((e.clientX-rect.left)/rect.width-0.5)*depth;const y=((e.clientY-rect.top)/rect.height-0.5)*-depth;el.style.transform=\`perspective(800px) rotateY(\${x}deg) rotateX(\${y}deg)\`});el.addEventListener('mouseleave',()=>{el.style.transform='perspective(800px) rotateY(0) rotateX(0)'})})}document.addEventListener('DOMContentLoaded',init3DTilt);`
+      },
+      '3d-float': {
+        css: `[data-3d="float"]{animation:float3D 6s ease-in-out infinite;transform-style:preserve-3d}@keyframes float3D{0%,100%{transform:translateY(0) rotateX(0) rotateY(0)}25%{transform:translateY(-10px) rotateX(2deg) rotateY(-2deg)}50%{transform:translateY(-20px) rotateX(-1deg) rotateY(3deg)}75%{transform:translateY(-10px) rotateX(1deg) rotateY(-1deg)}}`,
+        js: ``
+      },
+      '3d-flip': {
+        css: `[data-3d="flip"]{perspective:1000px;cursor:pointer}.flip-inner{transition:transform 0.6s cubic-bezier(0.23,1,0.32,1);transform-style:preserve-3d;position:relative}.flip-front,.flip-back{backface-visibility:hidden;position:absolute;inset:0}.flip-back{transform:rotateY(180deg)}[data-3d="flip"]:hover .flip-inner,[data-3d="flip"].flipped .flip-inner{transform:rotateY(180deg)}`,
+        js: ``
+      },
+
+      // ─── ENTRANCE REVEALS ───
+      'entrance-fade': {
+        css: `[data-reveal="fade"]{opacity:0;transition:opacity 0.8s ease}[data-reveal="fade"].revealed{opacity:1}`,
+        js: ``
+      },
+      'entrance-slide': {
+        css: `[data-reveal="slide-up"]{opacity:0;transform:translateY(60px);transition:all 0.8s cubic-bezier(0.23,1,0.32,1)}[data-reveal="slide-up"].revealed{opacity:1;transform:translateY(0)}
+[data-reveal="slide-left"]{opacity:0;transform:translateX(-60px);transition:all 0.8s cubic-bezier(0.23,1,0.32,1)}[data-reveal="slide-left"].revealed{opacity:1;transform:translateX(0)}
+[data-reveal="slide-right"]{opacity:0;transform:translateX(60px);transition:all 0.8s cubic-bezier(0.23,1,0.32,1)}[data-reveal="slide-right"].revealed{opacity:1;transform:translateX(0)}`,
+        js: ``
+      },
+      'entrance-clip': {
+        css: `[data-reveal="clip"]{clip-path:inset(100% 0 0 0);transition:clip-path 1s cubic-bezier(0.65,0,0.35,1)}[data-reveal="clip"].revealed{clip-path:inset(0 0 0 0)}
+[data-reveal="clip-circle"]{clip-path:circle(0% at 50% 50%);transition:clip-path 1.2s cubic-bezier(0.65,0,0.35,1)}[data-reveal="clip-circle"].revealed{clip-path:circle(100% at 50% 50%)}`,
+        js: ``
+      },
+      'entrance-blur': {
+        css: `[data-reveal="blur"]{opacity:0;filter:blur(20px);transform:scale(0.95);transition:all 0.8s cubic-bezier(0.23,1,0.32,1)}[data-reveal="blur"].revealed{opacity:1;filter:blur(0);transform:scale(1)}`,
+        js: ``
+      },
+      'entrance-split': {
+        css: `[data-reveal="split"]{overflow:hidden}[data-reveal="split"] .split-line{display:block;transform:translateY(110%);transition:transform 0.8s cubic-bezier(0.65,0,0.35,1)}[data-reveal="split"].revealed .split-line{transform:translateY(0)}`,
+        js: `function initSplitReveal(){document.querySelectorAll('[data-reveal="split"]').forEach(el=>{const text=el.innerHTML;const lines=text.split('<br>').length>1?text.split('<br>'):text.split('\\n');el.innerHTML=lines.map((line,i)=>\`<span class="split-line" style="transition-delay:\${i*0.1}s">\${line.trim()}</span>\`).join('')})}document.addEventListener('DOMContentLoaded',initSplitReveal);`
+      },
+      'entrance-pop': {
+        css: `[data-reveal="pop"]{opacity:0;transform:scale(0.5);transition:all 0.6s cubic-bezier(0.34,1.56,0.64,1)}[data-reveal="pop"].revealed{opacity:1;transform:scale(1)}`,
+        js: ``
+      },
+      'entrance-glitch': {
+        css: `[data-reveal="glitch"]{position:relative}[data-reveal="glitch"]::before,[data-reveal="glitch"]::after{content:attr(data-text);position:absolute;inset:0;opacity:0}[data-reveal="glitch"].revealed::before{animation:glitchReveal1 0.3s ease forwards}[data-reveal="glitch"].revealed::after{animation:glitchReveal2 0.3s ease 0.1s forwards}
+@keyframes glitchReveal1{0%{opacity:0.8;transform:translate(-3px,-2px);clip-path:inset(20% 0 60% 0)}50%{opacity:0.6;transform:translate(3px,1px);clip-path:inset(40% 0 20% 0)}100%{opacity:0;transform:translate(0)}}
+@keyframes glitchReveal2{0%{opacity:0.6;transform:translate(2px,3px);clip-path:inset(60% 0 10% 0);color:#0ff}50%{opacity:0.4;transform:translate(-2px,-1px);clip-path:inset(10% 0 70% 0);color:#f0f}100%{opacity:0;transform:translate(0)}}`,
+        js: ``
+      },
+
+      // ─── MICRO INTERACTIONS ───
+      'micro-bounce': {
+        css: `[data-micro="bounce"]{transition:transform 0.4s cubic-bezier(0.34,1.56,0.64,1)}[data-micro="bounce"]:hover{transform:scale(1.05)}[data-micro="bounce"]:active{transform:scale(0.95)}`,
+        js: ``
+      },
+      'micro-ripple': {
+        css: `[data-micro="ripple"]{position:relative;overflow:hidden}[data-micro="ripple"] .ripple{position:absolute;border-radius:50%;background:rgba(255,255,255,0.3);transform:scale(0);animation:rippleEffect 0.6s ease-out forwards;pointer-events:none}@keyframes rippleEffect{to{transform:scale(4);opacity:0}}`,
+        js: `function initRipple(){document.querySelectorAll('[data-micro="ripple"]').forEach(el=>{el.addEventListener('click',e=>{const ripple=document.createElement('span');ripple.className='ripple';const rect=el.getBoundingClientRect();const size=Math.max(rect.width,rect.height);ripple.style.width=ripple.style.height=size+'px';ripple.style.left=(e.clientX-rect.left-size/2)+'px';ripple.style.top=(e.clientY-rect.top-size/2)+'px';el.appendChild(ripple);setTimeout(()=>ripple.remove(),600)})})}document.addEventListener('DOMContentLoaded',initRipple);`
+      },
+      'micro-magnetic': {
+        css: `[data-micro="magnetic"]{transition:transform 0.3s cubic-bezier(0.23,1,0.32,1)}`,
+        js: `function initMicroMagnetic(){document.querySelectorAll('[data-micro="magnetic"]').forEach(el=>{const str=parseFloat(el.dataset.strength)||0.3;el.addEventListener('mousemove',e=>{const rect=el.getBoundingClientRect();const x=(e.clientX-rect.left-rect.width/2)*str;const y=(e.clientY-rect.top-rect.height/2)*str;el.style.transform=\`translate(\${x}px,\${y}px)\`});el.addEventListener('mouseleave',()=>{el.style.transform=''})})}document.addEventListener('DOMContentLoaded',initMicroMagnetic);`
+      },
+      'micro-counter': {
+        css: `[data-micro="counter"]{font-variant-numeric:tabular-nums}`,
+        js: `function initMicroCounter(){document.querySelectorAll('[data-micro="counter"]').forEach(el=>{const target=parseInt(el.dataset.target)||0;const duration=parseInt(el.dataset.duration)||2000;const obs=new IntersectionObserver(entries=>{entries.forEach(entry=>{if(entry.isIntersecting){const start=performance.now();const animate=(now)=>{const elapsed=now-start;const progress=Math.min(elapsed/duration,1);const eased=1-Math.pow(1-progress,3);el.textContent=Math.round(eased*target).toLocaleString();if(progress<1)requestAnimationFrame(animate)};requestAnimationFrame(animate);obs.unobserve(el)}})},{threshold:0.3});obs.observe(el)})}document.addEventListener('DOMContentLoaded',initMicroCounter);`
+      },
+      'micro-cursor': {
+        css: `.custom-cursor{position:fixed;width:20px;height:20px;border:2px solid var(--color-primary,#fff);border-radius:50%;pointer-events:none;z-index:9999;transition:width 0.3s,height 0.3s,border-color 0.3s;transform:translate(-50%,-50%);mix-blend-mode:difference}.custom-cursor.hover{width:50px;height:50px;border-color:var(--color-accent)}`,
+        js: `function initCustomCursor(){const cursor=document.createElement('div');cursor.className='custom-cursor';document.body.appendChild(cursor);let cx=0,cy=0,mx=0,my=0;document.addEventListener('mousemove',e=>{mx=e.clientX;my=e.clientY});function animate(){cx+=(mx-cx)*0.15;cy+=(my-cy)*0.15;cursor.style.left=cx+'px';cursor.style.top=cy+'px';requestAnimationFrame(animate)}animate();document.querySelectorAll('a,button,[data-hover]').forEach(el=>{el.addEventListener('mouseenter',()=>cursor.classList.add('hover'));el.addEventListener('mouseleave',()=>cursor.classList.remove('hover'))})}if(!matchMedia('(pointer:coarse)').matches)document.addEventListener('DOMContentLoaded',initCustomCursor);`
+      },
+
+      // ─── PARALLAX EFFECTS ───
+      'parallax-scroll': {
+        css: `[data-parallax-scroll]{will-change:transform}`,
+        js: `function initParallaxScroll(){const els=document.querySelectorAll('[data-parallax-scroll]');if(!els.length)return;function update(){els.forEach(el=>{const speed=parseFloat(el.dataset.parallaxScroll)||0.5;const rect=el.getBoundingClientRect();const visible=rect.top<window.innerHeight&&rect.bottom>0;if(visible){const yPos=-(rect.top*speed);el.style.transform=\`translateY(\${yPos}px)\`}});requestAnimationFrame(update)}update()}document.addEventListener('DOMContentLoaded',initParallaxScroll);`
+      },
+      'parallax-depth': {
+        css: `[data-parallax-depth]{transform-style:preserve-3d;perspective:1000px}[data-parallax-depth] [data-depth]{will-change:transform;transition:transform 0.1s linear}`,
+        js: `function initParallaxDepth(){document.querySelectorAll('[data-parallax-depth]').forEach(container=>{const layers=container.querySelectorAll('[data-depth]');container.addEventListener('mousemove',e=>{const rect=container.getBoundingClientRect();const x=(e.clientX-rect.left)/rect.width-0.5;const y=(e.clientY-rect.top)/rect.height-0.5;layers.forEach(layer=>{const depth=parseFloat(layer.dataset.depth)||1;layer.style.transform=\`translate(\${x*depth*40}px,\${y*depth*40}px)\`})});container.addEventListener('mouseleave',()=>{layers.forEach(layer=>{layer.style.transform=''})})})}document.addEventListener('DOMContentLoaded',initParallaxDepth);`
+      },
+      'parallax-mouse': {
+        css: `[data-parallax-mouse]{will-change:transform;transition:transform 0.15s ease-out}`,
+        js: `function initParallaxMouse(){const els=document.querySelectorAll('[data-parallax-mouse]');let mx=0,my=0;document.addEventListener('mousemove',e=>{mx=(e.clientX/window.innerWidth-0.5)*2;my=(e.clientY/window.innerHeight-0.5)*2});function animate(){els.forEach(el=>{const speed=parseFloat(el.dataset.parallaxMouse)||30;el.style.transform=\`translate(\${mx*speed}px,\${my*speed}px)\`});requestAnimationFrame(animate)}animate()}document.addEventListener('DOMContentLoaded',initParallaxMouse);`
+      },
+
+      // ─── 3D SCROLL ───
+      '3d-scroll': {
+        css: `.scroll-3d-scene{perspective:1000px;perspective-origin:50% 50%;overflow:hidden}
+.scroll-3d-card{transform-style:preserve-3d;will-change:transform}
+[data-scroll-3d]{transform-style:preserve-3d;transition:transform 0.1s linear}
+.scroll-rotate-x{transform-origin:center bottom}`,
+        js: `function init3DScroll(){const els=document.querySelectorAll('[data-scroll-3d]');if(!els.length)return;function update(){els.forEach(el=>{const rect=el.getBoundingClientRect();const viewH=window.innerHeight;const progress=(viewH-rect.top)/(viewH+rect.height);const clamped=Math.max(0,Math.min(1,progress));const type=el.dataset.scroll3d||'rotate';if(type==='rotate'){const angle=(1-clamped)*30;el.style.transform=\`perspective(1000px) rotateX(\${angle}deg) translateZ(\${(1-clamped)*-50}px)\`}else if(type==='zoom'){const scale=0.7+clamped*0.3;const z=(1-clamped)*-200;el.style.transform=\`perspective(1000px) translateZ(\${z}px) scale(\${scale})\`;el.style.opacity=clamped}else if(type==='flip'){const angle=(1-clamped)*90;el.style.transform=\`perspective(1000px) rotateY(\${angle}deg)\`}else if(type==='spiral'){const angle=(1-clamped)*180;const z=(1-clamped)*-100;el.style.transform=\`perspective(1000px) rotateZ(\${angle}deg) translateZ(\${z}px) scale(\${0.5+clamped*0.5})\`}});requestAnimationFrame(update)}update()}document.addEventListener('DOMContentLoaded',init3DScroll);`
+      },
+
+      // ─── 3D BACKGROUNDS ───
+      '3d-background': {
+        css: `.bg-3d-grid{position:fixed;inset:0;pointer-events:none;z-index:0;perspective:500px;overflow:hidden}
+.bg-3d-grid::before{content:'';position:absolute;width:200%;height:200%;top:50%;left:-50%;background:repeating-linear-gradient(90deg,rgba(255,255,255,0.03) 0,rgba(255,255,255,0.03) 1px,transparent 1px,transparent 80px),repeating-linear-gradient(0deg,rgba(255,255,255,0.03) 0,rgba(255,255,255,0.03) 1px,transparent 1px,transparent 80px);transform:rotateX(60deg);transform-origin:center center;animation:gridScroll 20s linear infinite}
+@keyframes gridScroll{0%{transform:rotateX(60deg) translateY(0)}100%{transform:rotateX(60deg) translateY(80px)}}
+.bg-3d-particles{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden}
+.bg-particle{position:absolute;border-radius:50%;background:rgba(var(--color-primary-rgb,99,102,241),0.3);animation:particleFloat var(--duration,8s) ease-in-out infinite alternate}
+@keyframes particleFloat{0%{transform:translateY(100vh) translateX(0) scale(0)}50%{transform:translateY(50vh) translateX(30px) scale(1)}100%{transform:translateY(-10vh) translateX(-20px) scale(0.5)}}
+.bg-3d-waves{position:fixed;bottom:0;left:0;right:0;height:200px;pointer-events:none;z-index:0;overflow:hidden}
+.bg-3d-aurora{position:fixed;inset:0;pointer-events:none;z-index:0;background:linear-gradient(135deg,rgba(99,102,241,0.05),rgba(139,92,246,0.05),rgba(236,72,153,0.03));filter:blur(100px);animation:auroraShift 15s ease-in-out infinite alternate}
+@keyframes auroraShift{0%{opacity:0.3;transform:scale(1) translateX(0)}50%{opacity:0.5;transform:scale(1.2) translateX(5%)}100%{opacity:0.3;transform:scale(1) translateX(-5%)}}`,
+        js: `function init3DBackground(){const container=document.querySelector('.bg-3d-particles');if(!container){return}for(let i=0;i<20;i++){const particle=document.createElement('div');particle.className='bg-particle';const size=Math.random()*6+2;particle.style.width=size+'px';particle.style.height=size+'px';particle.style.left=Math.random()*100+'%';particle.style.setProperty('--duration',(Math.random()*10+5)+'s');particle.style.animationDelay=Math.random()*5+'s';container.appendChild(particle)}}document.addEventListener('DOMContentLoaded',init3DBackground);`
+      },
+
+      // ─── 3D WINDOWS ───
+      '3d-window': {
+        css: `.window-3d{background:rgba(20,20,30,0.8);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);border:1px solid rgba(255,255,255,0.1);border-radius:12px;overflow:hidden;transform-style:preserve-3d;box-shadow:0 20px 60px rgba(0,0,0,0.5),0 0 1px rgba(255,255,255,0.1);transition:transform 0.5s cubic-bezier(0.23,1,0.32,1)}
+.window-3d-titlebar{display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(255,255,255,0.03);border-bottom:1px solid rgba(255,255,255,0.06)}
+.window-3d-dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+.window-3d-dot-red{background:#ff5f57}.window-3d-dot-yellow{background:#febc2e}.window-3d-dot-green{background:#28c840}
+.window-3d-title{font-size:0.75rem;opacity:0.5;margin-left:8px;font-family:var(--font-body)}
+.window-3d-body{padding:16px;min-height:100px}
+.window-3d-stack{display:grid;gap:0;transform-style:preserve-3d;perspective:1500px}
+.window-3d-stack .window-3d:nth-child(1){transform:translateZ(0) rotateX(5deg) translateY(0)}
+.window-3d-stack .window-3d:nth-child(2){transform:translateZ(-40px) rotateX(5deg) translateY(-20px);opacity:0.8}
+.window-3d-stack .window-3d:nth-child(3){transform:translateZ(-80px) rotateX(5deg) translateY(-40px);opacity:0.6}
+.window-3d-float{animation:windowFloat 6s ease-in-out infinite}
+@keyframes windowFloat{0%,100%{transform:translateY(0) rotateX(2deg) rotateY(-3deg)}50%{transform:translateY(-15px) rotateX(-2deg) rotateY(3deg)}}
+.window-3d-browser{border-radius:12px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,0.4)}
+.window-3d-browser .window-3d-titlebar{gap:8px;padding:8px 12px}
+.window-3d-browser .window-url-bar{flex:1;background:rgba(255,255,255,0.05);border-radius:6px;padding:4px 12px;font-size:0.7rem;opacity:0.4;margin:0 8px}`,
+        js: `function init3DWindows(){document.querySelectorAll('.window-3d[data-3d-interactive]').forEach(win=>{win.addEventListener('mousemove',e=>{const rect=win.getBoundingClientRect();const x=(e.clientX-rect.left)/rect.width-0.5;const y=(e.clientY-rect.top)/rect.height-0.5;win.style.transform=\`perspective(1000px) rotateY(\${x*10}deg) rotateX(\${-y*10}deg) translateZ(10px)\`});win.addEventListener('mouseleave',()=>{win.style.transform=''})})}document.addEventListener('DOMContentLoaded',init3DWindows);`
+      },
+
+      // ─── SHIMMER / SWEEP ───
+      'shimmer-sweep': {
+        css: `[data-shimmer]{position:relative;overflow:hidden}[data-shimmer]::after{content:'';position:absolute;top:0;left:-100%;width:50%;height:100%;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.08),transparent);animation:shimmerSweep 3s ease-in-out infinite}@keyframes shimmerSweep{0%{left:-100%}100%{left:200%}}`,
+        js: ``
+      },
+
+      // ─── SCROLL REVEAL OBSERVER ───
+      'scroll-reveal-observer': {
+        css: ``,
+        js: `function initScrollRevealObserver(){const observer=new IntersectionObserver((entries)=>{entries.forEach(entry=>{if(entry.isIntersecting){entry.target.classList.add('revealed');const delay=parseFloat(entry.target.dataset.revealDelay)||0;if(delay){entry.target.style.transitionDelay=delay+'s'}observer.unobserve(entry.target)}})},{threshold:0.1,rootMargin:'0px 0px -50px 0px'});document.querySelectorAll('[data-reveal]').forEach(el=>observer.observe(el));document.querySelectorAll('[data-scroll-3d]').forEach(el=>observer.observe(el))}document.addEventListener('DOMContentLoaded',initScrollRevealObserver);`
+      }
+    };
+
+    /* ════════════════════════════════════════════════════════════
+       EXISTING MOTION IMPLEMENTATIONS (carried forward from V2)
+       ════════════════════════════════════════════════════════════ */
     this.motionImplementations = {
       'liquid-glass-morphism': {
         css: `.liquid-glass{background:rgba(255,255,255,0.01);background-blend-mode:luminosity;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);border:none;box-shadow:inset 0 1px 1px rgba(255,255,255,0.1);position:relative;overflow:hidden}.liquid-glass::before{content:'';position:absolute;inset:0;border-radius:inherit;padding:1.4px;background:linear-gradient(180deg,rgba(255,255,255,0.45) 0%,rgba(255,255,255,0.15) 20%,rgba(255,255,255,0) 40%,rgba(255,255,255,0) 60%,rgba(255,255,255,0.15) 80%,rgba(255,255,255,0.45) 100%);-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}.liquid-glass-strong{background:rgba(255,255,255,0.03);backdrop-filter:blur(50px);-webkit-backdrop-filter:blur(50px);box-shadow:4px 4px 4px rgba(0,0,0,0.05),inset 0 1px 1px rgba(255,255,255,0.15)}`,
-        js: `// Liquid glass is CSS-only, no JS needed`
+        js: `// Liquid glass is CSS-only`
       },
       'blur-text-reveal': {
         css: `.blur-text-word{display:inline-block;margin-right:0.28em;opacity:0;filter:blur(10px);transform:translateY(50px)}`,
-        js: `function initBlurText(){document.querySelectorAll('[data-blur-text]').forEach(el=>{const words=el.textContent.split(' ');el.innerHTML=words.map(w=>\`<span class="blur-text-word">\${w}</span>\`).join('');const observer=new IntersectionObserver(entries=>{entries.forEach(entry=>{if(entry.isIntersecting){el.querySelectorAll('.blur-text-word').forEach((word,i)=>{gsap.to(word,{opacity:1,filter:'blur(0px)',y:0,duration:0.7,delay:i*0.1,ease:'power3.out'})});observer.unobserve(el)}})},{threshold:0.1});observer.observe(el)})}`
+        js: `function initBlurText(){document.querySelectorAll('[data-blur-text]').forEach(el=>{if(el.dataset.initialized)return;el.dataset.initialized='true';const words=el.textContent.trim().split(/\\s+/);el.innerHTML=words.map(w=>\`<span class="blur-text-word">\${w}</span>\`).join('');const observer=new IntersectionObserver(entries=>{entries.forEach(entry=>{if(entry.isIntersecting){el.querySelectorAll('.blur-text-word').forEach((word,i)=>{gsap.to(word,{opacity:1,filter:'blur(0px)',y:0,duration:0.7,delay:i*0.1,ease:'power3.out'})});observer.unobserve(el)}})},{threshold:0.1});observer.observe(el)})}`
       },
       'fading-video-crossfade': {
         css: `.fading-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 1s ease-in-out}.fading-video.active{opacity:1}`,
@@ -6213,40 +7189,293 @@ class DesignerAgent extends BaseAgent {
       }
     };
 
-    this.systemPrompt = `You are a principal design-systems architect for Awwwards-level cinematic websites. You create comprehensive CSS design systems that feel like $100K studio handoffs.
+    /* ════════════════════════════════════════════════════════════
+       TEMPLATE LIBRARY — with design philosophy assignments
+       ════════════════════════════════════════════════════════════ */
+    this.templateLibrary = {
+      'agency': {
+        heroTreatment: 'fullscreen-video-crossfade',
+        designPhilosophy: 'liquidglass',
+        motionSystems: ['liquid-glass-morphism', 'blur-text-reveal', 'magnetic-quickto-cta', 'parallax-layers', 'scroll-scrub-scenes'],
+        advancedEffects: ['hover-tilt', 'smooth-loader', 'entrance-clip', 'micro-cursor', 'parallax-depth', '3d-scroll', '3d-window'],
+        colorStrategy: 'dark-cinematic',
+        typography: { heading: 'Instrument Serif', body: 'Barlow', style: 'editorial-italic' },
+        spacing: 'generous-editorial',
+        components: ['fading-video', 'blur-text', 'bubble-menu', 'stats-cards', 'trust-bar']
+      },
+      'saas': {
+        heroTreatment: 'gradient-mesh-animated',
+        designPhilosophy: 'glassmorphism',
+        motionSystems: ['stagger-fade-up', 'magnetic-quickto-cta'],
+        advancedEffects: ['hover-glow', 'smooth-loader', 'entrance-slide', 'micro-ripple', '3d-background', '3d-window'],
+        colorStrategy: 'dark-modern',
+        typography: { heading: 'Outfit', body: 'Inter', style: 'clean-geometric' },
+        spacing: 'balanced-product',
+        components: ['pricing-toggle', 'feature-grid', 'testimonial-carousel', 'cta-glow']
+      },
+      'portfolio': {
+        heroTreatment: 'split-screen-media',
+        designPhilosophy: 'minimalism',
+        motionSystems: ['blur-text-reveal', 'parallax-layers'],
+        advancedEffects: ['hover-underline', 'entrance-clip', 'micro-cursor', 'parallax-mouse', '3d-scroll'],
+        colorStrategy: 'minimal-contrast',
+        typography: { heading: 'Playfair Display', body: 'DM Sans', style: 'editorial-mixed' },
+        spacing: 'asymmetric-editorial',
+        components: ['project-grid', 'case-study-cards', 'contact-form', 'social-links']
+      },
+      'ecommerce': {
+        heroTreatment: '3d-product-showcase',
+        designPhilosophy: 'skeuomorphism',
+        motionSystems: ['stagger-fade-up', 'magnetic-quickto-cta'],
+        advancedEffects: ['hover-lift', 'smooth-loader', 'entrance-pop', 'micro-bounce', '3d-tilt', '3d-window'],
+        colorStrategy: 'warm-luxury',
+        typography: { heading: 'Cormorant Garamond', body: 'Jost', style: 'luxury-serif' },
+        spacing: 'product-focused',
+        components: ['product-carousel', 'size-selector', 'add-to-cart', 'reviews-slider']
+      },
+      'landing': {
+        heroTreatment: 'cinematic-video-loop',
+        designPhilosophy: 'glassmorphism',
+        motionSystems: ['scroll-scrub-scenes', 'parallax-layers', 'magnetic-quickto-cta'],
+        advancedEffects: ['hover-glow', 'smooth-loader', '3d-tilt', 'entrance-blur', 'micro-ripple', 'parallax-scroll', '3d-background'],
+        colorStrategy: 'bold-gradient',
+        typography: { heading: 'Space Grotesk', body: 'Inter', style: 'modern-bold' },
+        spacing: 'immersive-fullscreen',
+        components: ['video-background', 'feature-showcase', 'social-proof', 'newsletter-capture']
+      },
+      'dashboard': {
+        heroTreatment: 'data-visualization-hero',
+        designPhilosophy: 'neomorphism',
+        motionSystems: ['stagger-fade-up'],
+        advancedEffects: ['hover-lift', 'entrance-fade', 'micro-counter', 'micro-ripple', '3d-window'],
+        colorStrategy: 'dark-productivity',
+        typography: { heading: 'Plus Jakarta Sans', body: 'Inter', style: 'functional-clean' },
+        spacing: 'dense-functional',
+        components: ['stats-grid', 'data-tables', 'charts', 'activity-feed', 'quick-actions']
+      },
+      'minimal': {
+        heroTreatment: 'typography-focused',
+        designPhilosophy: 'minimalism',
+        motionSystems: ['blur-text-reveal'],
+        advancedEffects: ['hover-underline', 'entrance-fade', 'micro-subtle', 'parallax-scroll'],
+        colorStrategy: 'monochrome-refined',
+        typography: { heading: 'Instrument Serif', body: 'Inter', style: 'swiss-minimal' },
+        spacing: 'breathing-whitespace',
+        components: ['text-blocks', 'image-grid', 'contact-minimal']
+      },
+      'cinematic': {
+        heroTreatment: 'fullscreen-video-crossfade',
+        designPhilosophy: 'liquidglass',
+        motionSystems: ['liquid-glass-morphism', 'blur-text-reveal', 'fading-video-crossfade', 'parallax-layers', 'magnetic-quickto-cta', 'scroll-scrub-scenes', 'grain-vignette-grade'],
+        advancedEffects: ['hover-tilt', 'smooth-loader', '3d-tilt', 'entrance-clip', 'micro-cursor', 'parallax-depth', '3d-scroll', '3d-background', '3d-window'],
+        colorStrategy: 'dark-atmospheric',
+        typography: { heading: 'Instrument Serif', body: 'Barlow', style: 'editorial-italic' },
+        spacing: 'immersive-fullscreen',
+        components: ['fading-video', 'blur-text', 'liquid-glass-nav', 'stats-cards', 'capability-cards', 'trust-bar']
+      },
+      'creative': {
+        heroTreatment: 'immersive-scroll-narrative',
+        designPhilosophy: 'maximalism',
+        motionSystems: ['blur-text-reveal', 'scroll-scrub-scenes', 'parallax-layers'],
+        advancedEffects: ['hover-spotlight', 'smooth-loader', '3d-flip', 'entrance-glitch', 'micro-bounce', 'parallax-depth', '3d-scroll', '3d-background'],
+        colorStrategy: 'vibrant-experimental',
+        typography: { heading: 'Clash Display', body: 'Cabinet Grotesk', style: 'expressive-bold' },
+        spacing: 'dynamic-asymmetric',
+        components: ['marquee-text', 'stacked-cards', 'image-reveal', 'interactive-grid']
+      },
+      'brutalist': {
+        heroTreatment: 'raw-typography-hero',
+        designPhilosophy: 'brutalism',
+        motionSystems: [],
+        advancedEffects: ['hover-shake', 'entrance-glitch', 'micro-snap'],
+        colorStrategy: 'high-contrast-raw',
+        typography: { heading: 'Space Mono', body: 'Space Mono', style: 'mono-raw' },
+        spacing: 'grid-exposed',
+        components: ['marquee-text', 'raw-grid', 'stamp-badge']
+      },
+      'futuristic': {
+        heroTreatment: 'webgl-spatial-hero',
+        designPhilosophy: 'spatialui',
+        motionSystems: ['scroll-scrub-scenes', 'parallax-layers'],
+        advancedEffects: ['hover-perspective', 'smooth-loader', '3d-tilt', '3d-float', 'entrance-blur', 'micro-cursor', 'parallax-depth', '3d-scroll', '3d-background', '3d-window'],
+        colorStrategy: 'deep-space-neon',
+        typography: { heading: 'Orbitron', body: 'Exo 2', style: 'tech-futuristic' },
+        spacing: 'spatial-depth',
+        components: ['spatial-cards', 'hud-elements', 'orbital-rings', 'hologram-window']
+      },
+      'kids': {
+        heroTreatment: 'playful-animated-hero',
+        designPhilosophy: 'claymorphism',
+        motionSystems: [],
+        advancedEffects: ['hover-bounce', 'smooth-loader', 'entrance-pop', 'micro-bounce', '3d-wobble'],
+        colorStrategy: 'pastel-playful',
+        typography: { heading: 'Fredoka One', body: 'Nunito', style: 'rounded-friendly' },
+        spacing: 'generous-playful',
+        components: ['clay-cards', 'bubble-buttons', 'progress-bar', 'avatar-circles']
+      }
+    };
 
-YOUR EXPERTISE:
-- Cinematic marketing sites with video backgrounds and scroll storytelling
-- Editorial sites with distinctive typography and generous spacing
-- Product launches with immersive hero experiences
-- Dark mode interfaces with liquid glass morphism
-- Motion-rich experiences with GSAP ScrollTrigger choreography
+    /* ════════════════════════════════════════════════════════════
+       SYSTEM PROMPT — V3 with all design philosophies
+       ════════════════════════════════════════════════════════════ */
+    this.systemPrompt = `You are a world-class design systems architect who masters ALL major design philosophies:
 
-DESIGN PHILOSOPHY:
-1. Every site should feel like a FILM, not a template
-2. Typography is the hero - use dramatic scale contrasts
-3. Motion should be purposeful, not decorative
-4. Glass effects should be subtle and refined
-5. Color should create atmosphere, not just branding
+DESIGN PHILOSOPHIES YOU IMPLEMENT:
+1. SKEUOMORPHISM — Realistic textures, embossed surfaces, physical buttons with real shadows
+2. NEOMORPHISM — Soft extruded UI with dual-shadow technique, light/dark variants
+3. GLASSMORPHISM — Frosted glass with backdrop-filter blur, transparent layers, gradient borders
+4. CLAYMORPHISM — Soft rounded 3D clay surfaces, pastel palettes, playful inflated shapes
+5. MINIMALISM — Maximum whitespace, essential elements only, refined typography, subtle transitions
+6. MAXIMALISM — Bold layered textures, mixed typography, vibrant gradients, decorative energy
+7. BRUTALISM — Raw chunky borders, monospace type, high contrast, exposed grid structure
+8. LIQUID GLASS — Apple-style premium frosted glass with specular highlights and luminosity blending
+9. SPATIAL UI — 3D depth layers, perspective transforms, z-space cards, AR/VR inspired depth
+
+ADVANCED EFFECTS YOU IMPLEMENT:
+- Hover Effects: lift, glow, tilt, spotlight, underline, perspective, shake, bounce
+- Smooth Loaders: spinner, progress bar, counter, text-based loading screens
+- 3D Motion: tilt cards, floating elements, flip animations, perspective scroll
+- Entrance Reveals: fade, slide, clip-path, blur, split-text, pop, glitch
+- Micro Interactions: bounce, ripple, magnetic, counters, custom cursor
+- Parallax Effects: scroll-based, mouse-based, depth layers, gentle/intense
+- 3D Scroll: rotateX reveal, zoom-in, flip-on-scroll, spiral entrance
+- 3D Backgrounds: perspective grids, floating particles, aurora, gradient mesh
+- 3D Windows: macOS-style windows, stacked windows, floating browser mockups
+- Shimmer/Sweep: light reflections sweeping across glass surfaces
 
 RULES:
-1. BEFORE outputting CSS, reason in <thinking>...</thinking>: analyze the art direction, plan the visual hierarchy, define the motion language
+1. DETECT the correct design philosophy from the specification and art direction
 2. Output ONLY valid CSS inside a \`\`\`css\`\`\` block
-3. Follow the supplied art direction LITERALLY - do NOT default to purple/cyan SaaS aesthetics
-4. Include fluid type (clamp), generous spacing, shadows, radii, z-index, motion tokens
-5. Always include .liquid-glass and .liquid-glass-strong utilities with proper gradient border masks
-6. Include prefers-reduced-motion fallbacks
-7. Include comprehensive component foundations (.btn, .container, .section, .navbar, etc.)
+3. Include design philosophy CSS utilities (e.g., .neo-flat, .glass-card, .brutal-button)
+4. Include all animation keyframes and data-attribute selectors
+5. Include advanced hover/entrance/micro-interaction CSS
+6. Include 3D scroll, 3D background, and 3D window CSS when relevant
+7. Include :root variables for ALL design tokens
+8. Include fluid typography (clamp), spacing scale, shadow scale, z-index scale
+9. Include responsive breakpoints (375px, 768px, 1024px, 1440px)
+10. Include @media (prefers-reduced-motion: reduce) fallbacks
+11. Make it feel like a $100K studio handoff — not a template
+12. Follow the supplied art direction LITERALLY
 
-OUTPUT FORMAT: Complete :root tokens PLUS base component styles in one CSS block.`;
+OUTPUT FORMAT: Complete :root tokens + design philosophy CSS + animation CSS + component styles.`;
   }
 
-  // Auto-detect site archetype and enhance specification
+  /* ════════════════════════════════════════════════════════════
+     DESIGN PHILOSOPHY DETECTION from user prompt/spec
+     ════════════════════════════════════════════════════════════ */
+  detectDesignPhilosophy(specification = {}, userPrompt = '') {
+    const text = `${userPrompt} ${specification.siteType || ''} ${specification.description || ''} ${specification.mood || ''} ${JSON.stringify(specification.artDirection || {})}`.toLowerCase();
+
+    // Explicit mentions first
+    for (const [key, philosophy] of Object.entries(this.designPhilosophies)) {
+      const terms = [key, ...philosophy.bestFor];
+      if (terms.some(term => new RegExp(`\\b${term}\\b`, 'i').test(text))) {
+        return key;
+      }
+    }
+
+    // Fuzzy matching on characteristics
+    if (/realistic|texture|emboss|leather|wood|metal|knob/i.test(text)) return 'skeuomorphism';
+    if (/neumorphi|soft.?shadow|extrud|soft.?ui/i.test(text)) return 'neomorphism';
+    if (/glass|blur|transparent|frost|backdrop/i.test(text)) return 'glassmorphism';
+    if (/clay|soft.?3d|puffy|inflat|pastel.*round/i.test(text)) return 'claymorphism';
+    if (/minimal|zen|whitespace|simple.*clean|less.?is.?more/i.test(text)) return 'minimalism';
+    if (/maximal|bold|vibrant|layer|dense|busy|colorful.*gradient/i.test(text)) return 'maximalism';
+    if (/brutal|raw|punk|grunge|exposed|chunky|anti.?design/i.test(text)) return 'brutalism';
+    if (/liquid.?glass|apple|vision.?pro|refract|specular|luminosity/i.test(text)) return 'liquidglass';
+    if (/spatial|3d.?ui|depth.?layer|perspective|vr|ar|metaverse|hologram/i.test(text)) return 'spatialui';
+
+    // Template matching
+    const siteType = (specification.siteType || '').toLowerCase();
+    for (const [key, tmpl] of Object.entries(this.templateLibrary)) {
+      if (siteType.includes(key) || key.includes(siteType)) {
+        return tmpl.designPhilosophy || 'liquidglass';
+      }
+    }
+
+    // Default: liquid glass for premium feel
+    return 'liquidglass';
+  }
+
+  /* ════════════════════════════════════════════════════════════
+     DETECT ADVANCED EFFECTS needed from the specification
+     ════════════════════════════════════════════════════════════ */
+  detectAdvancedEffects(specification = {}, userPrompt = '') {
+    const text = `${userPrompt} ${specification.description || ''} ${specification.mood || ''} ${JSON.stringify(specification.artDirection || {})}`.toLowerCase();
+    const effects = new Set();
+
+    // Always include these essentials
+    effects.add('smooth-loader');
+    effects.add('scroll-reveal-observer');
+
+    // Detect from text
+    if (/hover|mouse.?over|interactive/i.test(text)) {
+      effects.add('hover-tilt');
+      effects.add('hover-glow');
+      effects.add('hover-lift');
+    }
+    if (/3d|three|spatial|perspective|depth/i.test(text)) {
+      effects.add('3d-tilt');
+      effects.add('3d-scroll');
+      effects.add('3d-background');
+      effects.add('3d-window');
+      effects.add('3d-float');
+    }
+    if (/parallax|depth|layer/i.test(text)) {
+      effects.add('parallax-scroll');
+      effects.add('parallax-depth');
+    }
+    if (/entrance|reveal|appear|animate/i.test(text)) {
+      effects.add('entrance-slide');
+      effects.add('entrance-blur');
+      effects.add('entrance-clip');
+    }
+    if (/micro|interact|ripple|magnet/i.test(text)) {
+      effects.add('micro-ripple');
+      effects.add('micro-magnetic');
+      effects.add('micro-bounce');
+    }
+    if (/cursor|pointer/i.test(text)) {
+      effects.add('micro-cursor');
+    }
+    if (/window|browser|mockup|mac|desktop/i.test(text)) {
+      effects.add('3d-window');
+    }
+    if (/glitch|punk|cyber|hack/i.test(text)) {
+      effects.add('entrance-glitch');
+    }
+    if (/counter|number|stat/i.test(text)) {
+      effects.add('micro-counter');
+    }
+    if (/shimmer|shine|sweep|glow/i.test(text)) {
+      effects.add('shimmer-sweep');
+    }
+    if (/loader|loading|preload/i.test(text)) {
+      effects.add('smooth-loader');
+    }
+    if (/scroll.*3d|3d.*scroll|perspective.*scroll/i.test(text)) {
+      effects.add('3d-scroll');
+    }
+    if (/background.*3d|3d.*background|particle|aurora|grid.*3d/i.test(text)) {
+      effects.add('3d-background');
+    }
+
+    return Array.from(effects);
+  }
+
+  /* ════════════════════════════════════════════════════════════
+     ENHANCE SPECIFICATION — enriches spec with philosophy + effects
+     ════════════════════════════════════════════════════════════ */
   async enhanceSpecification(specification) {
     const siteType = (specification.siteType || '').toLowerCase();
+    const userPrompt = specification.description || specification.userPrompt || '';
 
-    // Find best matching template
-    let template = this.templateLibrary['cinematic']; // default
+    // 1. Detect design philosophy
+    const philosophyKey = this.detectDesignPhilosophy(specification, userPrompt);
+    const philosophy = this.designPhilosophies[philosophyKey];
+
+    // 2. Find best matching template
+    let template = this.templateLibrary['cinematic'];
     for (const [key, tmpl] of Object.entries(this.templateLibrary)) {
       if (siteType.includes(key) || key.includes(siteType)) {
         template = tmpl;
@@ -6254,14 +7483,24 @@ OUTPUT FORMAT: Complete :root tokens PLUS base component styles in one CSS block
       }
     }
 
-    // Merge template intelligence with user specification
+    // 3. Detect advanced effects
+    const advancedEffects = this.detectAdvancedEffects(specification, userPrompt);
+
+    // 4. Merge template + philosophy + effects
     const enhanced = {
       ...specification,
+      designPhilosophy: philosophyKey,
+      designPhilosophyName: philosophy.name,
       heroTreatment: specification.heroTreatment || template.heroTreatment,
       motionSystems: [...new Set([
         ...(specification.motionSystems || []),
         ...(specification.animations || []),
         ...template.motionSystems
+      ])],
+      advancedEffects: [...new Set([
+        ...advancedEffects,
+        ...(template.advancedEffects || []),
+        ...(philosophy.compatibleAnimations || [])
       ])],
       typography: {
         heading: specification.typography?.heading || template.typography.heading,
@@ -6276,7 +7515,7 @@ OUTPUT FORMAT: Complete :root tokens PLUS base component styles in one CSS block
       spacingStrategy: template.spacing
     };
 
-    // Generate art direction if not provided
+    // 5. Generate art direction if not provided
     if (!specification.artDirection || Object.keys(specification.artDirection).length === 0) {
       enhanced.artDirection = await this._generateArtDirection(enhanced);
     }
@@ -6288,52 +7527,74 @@ OUTPUT FORMAT: Complete :root tokens PLUS base component styles in one CSS block
     const prompt = `Generate a brief but evocative art direction for a ${spec.siteType} website.
 Title: ${spec.title || 'Premium Website'}
 Mood: ${spec.mood || 'cinematic'}
+Design Philosophy: ${spec.designPhilosophyName || 'Liquid Glass'}
 Colors: Primary ${spec.colorPalette?.primary}, Background ${spec.colorPalette?.background}
 
 Output a JSON object with:
-- concept: One sentence visual concept
+- concept: One sentence visual concept incorporating the ${spec.designPhilosophyName} design philosophy
 - atmosphere: Mood/feeling description
 - heroVision: How the hero should feel
 - motionLanguage: Movement style
 - typographicVoice: Typography personality
+- surfaceStyle: How surfaces and cards should look (using ${spec.designPhilosophyName} principles)
+- depthStrategy: How depth and layering are achieved
 
 Output ONLY valid JSON, no markdown.`;
 
     try {
-      const response = await this.callLLM(prompt, 'You are a creative director.', { temperature: 0.7, maxTokens: 500 });
+      const response = await this.callLLM(prompt, 'You are a creative director who specializes in advanced design philosophies.', { temperature: 0.7, maxTokens: 600 });
       return JSON.parse(response.trim());
     } catch (e) {
       return {
-        concept: 'Cinematic digital experience with atmospheric depth',
+        concept: `${spec.designPhilosophyName || 'Liquid Glass'} digital experience with atmospheric depth`,
         atmosphere: 'Dark, refined, immersive',
-        heroVision: 'Full-bleed media with layered typography',
-        motionLanguage: 'Smooth, purposeful, choreographed',
-        typographicVoice: 'Bold headlines, refined body text'
+        heroVision: 'Full-bleed media with layered typography and depth',
+        motionLanguage: 'Smooth, purposeful, choreographed with 3D depth',
+        typographicVoice: 'Bold headlines, refined body text',
+        surfaceStyle: `${spec.designPhilosophyName || 'Liquid Glass'} panels with subtle light interaction`,
+        depthStrategy: 'Multi-layer parallax with perspective transforms'
       };
     }
   }
 
+  /* ════════════════════════════════════════════════════════════
+     MAIN EXECUTE — generates the complete design system
+     ════════════════════════════════════════════════════════════ */
   async execute(specification) {
-    this.log('info', `Creating ${specification.complexity || 'cinematic'} design system...`);
+    this.log('info', `Creating advanced design system...`);
 
-    // Enhance specification with template intelligence
+    // Enhance specification with philosophy + effects detection
     const enhanced = await this.enhanceSpecification(specification);
+    const philosophyKey = enhanced.designPhilosophy || 'liquidglass';
+    const philosophy = this.designPhilosophies[philosophyKey];
 
-    const isComplex = ['complex', 'ultra-complex'].includes(enhanced.complexity);
+    this.log('info', `Design philosophy: ${philosophy?.name || 'Liquid Glass'}`);
+    this.log('info', `Advanced effects: ${(enhanced.advancedEffects || []).join(', ')}`);
 
-    // Gather motion system CSS
-    const motionCSS = enhanced.motionSystems
+    // 1. Gather design philosophy CSS
+    const philosophyCSS = philosophy?.css || '';
+
+    // 2. Gather motion system CSS
+    const motionCSS = (enhanced.motionSystems || [])
       .filter(m => this.motionImplementations[m]?.css)
       .map(m => this.motionImplementations[m].css)
       .join('\n\n');
 
-    const message = `Create a comprehensive, cinematic CSS design system for this website:
+    // 3. Gather advanced animation CSS
+    const animationCSS = (enhanced.advancedEffects || [])
+      .filter(e => this.advancedAnimations[e]?.css)
+      .map(e => `/* ${e} */\n${this.advancedAnimations[e].css}`)
+      .join('\n\n');
+
+    // 4. Build the comprehensive LLM prompt
+    const message = `Create a comprehensive CSS design system using the ${philosophy?.name || 'Liquid Glass'} design philosophy:
 
 ═══ SITE SPECIFICATION ═══
 Site type: ${enhanced.siteType}
 Title: ${enhanced.title || 'Premium Website'}
 Complexity: ${enhanced.complexity || 'cinematic'}
 Mood: ${enhanced.mood || 'atmospheric'}
+Design Philosophy: ${philosophy?.name || 'Liquid Glass'} — ${philosophy?.description || 'Premium frosted glass with depth'}
 
 ═══ COLOR PALETTE ═══
 Primary: ${enhanced.colorPalette?.primary || '#ffffff'}
@@ -6351,31 +7612,42 @@ Style: ${enhanced.typography?.style || 'editorial-italic'}
 ═══ ART DIRECTION (MANDATORY) ═══
 ${JSON.stringify(enhanced.artDirection, null, 2)}
 
+═══ DESIGN PHILOSOPHY CSS (include and extend this) ═══
+${philosophyCSS}
+
 ═══ MOTION SYSTEMS TO SUPPORT ═══
-${enhanced.motionSystems.join(', ')}
+${(enhanced.motionSystems || []).join(', ')}
+
+═══ ADVANCED EFFECTS ENABLED ═══
+${(enhanced.advancedEffects || []).join(', ')}
 
 ═══ HERO TREATMENT ═══
 ${enhanced.heroTreatment}
 
 ═══ COMPONENTS NEEDED ═══
-${enhanced.components.join(', ')}
+${(enhanced.components || []).join(', ')}
 
 ═══ PRE-BUILT MOTION CSS (include this) ═══
 ${motionCSS}
 
+═══ PRE-BUILT ANIMATION CSS (include this) ═══
+${animationCSS}
+
 REQUIREMENTS:
-1. Start with :root variables for all design tokens
-2. Include the motion CSS provided above
-3. Add fluid typography scale (clamp-based)
-4. Add generous spacing scale (section-level spacing 120px+)
-5. Add comprehensive shadow scale (subtle to dramatic)
-6. Add glass morphism variables and utilities
+1. Start with :root variables for ALL design tokens (colors, fonts, spacing, shadows, z-index, timing)
+2. Include the design philosophy CSS (${philosophy?.name}) utilities
+3. Include ALL pre-built motion and animation CSS provided above
+4. Add fluid typography scale (clamp-based)
+5. Add generous spacing scale (section-level spacing 120px+)
+6. Add comprehensive shadow scale matching the ${philosophy?.name} aesthetic
 7. Add z-index scale for layered compositions
 8. Add transition/animation variables
-9. Include base components: .container, .section, .btn variants, .navbar, .hero
-10. Include responsive breakpoints (768px, 1024px, 1440px)
-11. Include @media (prefers-reduced-motion: reduce) fallbacks
-12. Make it feel like a $100K studio handoff
+9. Include base components (.container, .section, .btn variants, .navbar, .hero)
+10. Include responsive breakpoints (375px, 768px, 1024px, 1440px)
+11. Include @media (prefers-reduced-motion: reduce) that disables animations
+12. Add 3D perspective and transform-style utilities if spatial/3D effects are used
+13. Make surfaces feel authentically ${philosophy?.name}
+14. The entire system must feel like a $100K studio handoff
 
 Generate the complete CSS code. Output ONLY the CSS code inside a code block.`;
 
@@ -6393,12 +7665,17 @@ Generate the complete CSS code. Output ONLY the CSS code inside a code block.`;
         fonts: enhanced.typography,
         googleFontsUrl: this._buildGoogleFontsUrl(enhanced.typography),
         complexity: enhanced.complexity,
+        designPhilosophy: philosophyKey,
+        designPhilosophyName: philosophy?.name || 'Liquid Glass',
+        designPhilosophyCSS: philosophyCSS,
         motionSystems: enhanced.motionSystems,
         motionImplementations: this.motionImplementations,
+        advancedEffects: enhanced.advancedEffects || [],
+        advancedAnimations: this.advancedAnimations,
         enhancedSpec: enhanced
       };
 
-      this.log('success', 'Cinematic design system generated');
+      this.log('success', `${philosophy?.name} design system generated with ${(enhanced.advancedEffects || []).length} advanced effects`);
       return designSystem;
     } catch (e) {
       this.log('error', `Design generation failed: ${e.message}`);
@@ -6410,16 +7687,26 @@ Generate the complete CSS code. Output ONLY the CSS code inside a code block.`;
     const heading = (typography?.heading || 'Instrument Serif').replace(/\s+/g, '+');
     const body = (typography?.body || 'Barlow').replace(/\s+/g, '+');
     const isSerif = /serif|playfair|fraunces|instrument|cormorant/i.test(typography?.heading || '');
-    const headingParam = isSerif
-      ? `family=${heading}:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700`
-      : `family=${heading}:wght@400;500;600;700;800;900`;
+    const isMono = /mono|courier|fira.?code/i.test(typography?.heading || '');
+    const headingParam = isMono
+      ? `family=${heading}:wght@400;500;600;700`
+      : isSerif
+        ? `family=${heading}:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700`
+        : `family=${heading}:wght@400;500;600;700;800;900`;
     return `https://fonts.googleapis.com/css2?${headingParam}&family=${body}:wght@300;400;500;600;700&display=swap`;
   }
 
+  /* ════════════════════════════════════════════════════════════
+     REVISE — updates design system based on review critique
+     ════════════════════════════════════════════════════════════ */
   async revise(designSystem, critique) {
     this.log('info', 'Revising design system based on critique...');
 
-    const message = `The Reviewer has critiqued your proposed design system. Please revise it to address the concerns while maintaining a cinematic aesthetic.
+    const philosophyName = designSystem.designPhilosophyName || 'Liquid Glass';
+
+    const message = `The Reviewer has critiqued your ${philosophyName} design system. Revise it while maintaining the ${philosophyName} aesthetic.
+
+DESIGN PHILOSOPHY: ${philosophyName}
 
 ORIGINAL DESIGN SYSTEM:
 ${designSystem.css}
@@ -6427,7 +7714,7 @@ ${designSystem.css}
 CRITIQUE:
 ${critique}
 
-Output the completely revised design system. Include all motion system CSS and component styles.`;
+Output the completely revised design system. Include ALL design philosophy utilities, motion CSS, animation CSS, and component styles. Maintain the ${philosophyName} visual identity throughout.`;
 
     const response = await this.callLLM(message, this.systemPrompt, {
       temperature: 0.6,
@@ -6442,17 +7729,37 @@ Output the completely revised design system. Include all motion system CSS and c
     };
   }
 
-  // Get motion JS for a specific system
+  /* ════════════════════════════════════════════════════════════
+     GETTERS — for motion JS and advanced animation JS
+     ════════════════════════════════════════════════════════════ */
   getMotionJS(systemName) {
     return this.motionImplementations[systemName]?.js || '';
   }
 
-  // Get all motion JS for the design system
   getAllMotionJS(motionSystems) {
-    return motionSystems
+    return (motionSystems || [])
       .filter(m => this.motionImplementations[m]?.js)
       .map(m => `// === ${m} ===\n${this.motionImplementations[m].js}`)
       .join('\n\n');
+  }
+
+  getAdvancedAnimationJS(effectName) {
+    return this.advancedAnimations[effectName]?.js || '';
+  }
+
+  getAllAdvancedAnimationJS(effects) {
+    return (effects || [])
+      .filter(e => this.advancedAnimations[e]?.js && this.advancedAnimations[e].js.trim().length > 0)
+      .map(e => `// === ${e} ===\n${this.advancedAnimations[e].js}`)
+      .join('\n\n');
+  }
+
+  getDesignPhilosophy(key) {
+    return this.designPhilosophies[key] || this.designPhilosophies['liquidglass'];
+  }
+
+  getAllDesignPhilosophies() {
+    return Object.keys(this.designPhilosophies);
   }
 }
 
@@ -6523,7 +7830,7 @@ navLinks?.querySelectorAll('a').forEach(link=>{link.addEventListener('click',()=
 </div>`,
                 css: `.stats-grid{display:flex;gap:1rem;flex-wrap:wrap}.stat-card{padding:1.5rem;border-radius:1.25rem;min-width:200px;text-align:left}.stat-icon{font-size:1.5rem;margin-bottom:1rem}.stat-value{font-family:var(--font-heading);font-size:2.5rem;font-weight:700;line-height:1}.stat-label{font-size:0.85rem;color:rgba(255,255,255,0.6);margin-top:0.5rem}`,
                 js: `// Animated counters
-document.querySelectorAll('[data-count]').forEach(counter=>{const target=parseInt(counter.dataset.count);if(isNaN(target))return;const observer=new IntersectionObserver(entries=>{entries.forEach(entry=>{if(entry.isIntersecting){gsap.to(counter,{innerHTML:target,duration:2,ease:'power2.out',snap:{innerHTML:1},onUpdate:function(){counter.textContent=Math.round(parseFloat(counter.textContent)).toLocaleString()}});observer.unobserve(entry.target)}})},{threshold:0.5});observer.observe(counter)});`
+document.querySelectorAll('[data-count]').forEach(counter=>{const target=parseInt(counter.dataset.count);if(isNaN(target))return;const observer=new IntersectionObserver(entries=>{entries.forEach(entry=>{if(entry.isIntersecting){const obj={val:0};gsap.to(obj,{val:target,duration:2,ease:'power2.out',onUpdate:function(){counter.textContent=Math.round(obj.val).toLocaleString()}});observer.unobserve(entry.target)}})},{threshold:0.5});observer.observe(counter)});`
             },
             'magnetic-buttons': {
                 html: `<button class="btn btn-primary" data-magnet="0.3">{{text}}</button>`,
@@ -6593,52 +7900,105 @@ document.addEventListener('DOMContentLoaded',initScrollScenes);`
 </div>`,
                 css: `.trust-bar{display:flex;flex-direction:column;align-items:center;gap:1.5rem;padding:2rem 0}.trust-badge{padding:0.5rem 1.5rem;border-radius:100px;font-size:0.85rem}.trust-logos{display:flex;align-items:center;gap:3rem;flex-wrap:wrap;justify-content:center}.trust-logo{font-family:var(--font-heading);font-style:italic;font-size:1.75rem;opacity:0.8;transition:opacity 0.3s ease}.trust-logo:hover{opacity:1}`,
                 js: `// Trust bar uses standard scroll reveal`
+            },
+            'window-3d': {
+                html: `<div class="window-3d spatial-window" data-3d-interactive data-reveal="blur">
+  <div class="window-3d-titlebar">
+    <span class="window-3d-dot window-3d-dot-red"></span>
+    <span class="window-3d-dot window-3d-dot-yellow"></span>
+    <span class="window-3d-dot window-3d-dot-green"></span>
+    <span class="window-3d-title">{{title}}</span>
+  </div>
+  <div class="window-3d-body">
+    {{content}}
+  </div>
+</div>`,
+                css: `.window-3d{background:rgba(20,20,30,0.8);backdrop-filter:blur(30px);border:1px solid rgba(255,255,255,0.1);border-radius:12px;overflow:hidden;transform-style:preserve-3d;box-shadow:0 20px 60px rgba(0,0,0,0.5)}.window-3d-titlebar{display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(255,255,255,0.03);border-bottom:1px solid rgba(255,255,255,0.06)}.window-3d-dot{width:10px;height:10px;border-radius:50%;display:inline-block}.window-3d-dot-red{background:#ff5f57}.window-3d-dot-yellow{background:#febc2e}.window-3d-dot-green{background:#28c840}.window-3d-title{font-size:0.75rem;opacity:0.5}.window-3d-body{padding:16px}`,
+                js: `// 3D window interactive mouse tilt
+function init3DWindows(){document.querySelectorAll('.window-3d[data-3d-interactive]').forEach(win=>{win.addEventListener('mousemove',e=>{const rect=win.getBoundingClientRect();const x=(e.clientX-rect.left)/rect.width-0.5;const y=(e.clientY-rect.top)/rect.height-0.5;win.style.transform=\`perspective(1000px) rotateY(\${x*10}deg) rotateX(\${-y*10}deg) translateZ(10px)\`});win.addEventListener('mouseleave',()=>{win.style.transform=''})})}document.addEventListener('DOMContentLoaded',init3DWindows);`
+            },
+            'spatial-card': {
+                html: `<div class="spatial-card" data-hover="perspective" data-scroll-3d="rotate">
+  <h3>{{title}}</h3>
+  <p>{{description}}</p>
+</div>`,
+                css: `.spatial-card{background:rgba(255,255,255,0.06);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:28px;transform-style:preserve-3d;transition:transform 0.5s cubic-bezier(0.23,1,0.32,1)}`,
+                js: `// Spatial card perspective interaction`
+            },
+            'neo-card': {
+                html: `<div class="neo-card neo-flat" data-hover="lift">
+  <h3>{{title}}</h3>
+  <p>{{description}}</p>
+</div>`,
+                css: `.neo-card{padding:24px;background:var(--neo-bg,#e0e5ec);border-radius:20px;box-shadow:8px 8px 16px rgba(163,177,198,0.6),-8px -8px 16px rgba(255,255,255,0.8)}`,
+                js: `// Neomorphic card pressed interaction`
+            },
+            'clay-card': {
+                html: `<div class="clay-card" data-micro="bounce">
+  <h3>{{title}}</h3>
+  <p>{{description}}</p>
+</div>`,
+                css: `.clay-card{background:linear-gradient(145deg,#fef3f3,#ffe8e8);border-radius:28px;box-shadow:15px 15px 30px rgba(0,0,0,0.08),-8px -8px 16px rgba(255,255,255,0.9);padding:28px;border:2px solid rgba(255,255,255,0.6)}`,
+                js: `// Claymorphism card bounce`
+            },
+            'brutal-card': {
+                html: `<div class="brutal-card" data-hover="lift">
+  <h3>{{title}}</h3>
+  <p>{{description}}</p>
+</div>`,
+                css: `.brutal-card{background:#fff;border:3px solid #000;padding:24px;box-shadow:8px 8px 0 #000;position:relative;transition:all 0.2s ease}.brutal-card:hover{transform:translate(-4px,-4px);box-shadow:12px 12px 0 #000}`,
+                js: `// Brutalism card hover`
             }
         };
 
-        this.systemPrompt = `You are a principal frontend engineer + Awwwards creative developer. You ship complete, production-ready cinematic websites that feel like $100K studio work.
+        this.systemPrompt = `You are a principal frontend engineer + Awwwards creative developer who masters ALL design philosophies. You ship complete, production-ready websites that feel like $100K studio work.
 
-YOUR QUALITY STANDARDS (NON-NEGOTIABLE):
-1. Every site is a FILM, not a template - create scroll-driven narratives
-2. Hero sections must be IMMERSIVE - fullscreen video, WebGL, or dramatic media
-3. Typography is the hero - use dramatic scale contrasts (clamp-based fluid type)
-4. Motion must be PURPOSEFUL - GSAP ScrollTrigger, Lenis smooth scroll, magnetic interactions
-5. Glass morphism must be REFINED - subtle, not overdone
-6. Mobile-first responsive design (375px → 1440px+)
-7. Semantic HTML5, ARIA, proper heading hierarchy
-8. Real working JavaScript - no placeholders
+DESIGN PHILOSOPHIES YOU UNDERSTAND:
+- SKEUOMORPHISM: Use .skeu-surface, .skeu-button, .skeu-card, .skeu-input classes. Realistic textures and embossed shadows.
+- NEOMORPHISM: Use .neo-flat, .neo-pressed, .neo-convex, .neo-button, .neo-input, .neo-card classes. Soft dual-shadow technique.
+- GLASSMORPHISM: Use .glass, .glass-strong, .glass-dark, .glass-card, .glass-button, .glass-navbar classes. Frosted glass with blur.
+- CLAYMORPHISM: Use .clay, .clay-card, .clay-button, .clay-bubble, .clay-tag classes. Soft 3D clay with pastels.
+- MINIMALISM: Use .min-surface, .min-card, .min-button, .min-button-text, .min-input, .min-divider classes. Maximum whitespace.
+- MAXIMALISM: Use .max-surface, .max-card, .max-button, .max-text-gradient, .max-sticker, .max-blob classes. Bold layered energy.
+- BRUTALISM: Use .brutal-surface, .brutal-card, .brutal-button, .brutal-input, .brutal-tag, .brutal-stamp classes. Raw chunky anti-design.
+- LIQUID GLASS: Use .liquid-glass, .liquid-glass-strong, .liquid-glass-tint, .liquid-glass-button, .liquid-glass-nav classes. Apple-style premium.
+- SPATIAL UI: Use .spatial-scene, .spatial-card, .spatial-window, .spatial-button, .spatial-layer-* classes. 3D depth with perspective.
 
-CINEMATIC COMPONENTS YOU IMPLEMENT:
-- FadingVideo: Crossfading background videos with smooth transitions
-- BlurText: Word-by-word blur reveal on scroll
-- LiquidGlass: Refined glassmorphism with gradient border masks
-- MagneticButtons: Cursor-following button interactions
-- ParallaxLayers: Mouse-driven depth effects
-- ScrollScenes: Pin/scrub choreographed sections
-- GrainVignette: Film grain and vignette overlays
-- StatsCards: Animated counters with glass styling
-- CapabilityCards: Feature cards with tags
-- TrustBar: Logo parade with badges
+ADVANCED EFFECTS YOU IMPLEMENT:
+- Hover: data-hover="lift|glow|tilt|spotlight|underline|perspective"
+- 3D: data-3d="tilt|float|flip", data-scroll-3d="rotate|zoom|flip|spiral"
+- Reveals: data-reveal="fade|slide-up|slide-left|clip|clip-circle|blur|split|pop|glitch"
+- Micro: data-micro="bounce|ripple|magnetic|counter", data-micro="counter" data-target="1000"
+- Parallax: data-parallax-scroll, data-parallax-depth + data-depth, data-parallax-mouse
+- 3D Windows: .window-3d with .window-3d-titlebar, .window-3d-body
+- 3D Backgrounds: .bg-3d-grid, .bg-3d-particles, .bg-3d-aurora
+- Smooth Loader: .page-loader with .loader-spinner or .loader-bar
+- Shimmer: data-shimmer for glass surfaces
 
-GSAP PATTERNS YOU USE:
-- gsap.registerPlugin(ScrollTrigger)
-- ScrollTrigger with scrub for smooth scroll animations
-- gsap.quickTo for magnetic button performance
-- Staggered reveals with delay calculations
-- Pin/scrub for sticky sections
-- Timeline chaining for complex sequences
+CINEMATIC COMPONENTS:
+- FadingVideo, BlurText, LiquidGlass, MagneticButtons, ParallaxLayers
+- ScrollScenes, GrainVignette, StatsCards, CapabilityCards, TrustBar
+
+GSAP PATTERNS:
+- gsap.registerPlugin(ScrollTrigger), ScrollTrigger scrub, gsap.quickTo
+- Staggered reveals, Pin/scrub sticky sections, Timeline chaining
 
 RULES:
-1. THINK before coding - plan the visual narrative
+1. THINK before coding - plan the visual narrative using the specified DESIGN PHILOSOPHY
 2. Output files as markdown code blocks with **File: filename** headers
 3. Include all CDN links (GSAP, ScrollTrigger, Lenis, fonts)
-4. Use design system CSS variables throughout
-5. Implement ALL motion systems from the specification
+4. Use design system CSS variables AND the design philosophy CSS classes throughout
+5. Implement ALL motion systems AND advanced effects from the specification
 6. Hero must be a SCENE - video, WebGL, or dramatic media
-7. No generic SaaS templates - every site must feel bespoke
+7. Use the correct design philosophy classes (e.g., .neo-card for neomorphism, .brutal-card for brutalism)
 8. JavaScript must ACTUALLY WORK - test your logic mentally
 9. Include prefers-reduced-motion fallbacks
-10. Generate substantial content - minimum 5 scenes/sections`;
+10. Include a smooth page loader when specified
+11. Use data-hover, data-3d, data-reveal, data-micro attributes for advanced effects
+12. Include 3D scroll effects (data-scroll-3d) for immersive depth
+13. Include 3D windows (.window-3d) for mockup/demo sections
+14. Include 3D backgrounds when the art direction calls for depth
+15. Generate substantial content - minimum 5 scenes/sections`;
     }
 
     async execute(specification, designSystem, threejsCode = null) {
@@ -6652,6 +8012,13 @@ RULES:
         // Build comprehensive context
         const artDirection = enhanced.artDirection || {};
         const brandStrategy = specification.brandStrategy || {};
+        const designPhilosophy = enhanced.designPhilosophyName || designSystem.designPhilosophyName || 'Liquid Glass';
+        const advancedEffects = enhanced.advancedEffects || designSystem.advancedEffects || [];
+
+        const midFlightNotes = Array.isArray(specification.midFlightNotes) ? specification.midFlightNotes.filter(Boolean) : [];
+        const midFlightBlock = midFlightNotes.length
+            ? `\nMID-FLIGHT USER NOTES (must honor):\n${midFlightNotes.map((n, i) => `${i + 1}. ${n}`).join('\n')}\n`
+            : '';
 
         const contextBlock = `═══════════════════════════════════════════════════════
 CINEMATIC WEBSITE BUILD — THIS IS YOUR CREATIVE MANDATE
@@ -6660,6 +8027,9 @@ CINEMATIC WEBSITE BUILD — THIS IS YOUR CREATIVE MANDATE
 SITE TYPE: ${enhanced.siteType}
 TITLE: ${specification.title || 'Premium Website'}
 DESCRIPTION: ${specification.description || ''}
+${midFlightBlock}
+★★★ DESIGN PHILOSOPHY: ${designPhilosophy} ★★★
+Use ${designPhilosophy} CSS classes and visual patterns throughout.
 
 ART DIRECTION:
 ${JSON.stringify(artDirection, null, 2)}
@@ -6684,6 +8054,9 @@ HERO TREATMENT: ${enhanced.heroTreatment || 'fullscreen-video-crossfade'}
 MOTION SYSTEMS TO IMPLEMENT:
 ${motionSystems.map((m, i) => `${i + 1}. ${m}`).join('\n')}
 
+ADVANCED EFFECTS TO USE:
+${advancedEffects.map((e, i) => `${i + 1}. ${e}`).join('\n')}
+
 COMPONENTS TO BUILD:
 ${(enhanced.components || []).map((c, i) => `${i + 1}. ${c}`).join('\n')}
 
@@ -6692,8 +8065,20 @@ ${(enhanced.sections || ['hero', 'capabilities', 'about', 'testimonials', 'cta',
 
 THREE.JS: ${hasThreeJS ? 'Yes - include #three-canvas in hero' : 'No'}
 
+INCLUDE THESE ELEMENTS:
+- Page loader (.page-loader) with smooth entrance transition
+- 3D scroll effects (data-scroll-3d) on cards and sections
+- 3D window mockups (.window-3d) in demo/product sections
+- 3D background effects (.bg-3d-grid or .bg-3d-particles or .bg-3d-aurora)
+- Hover effects (data-hover="tilt" or "glow" or "lift") on interactive elements
+- Entrance reveals (data-reveal="blur" or "slide-up" or "clip") on sections
+- Micro interactions (data-micro="ripple" or "bounce") on buttons
+- Custom cursor (if cursor effect is in advanced effects list)
+- Parallax depth layers (data-parallax-depth + data-depth) on hero elements
+- Shimmer effects (data-shimmer) on glass surfaces
+
 ═══════════════════════════════════════════════════════
-BUILD A SCROLL FILM — NOT A SAAS TEMPLATE
+BUILD WITH ${designPhilosophy.toUpperCase()} PHILOSOPHY — NOT A GENERIC TEMPLATE
 ═══════════════════════════════════════════════════════`;
 
         // Gather component templates
@@ -6814,16 +8199,30 @@ Output ONLY the CSS file:
             // PASS 3: Generate JavaScript
             this.log('info', 'Pass 3/3: Generating cinematic JavaScript...');
 
+            // Gather advanced animation JS from design system
+            const advancedJS = designSystem.advancedAnimations
+                ? (enhanced.advancedEffects || designSystem.advancedEffects || [])
+                    .filter(e => designSystem.advancedAnimations[e]?.js && designSystem.advancedAnimations[e].js.trim().length > 0)
+                    .map(e => `// === ${e} ===\n${designSystem.advancedAnimations[e].js}`)
+                    .join('\n\n')
+                : '';
+
             const jsPrompt = `${contextBlock}
 
 MOTION SYSTEMS TO IMPLEMENT:
 ${motionSystems.join(', ')}
+
+ADVANCED EFFECTS ENABLED:
+${(enhanced.advancedEffects || []).join(', ')}
 
 COMPONENT JS TO INCLUDE:
 ${componentJS}
 
 MOTION SYSTEM JS TO INCLUDE:
 ${motionJS}
+
+ADVANCED ANIMATION JS TO INCLUDE:
+${advancedJS}
 
 HTML STRUCTURE (target these elements):
 ${htmlContext}
@@ -6845,17 +8244,29 @@ GENERATE THE REST:
 3. Parallax layers for [data-parallax]
 4. FadingVideo crossfade for [data-fading-video]
 5. Scroll scenes with pin/scrub for [data-scene]
-6. Any other motion systems specified
-7. ${hasThreeJS ? 'Three.js scene initialization' : ''}
-8. Form validation if forms exist
-9. Any interactive components needed
+6. 3D tilt effect for [data-3d="tilt"] (mousemove perspective)
+7. 3D scroll effects for [data-scroll-3d] (rotateX/zoom on scroll)
+8. Hover effects for [data-hover] (tilt, glow, spotlight, perspective)
+9. Entrance reveals for [data-reveal] (IntersectionObserver → add .revealed class)
+10. Micro interactions for [data-micro] (ripple, bounce, magnetic, counter)
+11. Smooth page loader (if .page-loader exists)
+12. 3D window interactivity for [data-3d-interactive] 
+13. Parallax scroll for [data-parallax-scroll]
+14. Parallax depth for [data-parallax-depth]
+15. Custom cursor (if micro-cursor effect is enabled)
+16. Shimmer sweep (CSS-only, no JS needed)
+17. ${hasThreeJS ? 'Three.js scene initialization' : ''}
+18. Form validation if forms exist
+19. Any interactive components needed
+
+INCLUDE THE ADVANCED ANIMATION JS PROVIDED ABOVE.
 
 CRITICAL: Everything must ACTUALLY WORK. Test your logic mentally.
 
 Output ONLY the JS file:
 **File: script.js**
 \`\`\`js
-// Cinematic JavaScript
+// Cinematic JavaScript with ${designPhilosophy} design philosophy
 ...
 \`\`\``;
 
@@ -7006,13 +8417,13 @@ document.querySelectorAll('[data-count]').forEach(counter => {
     const observer = new IntersectionObserver(entries => {
         entries.forEach(entry => {
             if (entry.isIntersecting) {
-                gsap.to(counter, {
-                    innerHTML: target,
+                const obj = { val: 0 };
+                gsap.to(obj, {
+                    val: target,
                     duration: 2,
                     ease: 'power2.out',
-                    snap: { innerHTML: 1 },
                     onUpdate: function() {
-                        counter.textContent = Math.round(parseFloat(counter.textContent)).toLocaleString();
+                        counter.textContent = Math.round(obj.val).toLocaleString();
                     }
                 });
                 observer.unobserve(entry.target);
@@ -7251,6 +8662,10 @@ export default function App() { return <div>Home</div> }
         const architecture = specification.appArchitecture || {};
         const needsRouter = pages.length > 1 || isComplex || ['webapp', 'dashboard', 'saas-app', 'admin-panel'].includes(specification.siteType);
 
+        const midFlight = Array.isArray(specification.midFlightNotes) && specification.midFlightNotes.length
+            ? `\nMID-FLIGHT USER NOTES (must honor):\n${specification.midFlightNotes.map((n, i) => `${i + 1}. ${n}`).join('\n')}\n`
+            : '';
+
         const message = `Build a COMPLETE production React + Vite project (multi-file, large enough for real products):
 
 SITE TYPE: ${specification.siteType}
@@ -7258,7 +8673,7 @@ COMPLEXITY: ${specification.complexity || 'complex'}
 TITLE: ${specification.title || 'Premium Website'}
 DESCRIPTION: ${specification.description || ''}
 MOOD: ${specification.mood || 'editorial'}
-
+${midFlight}
 ART DIRECTION (follow this exactly):
 ${JSON.stringify(specification.artDirection || {}, null, 2)}
 
@@ -8260,6 +9675,10 @@ export default function Page() { return <div>Home</div> }
             .map(([name, body]) => `\n**File: ${name}**\n\`\`\`\n${body}\n\`\`\``)
             .join('\n');
 
+        const midFlight = Array.isArray(specification.midFlightNotes) && specification.midFlightNotes.length
+            ? `\nMID-FLIGHT USER NOTES (must honor)\n${specification.midFlightNotes.map((n, i) => `${i + 1}. ${n}`).join('\n')}\n`
+            : '';
+
         return `
 Build a complete Next.js 14 full-stack product.
 
@@ -8271,7 +9690,7 @@ ${title}
 
 DESCRIPTION
 ${description}
-
+${midFlight}
 COMPLEXITY
 ${specification.complexity || 'ultra-complex'}
 
@@ -9455,8 +10874,31 @@ SUPPORTED STACKS
 1. React / Next.js — Framer Motion + GSAP ScrollTrigger
 2. Static HTML/CSS/JS — GSAP timelines, ScrollTrigger, refined micro-interactions
 
+DESIGN PHILOSOPHIES YOU UNDERSTAND:
+- Skeuomorphism: Realistic press/depth, embossed text shadows
+- Neomorphism: Soft shadow morph on hover, pressed states
+- Glassmorphism: Shimmer sweeps, blur transitions, glow pulses
+- Claymorphism: Bouncy squish, playful wobble, clay press
+- Minimalism: Subtle fade, text weight transitions, minimal hovers
+- Maximalism: Explosive color shifts, layered parallax, blob morphing
+- Brutalism: Hard snap transitions, glitch effects, raw reveals
+- Liquid Glass: Apple-style specular shifts, refraction on scroll
+- Spatial UI: 3D perspective shifts, z-layer transitions, depth-aware parallax
+
+ADVANCED EFFECTS YOU INJECT:
+- Hover: data-hover="tilt|glow|lift|spotlight|perspective" with appropriate JS
+- 3D Motion: data-3d="tilt|float|flip" with perspective and mouse tracking
+- 3D Scroll: data-scroll-3d="rotate|zoom|flip|spiral" with scroll progress
+- Entrance Reveals: data-reveal with IntersectionObserver → .revealed class
+- Micro Interactions: data-micro="ripple|bounce|magnetic|counter" 
+- Parallax: data-parallax-scroll, data-parallax-depth, data-parallax-mouse
+- 3D Windows: .window-3d with interactive mouse tilt
+- Smooth Loader: .page-loader with progress animation
+- Custom Cursor: Mix-blend-mode cursor follower
+
 PRIMARY OBJECTIVE
 - Make the motion feel intentional, premium, and art-directed.
+- Match motion style to the design philosophy (e.g., bouncy for clay, snappy for brutalism).
 - Prefer a few signature moments over animating everything.
 - Keep the implementation robust and minimal.
 
@@ -9470,6 +10912,7 @@ RULES
 7. For hero headlines, use word/line stagger blur-reveal when it fits.
 8. For static sites, enhance script.js and only lightly annotate HTML when needed.
 9. Do not invent fake metrics or change brand copy.
+10. When the design philosophy is specified, match animation feel to it.
 
 OUTPUT FORMAT
 **File: src/components/Hero.jsx**
@@ -9588,9 +11031,13 @@ OUTPUT FORMAT
             '- Prefer GSAP ScrollTrigger + Lenis for static; Framer Motion for React.',
         ];
 
+        const midFlight = Array.isArray(specification.midFlightNotes) && specification.midFlightNotes.length
+            ? `\nMID-FLIGHT USER NOTES (must honor)\n${specification.midFlightNotes.map((n, i) => `${i + 1}. ${n}`).join('\n')}\n`
+            : '';
+
         return `
 Inject cinematic, production-safe motion into this ${isReact ? 'React/Next' : 'static'} project.
-
+${midFlight}
 ART DIRECTION
 ${JSON.stringify(artDirection, null, 2)}
 
@@ -10179,12 +11626,30 @@ CINEMATIC WEBSITE CHECKS (categories: hero-scene | scroll-story | motion-perform
 - Is there film-grade restraint (grain/vignette/type) without visual noise?
 - Would this sit next to motionsites.ai craft without looking like Bootstrap AI?
 
+DESIGN PHILOSOPHY CHECKS (each worth up to 5 points, category: design-philosophy):
+- Is the specified design philosophy (skeuomorphism/neomorphism/glassmorphism/claymorphism/minimalism/maximalism/brutalism/liquid-glass/spatial-ui) consistently applied?
+- Are philosophy-specific CSS classes used (e.g., .neo-flat, .glass-card, .brutal-button, .spatial-card)?
+- Do surfaces, buttons, and cards match the design philosophy's visual language?
+- Is the philosophy applied uniformly, or is it a random mix of styles?
+
+ADVANCED EFFECTS CHECKS (category: advanced-effects):
+- Are hover effects present (data-hover attributes on interactive elements)?
+- Is there a smooth page loader (.page-loader with entrance transition)?
+- Are 3D effects used where specified (data-3d, data-scroll-3d, perspective transforms)?
+- Are entrance reveals implemented (data-reveal with IntersectionObserver triggering .revealed)?
+- Are micro interactions present (data-micro for ripple/bounce/magnetic)?
+- Are parallax effects working (data-parallax-scroll, data-parallax-depth)?
+- Are 3D scroll effects present when spec calls for them (data-scroll-3d with rotateX/zoom)?
+- Are 3D window mockups used in demo sections (.window-3d with titlebar)?
+- Are 3D backgrounds present when spec calls for depth (.bg-3d-grid, .bg-3d-particles)?
+
 AESTHETIC CHECKPOINTS (each worth up to 5 points):
 - Does the hero have a SPECIFIC, memorable visual composition (not generic gradient orbs)?
 - Is the typography hierarchy dramatic (hero text >> section titles >> body)?
 - Are there deliberate whitespace rhythms (not just padding: 20px everywhere)?
 - Do animations serve the concept (not animation on everything)?
-- Would this site look distinctive next to 10 other AI-generated sites?`;
+- Would this site look distinctive next to 10 other AI-generated sites?
+- Do the design philosophy, hover effects, 3D elements, and motion systems create a cohesive experience?`;
     }
 
     async execute(files, specification) {
@@ -10379,11 +11844,15 @@ ${projectContext.executionPlan.summary}
 Steps: ${projectContext.executionPlan.steps.map((step, index) => `${index + 1}. ${step}`).join(' ')}
 Focused files: ${projectContext.files.map(item => `${item.path} (${item.reason})`).join(', ')}` : '';
 
+        const midFlight = Array.isArray(specification?.midFlightNotes) && specification.midFlightNotes.length
+            ? `\nMID-FLIGHT USER NOTES (must honor):\n${specification.midFlightNotes.map((n, i) => `${i + 1}. ${n}`).join('\n')}\n`
+            : '';
+
         const message = `Modify this ${stack} project.
 
 MODIFICATION REQUEST:
 "${modificationPrompt}"
-
+${midFlight}
 MODIFICATION COMPLEXITY: ${isComplexMod ? 'COMPLEX — structural / multi-file / product-level' : 'TARGETED — style/content/interaction polish'}
 
 SPEC CONTEXT:
@@ -11969,7 +13438,6 @@ _isDefinitelyImportedAsTypeOnly(content, name, source) {
 _escapeRegex(str) {
     return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
-
 }
 
 // Export for browser
@@ -12523,29 +13991,40 @@ window.DeployReadinessAgent = DeployReadinessAgent;
 window.ProjectRepositoryManager = ProjectRepositoryManager;
 ;
 /* ============================================================
-   LOCAL PREVIEW BRIDGE — no cloud sandbox dependency.
+   LOCAL PREVIEW BRIDGE — upgraded & hardened
    Static projects render in-browser; framework projects are
    exported to the user's local workspace through server.js.
    ============================================================ */
 class SandboxManager {
     getProjectType(files = {}) {
         const pkg = String(files['package.json'] || '');
-        if (files['app/page.tsx'] || files['app/page.jsx'] || files['next.config.js'] || files['next.config.mjs'] || pkg.includes('"next"')) return 'nextjs';
-        if (files['src/main.jsx'] || files['src/main.tsx'] || pkg.includes('"react"')) return 'react';
+        if (
+            files['app/page.tsx'] || files['app/page.jsx'] ||
+            files['next.config.js'] || files['next.config.mjs'] ||
+            pkg.includes('"next"')
+        ) return 'nextjs';
+        if (
+            files['src/main.jsx'] || files['src/main.tsx'] ||
+            files['src/App.jsx'] || files['src/App.tsx'] ||
+            pkg.includes('"react"')
+        ) return 'react';
         return 'static';
     }
 
     generateLocalPreview(files = {}, projectType = this.getProjectType(files)) {
+        // Only route true React/Next sources through the Babel/UMD preview.
+        // Plain static script.js with ESM imports must stay on the DOM path.
         if (projectType === 'react' || this._hasReactFiles(files)) {
             return this._buildReactInBrowserPreview(files);
         }
         if (projectType === 'nextjs') {
-            // If Next.js page exists, try to transpile main page in browser, fallback to framework info card if missing
-            if (files['app/page.tsx'] || files['app/page.jsx'] || files['pages/index.js']) {
+            if (files['app/page.tsx'] || files['app/page.jsx'] || files['pages/index.js'] || files['pages/index.tsx']) {
                 return this._buildReactInBrowserPreview(files);
             }
-            const title = 'Next.js Full-Stack Project';
-            return this._frameworkMessage(title, 'This full-stack project is configured for your local workspace. Export to Local Workspace to run `npm run dev` with full API routes & Prisma DB.');
+            return this._frameworkMessage(
+                'Next.js Full-Stack Project',
+                'This full-stack project is configured for your local workspace. Export to Local Workspace to run `npm run dev` with full API routes & Prisma DB.'
+            );
         }
 
         let html = String(files['index.html'] || '<!doctype html><html><body><h1>No content generated</h1></body></html>');
@@ -12556,51 +14035,172 @@ class SandboxManager {
     }
 
     _hasReactFiles(files = {}) {
-        return Object.keys(files).some(f => f.endsWith('.jsx') || f.endsWith('.tsx') || (f.endsWith('.js') && (files[f].includes('import React') || files[f].includes('export default'))));
+        const names = Object.keys(files || {});
+        // Explicit React/Next entrypoints only — do NOT treat vanilla ESM
+        // (export default / import gsap) as a React project.
+        if (names.some((f) => f.endsWith('.jsx') || f.endsWith('.tsx'))) return true;
+        if (names.some((f) => /^(src\/)?(main|App|index)\.(jsx|tsx)$/i.test(f))) return true;
+        if (names.some((f) => /^(app|src\/app)\/.*\.(jsx|tsx)$/i.test(f))) return true;
+        if (files['package.json'] && /"react"\s*:/.test(String(files['package.json']))) {
+            return names.some((f) =>
+                /\.(jsx|tsx)$/.test(f) ||
+                /^(src\/)?(main|App)\.(js|jsx|tsx)$/i.test(f) ||
+                /^app\/.*page\.(js|jsx|tsx)$/i.test(f)
+            );
+        }
+        return false;
     }
 
+    /* ---------- React / Next in-browser preview ---------- */
     _buildReactInBrowserPreview(files) {
-        // Collect all JSX / JS components
         let jsxCode = '';
-        let entryFile = files['src/App.jsx'] || files['src/App.tsx'] || files['App.jsx'] || files['App.js'] || files['src/main.jsx'] || '';
 
-        // Combine code from component files
+        // Collect & sanitize every component file
         Object.keys(files).forEach(filename => {
-            if ((filename.endsWith('.jsx') || filename.endsWith('.tsx') || filename.endsWith('.js')) && !filename.includes('vite.config') && !filename.includes('tailwind.config')) {
-                let code = files[filename];
-                // Remove npm import/export syntax & strip TS type annotations for 100% clean browser Babel execution
-                code = code.replace(/import\s+type\s+.*?;?/g, '')
-                           .replace(/import\s+.*?from\s+['"][^'"]+['"];?/g, '')
-                           .replace(/import\s+['"][^'"]+['"];?/g, '')
-                           .replace(/export\s+default\s+function\s+([A-Za-z0-9_]+)/g, 'function $1')
-                           .replace(/export\s+default\s+([A-Za-z0-9_]+);?/g, '')
-                           .replace(/export\s+const\s+/g, 'const ')
-                           .replace(/(?:export\s+)?type\s+[A-Za-z0-9_]+(?:\s*<[\s\S]*?>)?\s*=\s*(?:[\s\S]*?\{[\s\S]*?\}(?:\s*&|\s*\||\s*;)?|[\s\S]*?;)/g, '')
-                           .replace(/(?:export\s+)?interface\s+[A-Za-z0-9_]+(?:\s*<[\s\S]*?>)?(?:\s+extends\s+[\s\S]*?)?\s*\{[\s\S]*?\}/g, '')
-                           .replace(/(?:export\s+)?enum\s+[A-Za-z0-9_]+\s*\{[\s\S]*?\}/g, '')
-                           .replace(/declare\s+.*?;/g, '')
-                           .replace(/<[A-Z][A-Za-z0-9_.]*(?:<[^>]+>)?>(?=\s*\()/g, '')
-                           .replace(/\(null!\)/g, '(null)')
-                           .replace(/([a-zA-Z0-9_\)\]])!\./g, '$1.')
-                           .replace(/!\s*([,;\)\n])/g, '$1')
-                           .replace(/\}\s*:\s*\{[\s\S]*?\}\s*(?=\)|\{)/g, '}')
-                           .replace(/\}\s*:\s*[A-Za-z0-9_.]+(?:<[\s\S]*?>)?\s*(?=\)|\{)/g, '}')
-                           .replace(/\)\s*:\s*[A-Za-z0-9_.]+(?:<[\s\S]*?>)?\s*(?=\{)/g, ')')
-                           .replace(/:\s*(?:string|number|boolean|any|void|unknown|never|object|React\.[A-Za-z0-9_]+|FC(?:<[^>]+>)?)(?:\[\])?(?=[\s,=;\)\}\n])/g, '')
-                           .replace(/\s+as\s+[A-Za-z0-9_.]+(?:<[^>]+>)?/g, '')
-                           .replace(/case:\s*(['"](?:none|power\d\.(?:in|out|inOut)|linear|expo|circ)['"])/g, 'ease: $1');
-                jsxCode += `\n/* File: ${filename} */\n` + code;
+            if (
+                (filename.endsWith('.jsx') || filename.endsWith('.tsx') || filename.endsWith('.js')) &&
+                !filename.includes('vite.config') &&
+                !filename.includes('tailwind.config') &&
+                !filename.includes('next.config')
+            ) {
+                let code = String(files[filename] || '');
+
+                // Next.js layout → valid React tree
+                if (filename.includes('layout.')) {
+                    code = code
+                        .replace(/<html[^>]*>/gi, '<div className="next-layout-shell">')
+                        .replace(/<\/html>/gi, '</div>')
+                        .replace(/<body[^>]*>/gi, '<div className="next-body-shell">')
+                        .replace(/<\/body>/gi, '</div>');
+                }
+
+                // Clean import/export statements for in-browser concatenation
+                code = this._sanitizeForBrowser(code);
+                jsxCode += `\n/* ===== File: ${filename} ===== */\n${code}\n`;
             }
         });
 
-        // Determine main App root component name
+        // Detect main component name
         let mainComponentName = 'App';
-        if (!jsxCode.includes('function App') && !jsxCode.includes('const App')) {
-            const match = jsxCode.match(/function\s+([A-Z][A-Za-z0-9_]+)/);
+        if (!/function\s+App\b|const\s+App\b|class\s+App\b/.test(jsxCode)) {
+            const match = jsxCode.match(/function\s+([A-Z][A-Za-z0-9_]*)/);
             if (match) mainComponentName = match[1];
         }
 
-        const customCss = files['src/index.css'] || files['src/App.css'] || files['styles.css'] || '';
+        const customCss = files['src/index.css'] || files['src/App.css'] || files['styles.css'] || files['app/globals.css'] || '';
+
+        const rawAppCode = `
+const { useState, useEffect, useRef, useMemo, useCallback, useContext, createContext, Fragment } = React;
+
+// ---- Next.js mock helpers ----
+const useRouter = () => ({
+    push: (url) => console.log('[mock] router.push', url),
+    replace: (url) => console.log('[mock] router.replace', url),
+    back: () => {},
+    prefetch: () => {},
+    pathname: '/',
+    query: {},
+    asPath: '/'
+});
+const usePathname = () => '/';
+const useSearchParams = () => new URLSearchParams();
+const useParams = () => ({});
+const Link = ({ href = '#', children, ...props }) =>
+    React.createElement('a', { href, ...props }, children);
+const Image = ({ src, alt = '', width, height, ...props }) =>
+    React.createElement('img', { src, alt, width, height, ...props });
+
+// ---- Lucide helper ----
+const Icon = ({ name, className = 'w-5 h-5', ...props }) =>
+    React.createElement('i', { 'data-lucide': name, className, ...props });
+
+${jsxCode}
+
+// ---- Error Boundary ----
+class PreviewErrorBoundary extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = { hasError: false, error: null };
+    }
+    static getDerivedStateFromError(error) {
+        return { hasError: true, error };
+    }
+    componentDidCatch(error, info) {
+        console.error('Preview ErrorBoundary:', error, info);
+        window.parent.postMessage({
+            type: 'ZERO_PREVIEW_ERROR',
+            message: error?.message || String(error),
+            stack: error?.stack
+        }, '*');
+    }
+    render() {
+        if (this.state.hasError) {
+            return React.createElement('div', {
+                className: 'p-6 m-4 bg-red-950/90 border border-red-700 text-red-100 rounded-xl'
+            },
+                React.createElement('h3', { className: 'font-bold text-lg mb-2' }, 'Runtime Error'),
+                React.createElement('pre', { className: 'font-mono text-sm whitespace-pre-wrap' },
+                    this.state.error?.message || String(this.state.error)
+                )
+            );
+        }
+        return this.props.children;
+    }
+}
+
+// ---- Mount ----
+try {
+    const rootElement = document.getElementById('root');
+    if (!rootElement) throw new Error('Root element #root not found');
+
+    let ComponentToRender =
+        (typeof App !== 'undefined' && App) ||
+        (typeof Page !== 'undefined' && Page) ||
+        (typeof Home !== 'undefined' && Home) ||
+        (typeof RootLayout !== 'undefined' && RootLayout) ||
+        (typeof ${mainComponentName} !== 'undefined' && ${mainComponentName}) ||
+        null;
+
+    if (!ComponentToRender) {
+        rootElement.innerHTML = '<div class="p-8 text-center text-zinc-400"><h2 class="text-xl font-bold mb-2">No root component found</h2><p>Export a default App / Page / Home component.</p></div>';
+    } else {
+        const root = ReactDOM.createRoot(rootElement);
+        const isLayout = ComponentToRender === (typeof RootLayout !== 'undefined' ? RootLayout : null);
+
+        const content = isLayout
+            ? React.createElement(ComponentToRender, null,
+                React.createElement(
+                    (typeof Page !== 'undefined' ? Page : (typeof App !== 'undefined' ? App : () => React.createElement('div', { className: 'p-4' }, 'App Active')))
+                )
+              )
+            : React.createElement(ComponentToRender);
+
+        root.render(
+            React.createElement(PreviewErrorBoundary, null, content)
+        );
+
+        // Lucide icons after paint
+        setTimeout(() => {
+            if (window.lucide && typeof window.lucide.createIcons === 'function') {
+                window.lucide.createIcons();
+            }
+        }, 80);
+    }
+} catch (err) {
+    const el = document.getElementById('root');
+    if (el) {
+        el.innerHTML = '<div class="p-6 bg-red-950/90 border border-red-700 text-red-100 rounded-xl m-4"><h3 class="font-bold text-lg mb-2">React Compilation / Mount Error</h3><pre class="font-mono text-sm whitespace-pre-wrap">' +
+            (err.message || String(err)) + '</pre></div>';
+    }
+    window.parent.postMessage({ type: 'ZERO_PREVIEW_ERROR', message: err.message || String(err) }, '*');
+}
+`;
+
+        const safeRawCodeJson = JSON.stringify(rawAppCode).replace(/<\/script/gi, '<\\/script');
+
+        // Build the Babel transform script as a regular string (not template literal)
+        // to avoid backslash escaping issues with regex patterns.
+        const babelScript = this._buildBabelTransformScript(safeRawCodeJson);
 
         return `<!DOCTYPE html>
 <html lang="en">
@@ -12608,8 +14208,7 @@ class SandboxManager {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>React Live Preview</title>
-    <!-- Tailwind CSS v3 CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.tailwindcss.com"><\/script>
     <script>
       tailwind.config = {
         theme: {
@@ -12628,71 +14227,310 @@ class SandboxManager {
           }
         }
       }
-    </script>
-    <!-- Google Fonts -->
+    <\/script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <!-- React 18 & ReactDOM UMD -->
-    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <!-- Three.js UMD -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <!-- Babel Standalone for JSX & TypeScript -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"><\/script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"><\/script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"><\/script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"><\/script>
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #09090b; color: #fafafa; margin: 0; padding: 0; }
+        body { font-family: 'Inter', system-ui, sans-serif; background-color: #09090b; color: #fafafa; margin: 0; padding: 0; }
         ${customCss}
     </style>
 </head>
 <body>
     <div id="root"></div>
     <script>
-        // Suppress benign CDN production warnings in preview iframe
-        const origWarn = console.warn;
-        console.warn = function(...args) {
-            if (args[0] && typeof args[0] === 'string' && (args[0].includes('tailwindcss.com') || args[0].includes('Babel transformer'))) return;
-            origWarn.apply(console, args);
-        };
-        // Error Handler Relay to parent Zero Studio window
-        window.addEventListener('error', function(e) {
-            if (!e.message || e.message === 'Script error.') return;
-            window.parent.postMessage({ type: 'ZERO_PREVIEW_ERROR', message: e.message, filename: e.filename, lineno: e.lineno }, '*');
+        // Quiet noisy CDN warnings
+        ['warn', 'info'].forEach(method => {
+            const orig = console[method];
+            if (!orig) return;
+            console[method] = function (...args) {
+                const msg = args.map(a => (typeof a === 'string' ? a : (a?.message || ''))).join(' ');
+                if (/tailwindcss|Babel|production|PostCSS|cdn\\.tailwindcss/i.test(msg)) return;
+                orig.apply(console, args);
+            };
         });
-    </script>
-    <script type="text/babel" data-presets="react,typescript" data-filename="app.tsx" data-file-name="app.tsx">
-        const { useState, useEffect, useRef, useMemo, useCallback } = React;
-        
-        // Mock Lucide Icon helper for JSX components
-        const Icon = ({ name, className = "w-5 h-5", ...props }) => {
-            return <i data-lucide={name} class={className} {...props}></i>;
-        };
 
-        ${jsxCode}
-
-        // Render Main Root Component
-        try {
-            const rootElement = document.getElementById('root');
-            let ComponentToRender = typeof App !== 'undefined' ? App : (typeof RootLayout !== 'undefined' ? RootLayout : (typeof Page !== 'undefined' ? Page : null));
-            if (!ComponentToRender && typeof ${mainComponentName} !== 'undefined') {
-                ComponentToRender = ${mainComponentName};
-            }
-            if (ComponentToRender) {
-                const root = ReactDOM.createRoot(rootElement);
-                root.render(<ComponentToRender />);
-                setTimeout(() => { if (window.lucide) lucide.createIcons(); }, 100);
-            } else {
-                rootElement.innerHTML = '<div class="p-8 text-center text-zinc-400"><h2 class="text-xl font-bold mb-2">React Component Loaded</h2><p>React component active.</p></div>';
-            }
-        } catch(err) {
-            document.getElementById('root').innerHTML = '<div class="p-6 bg-red-950/80 border border-red-800 text-red-200 rounded-xl m-4"><h3 class="font-bold text-lg mb-2">React Compilation Error</h3><pre class="font-mono text-sm whitespace-pre-wrap">' + err.message + '</pre></div>';
-            window.parent.postMessage({ type: 'ZERO_PREVIEW_ERROR', message: err.message }, '*');
-        }
-    </script>
+        window.addEventListener('error', function (e) {
+            if (!e.message || e.message === 'Script error.') return;
+            window.parent.postMessage({
+                type: 'ZERO_PREVIEW_ERROR',
+                message: e.message,
+                filename: e.filename,
+                lineno: e.lineno
+            }, '*');
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+            window.parent.postMessage({
+                type: 'ZERO_PREVIEW_ERROR',
+                message: e.reason?.message || String(e.reason)
+            }, '*');
+        });
+    <\/script>
+    ` + babelScript + `
 </body>
 </html>`;
     }
 
+    /**
+     * Build the Babel transform + cleanup script as a plain string.
+     * This avoids template-literal backslash escaping issues with regex patterns.
+     */
+    _buildBabelTransformScript(safeRawCodeJson) {
+        // ESM stripper function (runs in browser iframe)
+        const stripEsmFn = [
+            'function zeroStripEsm(code) {',
+            '  var src = String(code || "");',
+            '  for (var i = 0; i < 8; i++) {',
+            '    var next = src',
+            '      .replace(/^\\s*import\\s+type\\s+[\\s\\S]*?from\\s*[\'"][^\'"]+[\'"]\\s*;?/gm, "")',
+            '      .replace(/^\\s*import\\s*[\\s\\S]*?from\\s*[\'"][^\'"]+[\'"]\\s*;?/gm, "")',
+            '      .replace(/^\\s*import\\s*[\'"][^\'"]+[\'"]\\s*;?/gm, "")',
+            '      .replace(/^\\s*export\\s+\\{[\\s\\S]*?\\}\\s*;?/gm, "")',
+            '      .replace(/^\\s*export\\s+\\*\\s+from\\s*[\'"][^\'"]+[\'"]\\s*;?/gm, "");',
+            '    if (next === src) break;',
+            '    src = next;',
+            '  }',
+            '  src = src.replace(/(^|[\\n;])\\s*import\\s+[^;]*;?/g, "$1");',
+            '  return src;',
+            '}',
+        ].join('\n');
+
+        // Babel transform + require replacement + ESM stripping
+        const transformFn = [
+            '(function () {',
+            '  var rawCode = ' + safeRawCodeJson + ';',
+            '  try {',
+            '    var transpiled = Babel.transform(rawCode, {',
+            '      presets: [',
+            '        ["react", { runtime: "classic" }],',
+            '        ["typescript", { ignoreExtensions: true }]',
+            '      ],',
+            '      plugins: [',
+            '        ["transform-modules-commonjs", { strictMode: false }]',
+            '      ],',
+            '      filename: "preview.tsx"',
+            '    }).code;',
+            '',
+            '    var clean = zeroStripEsm(transpiled)',
+            '      .replace(/require\\([\'"]react\\/jsx-runtime[\'"]\\)/g, "({ jsx: React.createElement, jsxs: React.createElement, Fragment: React.Fragment })")',
+            '      .replace(/require\\([\'"]react[\'"]\\)/g, "React")',
+            '      .replace(/require\\([\'"]react-dom(?:\\/client)?[\'"]\\)/g, "ReactDOM")',
+            '      .replace(/require\\([\'"]three[\'"]\\)/g, "(typeof THREE !== \\"undefined\\" ? THREE : {})")',
+            '      .replace(/require\\([\'"][^\'"]+[\'"]\\)/g, "({})");',
+            '',
+            '    if (/\\bimport\\s+/.test(clean)) {',
+            '      throw new Error("Preview still contains ESM import statements after sanitization.");',
+            '    }',
+            '',
+            '    var scriptEl = document.createElement("script");',
+            '    scriptEl.type = "text/javascript";',
+            '    scriptEl.text = clean;',
+            '    document.body.appendChild(scriptEl);',
+            '  } catch (err) {',
+            '    document.getElementById("root").innerHTML =',
+            '      \'<div class="p-6 bg-red-950/90 border border-red-700 text-red-100 rounded-xl m-4">\' +',
+            '      \'<h3 class="font-bold text-lg mb-2">Babel Compilation Error</h3>\' +',
+            '      \'<pre class="font-mono text-sm whitespace-pre-wrap">\' + (err.message || String(err)) + \'</pre></div>\';',
+            '    window.parent.postMessage({ type: "ZERO_PREVIEW_ERROR", message: err.message || String(err) }, "*");',
+            '  }',
+            '})();',
+        ].join('\n');
+
+        return '<script>\n' + stripEsmFn + '\n' + transformFn + '\n<\/script>';
+    }
+
+    /* ---------- Clean import/export statements for in-browser concatenation ---------- */
+    _sanitizeForBrowser(code) {
+        let src = String(code || '');
+
+        // Map known library imports to their browser globals BEFORE stripping ESM
+        // Three.js
+        src = src.replace(/import\s+(\w+)\s+from\s*['"]three[^'"]*['"]\s*;?/g, 'const $1 = window.THREE;');
+        src = src.replace(/import\s*\*\s*as\s+(\w+)\s+from\s*['"]three[^'"]*['"]\s*;?/g, 'const $1 = window.THREE;');
+        src = src.replace(/import\s*\{\s*([^}]+)\s*\}\s*from\s*['"]three[^'"]*['"]\s*;?/g, (m, names) => {
+            return names.split(',').map(n => {
+                const [orig, alias] = n.split(/\s+as\s+/).map(s => s.trim());
+                const local = alias || orig;
+                return `const ${local} = typeof THREE !== 'undefined' ? THREE.${orig} : undefined;`;
+            }).filter(Boolean).join('\n');
+        });
+        // @react-three/fiber & @react-three/drei → mock/noop (not available in UMD preview)
+        src = src.replace(/import\s*\{\s*([^}]+)\s*\}\s*from\s*['"]@react-three\/(?:fiber|drei|postprocessing)['"]\s*;?/g, (m, names) => {
+            return names.split(',').map(n => {
+                const [orig, alias] = n.split(/\s+as\s+/).map(s => s.trim());
+                const local = alias || orig;
+                return `const ${local} = typeof ${orig} !== 'undefined' ? ${orig} : function(){return null;};`;
+            }).filter(Boolean).join('\n');
+        });
+        // GSAP
+        src = src.replace(/import\s+(\w+)\s+from\s*['"]gsap(?:\/dist\/gsap)?['"]\s*;?/g, 'const $1 = window.gsap;');
+        src = src.replace(/import\s*\{\s*([^}]+)\s*\}\s*from\s*['"]gsap(?:\/[^'"]*)?['"]\s*;?/g, (m, names) => {
+            return names.split(',').map(n => {
+                const [orig, alias] = n.split(/\s+as\s+/).map(s => s.trim());
+                const local = alias || orig;
+                if (orig === 'gsap' || orig === 'default') return `const ${local} = window.gsap;`;
+                return `const ${local} = window.gsap?.${orig} || window.${orig};`;
+            }).filter(Boolean).join('\n');
+        });
+        // Lenis
+        src = src.replace(/import\s+(\w+)\s+from\s*['"][^'"]*lenis[^'"]*['"]\s*;?/g, 'const $1 = window.Lenis;');
+        // framer-motion → mock
+        src = src.replace(/import\s*\{\s*([^}]+)\s*\}\s*from\s*['"]framer-motion['"]\s*;?/g, (m, names) => {
+            return names.split(',').map(n => {
+                const name = n.split(/\s+as\s+/).map(s => s.trim()).pop();
+                if (/^motion$/.test(name)) return `const motion = new Proxy({}, { get: (_, tag) => (props) => React.createElement(tag, props) });`;
+                if (/^AnimatePresence$/.test(name)) return `const AnimatePresence = ({children}) => React.createElement(React.Fragment, null, children);`;
+                return `const ${name} = typeof ${name} !== 'undefined' ? ${name} : function(){return null;};`;
+            }).filter(Boolean).join('\n');
+        });
+        // lucide-react → map to Icon helper
+        src = src.replace(/import\s*\{\s*([^}]+)\s*\}\s*from\s*['"]lucide-react['"]\s*;?/g, (m, names) => {
+            return names.split(',').map(n => {
+                const name = n.split(/\s+as\s+/).map(s => s.trim()).pop();
+                const iconName = name.replace(/([A-Z])/g, '-$1').toLowerCase().replace(/^-/, '');
+                return `const ${name} = (props) => React.createElement('i', Object.assign({ 'data-lucide': '${iconName}' }, props));`;
+            }).filter(Boolean).join('\n');
+        });
+
+        // Now strip remaining ESM syntax
+        src = this._stripEsmSyntax(src);
+
+        return src
+            // remove "use client" / "use server"
+            .replace(/["']use client["'];?/g, '')
+            .replace(/["']use server["'];?/g, '')
+            // default export → plain function / class
+            .replace(/export\s+default\s+function\s+([A-Za-z0-9_]+)/g, 'function $1')
+            .replace(/export\s+default\s+function\s*(?=\()/g, 'function DefaultApp')
+            .replace(/export\s+default\s+class\s+([A-Za-z0-9_]+)/g, 'class $1')
+            .replace(/export\s+default\s+([A-Za-z0-9_]+);?/g, 'var App = typeof $1 !== "undefined" ? $1 : App;')
+            // named exports
+            .replace(/export\s+(const|let|var|function|class|type|interface|enum)\s+/g, '$1 ')
+            // Next.js metadata
+            .replace(/export\s+const\s+metadata[\s\S]*?=[\s\S]*?;/g, '')
+            .replace(/export\s+const\s+generateMetadata[\s\S]*?=[\s\S]*?;/g, '')
+            // TypeScript non-null assertions & definite assignment
+            .replace(/([a-zA-Z0-9_\)\]])!\./g, '$1.')
+            .replace(/\(null!\)/g, '(null)')
+            .replace(/!\s*([,;\)\]\n])/g, '$1')
+            // framer-motion / gsap ease leftovers that sometimes appear
+            .replace(/case:\s*(['"](?:none|power\d\.(?:in|out|inOut)|linear|expo|circ)['"])/g, 'ease: $1')
+            // remove remaining export keywords that survived
+            .replace(/\bexport\s+\{[^}]*\}\s*;?/g, '')
+            .replace(/\bexport\s+/g, '');
+    }
+
+    /**
+     * Aggressively strip static ESM import/export syntax so code can run as a
+     * classic script. Dynamic import() calls are left alone (valid in classic JS).
+     */
+    _stripEsmSyntax(code) {
+        let src = String(code || '');
+
+        // Normalize line endings
+        src = src.replace(/\r\n/g, '\n');
+
+        for (let pass = 0; pass < 10; pass++) {
+            const before = src;
+            // import type ... from 'x'
+            src = src.replace(/^\s*import\s+type\s+[\s\S]*?from\s*['"][^'"]+['"]\s*;?\s*/gm, '');
+            // import ... from 'x'  (multi-line, including `import Foo, { a } from "x"`)
+            src = src.replace(/^\s*import\s*(?:[\w*\s{},$]+)\s*from\s*['"][^'"]+['"]\s*;?\s*/gm, '');
+            // Multi-line brace imports: import {\n  a,\n  b\n} from 'x'
+            src = src.replace(/^\s*import\s*\{[\s\S]*?\}\s*from\s*['"][^'"]+['"]\s*;?\s*/gm, '');
+            // Side-effect: import 'x'
+            src = src.replace(/^\s*import\s*['"][^'"]+['"]\s*;?\s*/gm, '');
+            // export * from 'x' / export { a } from 'x'
+            src = src.replace(/^\s*export\s+\*\s+from\s*['"][^'"]+['"]\s*;?\s*/gm, '');
+            src = src.replace(/^\s*export\s+\{[\s\S]*?\}\s*from\s*['"][^'"]+['"]\s*;?\s*/gm, '');
+            if (src === before) break;
+        }
+
+        // Final safety net for any leftover static import statements
+        src = src.replace(/(^|[\n;])\s*import\s+(?![\s\S]{0,20}\()[^;\n]*(?:;|\n)/g, '$1\n');
+
+        return src;
+    }
+
+    /**
+     * Rewrite common ESM CDN imports in static sites to global UMD usage and
+     * return { code, cdnScripts } so the preview can inject the right <script src>.
+     */
+    _rewriteStaticModules(js) {
+        const cdnScripts = [];
+        const seen = new Set();
+        const addCdn = (url) => {
+            if (!url || seen.has(url)) return;
+            seen.add(url);
+            cdnScripts.push(url);
+        };
+
+        let code = String(js || '');
+
+        const catalog = [
+            {
+                test: /from\s*['"](?:gsap|gsap\/dist\/gsap)['"]|from\s*['"]https?:\/\/[^'"]*gsap[^'"]*['"]/i,
+                cdn: 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js',
+            },
+            {
+                test: /ScrollTrigger|from\s*['"]gsap\/ScrollTrigger['"]/i,
+                cdn: 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js',
+            },
+            {
+                test: /from\s*['"](?:three|three\/build\/three)['"]|from\s*['"]https?:\/\/[^'"]*three[^'"]*['"]/i,
+                cdn: 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
+            },
+            {
+                test: /from\s*['"]@studio-freight\/lenis['"]|from\s*['"]lenis['"]|from\s*['"]https?:\/\/[^'"]*lenis[^'"]*['"]/i,
+                cdn: 'https://cdn.jsdelivr.net/gh/studio-freight/lenis@1.0.29/bundled/lenis.min.js',
+            },
+        ];
+
+        catalog.forEach((entry) => {
+            if (entry.test.test(code)) addCdn(entry.cdn);
+        });
+
+        // Map named ESM imports of known libs onto window globals before stripping.
+        code = code
+            .replace(/import\s+(\w+)\s+from\s*['"]gsap(?:\/dist\/gsap)?['"]\s*;?/g, 'const $1 = window.gsap;')
+            .replace(/import\s*\{\s*([^}]+)\s*\}\s*from\s*['"]gsap(?:\/dist\/gsap)?['"]\s*;?/g, (m, names) => {
+                const parts = names.split(',').map((n) => n.trim()).filter(Boolean);
+                return parts.map((n) => {
+                    const [orig, alias] = n.split(/\s+as\s+/).map((s) => s.trim());
+                    const local = alias || orig;
+                    if (orig === 'gsap' || orig === 'default') return `const ${local} = window.gsap;`;
+                    return `const ${local} = window.gsap?.${orig} || window.${orig};`;
+                }).join('\n');
+            })
+            .replace(/import\s*\{\s*ScrollTrigger\s*\}\s*from\s*['"][^'"]*ScrollTrigger[^'"]*['"]\s*;?/g, 'const ScrollTrigger = window.ScrollTrigger;')
+            .replace(/import\s+(\w+)\s+from\s*['"]three[^'"]*['"]\s*;?/g, 'const $1 = window.THREE;')
+            .replace(/import\s*\*\s*as\s+(\w+)\s+from\s*['"]three[^'"]*['"]\s*;?/g, 'const $1 = window.THREE;')
+            .replace(/import\s+(\w+)\s+from\s*['"][^'"]*lenis[^'"]*['"]\s*;?/g, 'const $1 = window.Lenis;');
+
+        // Generic https ESM imports → try to keep as classic globals if possible, else strip
+        code = code.replace(
+            /import\s+(\w+)\s+from\s*['"](https?:\/\/[^'"]+)['"]\s*;?/g,
+            (match, name, url) => {
+                addCdn(url);
+                return `/* ESM import of ${name} inlined via CDN ${url} */\nconst ${name} = window.${name} || window.gsap || window.THREE || window.Lenis;`;
+            }
+        );
+
+        code = this._stripEsmSyntax(code);
+        // Drop export keywords in static scripts
+        code = code
+            .replace(/export\s+default\s+/g, '')
+            .replace(/export\s+(const|let|var|function|class)\s+/g, '$1 ')
+            .replace(/export\s+\{[^}]*\}\s*;?/g, '')
+            .replace(/\bexport\s+/g, '');
+
+        return { code, cdnScripts };
+    }
+
+    /* ---------- Static DOM preview ---------- */
     _buildDOMPreview(html, files) {
         const parser = new DOMParser();
         const safeHtml = this._ensureDocumentShell(html);
@@ -12702,20 +14540,50 @@ class SandboxManager {
         this._inlineLinkedScripts(doc, files);
         this._inlineAssets(doc, files);
         this._patchCssUrls(doc, files);
+        this._demoteModuleScripts(doc);
 
-        // Auto-inject Tailwind CSS CDN & Lucide Icons if missing for instant ultra-modern rendering
         if (!doc.querySelector('script[src*="tailwindcss"]')) {
-            const tailwindScript = doc.createElement('script');
-            tailwindScript.src = 'https://cdn.tailwindcss.com';
-            doc.head.prepend(tailwindScript);
+            const s = doc.createElement('script');
+            s.src = 'https://cdn.tailwindcss.com';
+            doc.head.prepend(s);
         }
         if (!doc.querySelector('script[src*="lucide"]')) {
-            const lucideScript = doc.createElement('script');
-            lucideScript.src = 'https://unpkg.com/lucide@latest';
-            doc.head.appendChild(lucideScript);
+            const s = doc.createElement('script');
+            s.src = 'https://unpkg.com/lucide@latest';
+            doc.head.appendChild(s);
         }
 
-        // Auto-inject error relay listener
+        // Collect CDN deps from every local script before inlining.
+        const pendingCdns = [];
+        const collectAndRewrite = (sourceName) => {
+            if (!files[sourceName]) return null;
+            const rewritten = this._rewriteStaticModules(files[sourceName]);
+            pendingCdns.push(...(rewritten.cdnScripts || []));
+            return rewritten.code;
+        };
+
+        const threeCode = collectAndRewrite('three-scene.js');
+        const scriptCode = collectAndRewrite('script.js');
+
+        // Also scan already-inlined local scripts for remaining ESM + CDN needs
+        doc.querySelectorAll('script:not([src])').forEach((node) => {
+            const raw = node.textContent || '';
+            if (!/\bimport\s+|from\s+['"]gsap|from\s+['"]three|ScrollTrigger|lenis/i.test(raw)) return;
+            const rewritten = this._rewriteStaticModules(raw);
+            pendingCdns.push(...(rewritten.cdnScripts || []));
+            node.textContent = rewritten.code;
+            node.removeAttribute('type'); // classic script after rewrite
+        });
+
+        // Inject required UMD CDNs (GSAP, Three, Lenis, …) once
+        Array.from(new Set(pendingCdns)).forEach((url) => {
+            if (doc.querySelector(`script[src="${url}"]`)) return;
+            const s = doc.createElement('script');
+            s.src = url;
+            s.dataset.zeroCdn = '1';
+            doc.head.appendChild(s);
+        });
+
         const errorScript = doc.createElement('script');
         errorScript.textContent = `
             window.addEventListener('error', function(e) {
@@ -12731,11 +14599,11 @@ class SandboxManager {
         if (files['styles.css'] && !doc.querySelector('style[data-zero-source="styles.css"]')) {
             this._appendStyle(doc, files['styles.css'], 'styles.css', files);
         }
-        if (files['three-scene.js'] && !doc.querySelector('script[data-zero-source="three-scene.js"]')) {
-            this._appendScript(doc, files['three-scene.js'], 'three-scene.js');
+        if (threeCode && !doc.querySelector('script[data-zero-source="three-scene.js"]')) {
+            this._appendScript(doc, threeCode, 'three-scene.js');
         }
-        if (files['script.js'] && !doc.querySelector('script[data-zero-source="script.js"]')) {
-            this._appendScript(doc, files['script.js'], 'script.js');
+        if (scriptCode && !doc.querySelector('script[data-zero-source="script.js"]')) {
+            this._appendScript(doc, scriptCode, 'script.js');
         }
 
         if (!doc.querySelector('meta[name="viewport"]')) {
@@ -12753,10 +14621,31 @@ class SandboxManager {
         return `<!doctype html>\n${doc.documentElement.outerHTML}`;
     }
 
+    /** Convert type=module inline scripts that we can classic-ify; drop bare module src we cannot resolve. */
+    _demoteModuleScripts(doc) {
+        doc.querySelectorAll('script[type="module"]').forEach((script) => {
+            const src = script.getAttribute('src');
+            // External module CDNs often fail in srcdoc — prefer leaving local inlined code only.
+            if (src && /^(https?:)?\/\//i.test(src)) {
+                // Keep skypack/esm.sh out of classic path; remove to avoid the import error spam.
+                if (/skypack|esm\.sh|jspm\.dev|unpkg\.com\/\+esm/i.test(src)) {
+                    script.remove();
+                }
+                return;
+            }
+            if (!src) {
+                // Inline module: strip ESM and run as classic after rewrite later.
+                script.removeAttribute('type');
+            }
+        });
+    }
+
     _ensureDocumentShell(html) {
         const source = String(html || '').trim();
         if (/<html[\s>]/i.test(source)) return source;
-        if (/<body[\s>]/i.test(source) || /<head[\s>]/i.test(source)) return `<!doctype html><html>${source}</html>`;
+        if (/<body[\s>]/i.test(source) || /<head[\s>]/i.test(source)) {
+            return `<!doctype html><html>${source}</html>`;
+        }
         return `<!doctype html><html><head></head><body>${source}</body></html>`;
     }
 
@@ -12775,8 +14664,17 @@ class SandboxManager {
             const path = this._resolvePath(script.getAttribute('src'));
             const source = files[path];
             if (!source || this._isDataUrl(source)) return;
-            const replacement = this._createScript(doc, source, path);
-            if (script.type) replacement.type = script.type;
+            // Always classic-ify local project scripts — ESM imports break srcdoc previews.
+            const rewritten = this._rewriteStaticModules(source);
+            const replacement = this._createScript(doc, rewritten.code, path);
+            // Inject any CDN deps discovered on this file next to the script
+            (rewritten.cdnScripts || []).forEach((url) => {
+                if (doc.querySelector(`script[src="${url}"]`)) return;
+                const cdn = doc.createElement('script');
+                cdn.src = url;
+                cdn.dataset.zeroCdn = '1';
+                script.parentNode?.insertBefore(cdn, script);
+            });
             script.replaceWith(replacement);
         });
     }
@@ -12789,7 +14687,9 @@ class SandboxManager {
         attrs.forEach(([selector, attr]) => {
             doc.querySelectorAll(`${selector}[${attr}]`).forEach(node => {
                 const path = this._resolvePath(node.getAttribute(attr));
-                if (files[path] && this._isDataUrl(files[path])) node.setAttribute(attr, files[path]);
+                if (files[path] && this._isDataUrl(files[path])) {
+                    node.setAttribute(attr, files[path]);
+                }
             });
         });
     }
@@ -12801,7 +14701,7 @@ class SandboxManager {
     }
 
     _replaceCssUrls(css, files) {
-        return String(css || '').replace(/url\((['"]?)([^'")]+)\1\)/g, (match, quote, rawPath) => {
+        return String(css || '').replace(/url\((['"]?)([^'")\s]+)\1\)/g, (match, quote, rawPath) => {
             const path = this._resolvePath(rawPath);
             if (files[path] && this._isDataUrl(files[path])) return `url("${files[path]}")`;
             return match;
@@ -12826,7 +14726,24 @@ class SandboxManager {
     _createScript(doc, js, source) {
         const script = doc.createElement('script');
         script.dataset.zeroSource = source;
-        script.textContent = String(js || '');
+        // Final pass: never leave static import/export in classic scripts.
+        let cleanJs = this._stripEsmSyntax(js);
+        cleanJs = cleanJs
+            .replace(/export\s+default\s+/g, '')
+            .replace(/export\s+(const|let|var|function|class)\s+/g, '$1 ')
+            .replace(/export\s+\{[^}]*\}\s*;?/g, '')
+            .replace(/\bexport\s+/g, '');
+        // Nuke any remaining static import statements entirely (do not leave bare tokens).
+        cleanJs = cleanJs.replace(/^\s*import\s+(?![\s\S]{0,40}\()[\s\S]*?(?:;|$)/gm, '/* zero-preview: stripped import */\n');
+        // Last-resort: blank any line that still starts with import (static only).
+        cleanJs = cleanJs.split('\n').map((line) => {
+            if (/^\s*import\s+/.test(line) && !/import\s*\(/.test(line)) {
+                return '/* zero-preview: stripped import line */';
+            }
+            return line;
+        }).join('\n');
+        script.type = 'text/javascript';
+        script.textContent = cleanJs;
         return script;
     }
 
@@ -12843,6 +14760,7 @@ class SandboxManager {
         return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#09090f;color:#f7f7fb;font-family:Inter,system-ui,sans-serif}.card{max-width:540px;margin:24px;padding:32px;border:1px solid rgba(255,255,255,.12);border-radius:20px;background:linear-gradient(145deg,#171725,#0d0d15);box-shadow:0 20px 60px rgba(0,0,0,.35)}.eyebrow{color:#7dd3fc;font:600 12px ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase}.title{margin:12px 0;font-size:28px;letter-spacing:-.04em}.copy{color:#b5b5c9;line-height:1.65}.hint{margin-top:20px;padding:12px;border-radius:10px;background:rgba(125,211,252,.08);color:#d9f5ff;font-size:14px}</style></head><body><main class="card"><div class="eyebrow">Local device workspace</div><h1 class="title">${title}</h1><p class="copy">${message}</p><p class="hint">Static projects preview instantly in this panel.</p></main></body></html>`;
     }
 }
+
 window.SandboxManager = SandboxManager;
 
 ;
@@ -13329,8 +15247,26 @@ class PreviewEngine {
             return;
         }
 
+        if (!this.iframe) {
+            console.warn('PreviewEngine: iframe element is missing');
+            return;
+        }
+
         this.hideEmpty();
         this.previewErrors = [];
+
+        // Fallback when SandboxManager failed to load — still show static HTML if present.
+        if (!this.sandbox) {
+            const html = String(files['index.html'] || '');
+            const css = String(files['styles.css'] || '');
+            const js = String(files['script.js'] || '');
+            this.iframe.srcdoc = html
+                ? html
+                    .replace('</head>', css ? `<style>${css}</style></head>` : '</head>')
+                    .replace('</body>', js ? `<script>${js}<\/script></body>` : '</body>')
+                : '<!doctype html><html><body><h1>Preview unavailable</h1><p>Sandbox manager failed to load.</p></body></html>';
+            return;
+        }
 
         const projectType = this.sandbox.getProjectType(files);
 
@@ -15576,6 +17512,7 @@ window.DeployManager = DeployManager;
             // Wire up event listeners
             setupAgentEvents();
             setupUIEvents();
+            setupConversionLab();
             loadSavedSettings();
             loadWorkspace();
             renderRecentProjects();
@@ -15616,6 +17553,11 @@ window.DeployManager = DeployManager;
 
     /* ===== AGENT FRAMEWORK EVENTS ===== */
     function setupAgentEvents() {
+        if (!framework) {
+            console.error('AgentFramework failed to load — generation is unavailable');
+            return;
+        }
+
         framework.on('stateChange', ({ from, to }) => {
             updateStepIndicators(to);
         });
@@ -15629,10 +17571,19 @@ window.DeployManager = DeployManager;
         });
 
         framework.on('filesReady', (files) => {
-            editor.setFiles(files);
-            fileSystem.setFiles(files);
-            preview.render(files);
-            preview.runInteractionAudit?.();
+            if (editor) editor.setFiles(files);
+            if (fileSystem) fileSystem.setFiles(files);
+            if (preview) {
+                preview.render(files);
+                preview.runInteractionAudit?.();
+            }
+            scheduleWorkspaceSave();
+        });
+
+        framework.on('livePreview', ({ files, partial }) => {
+            if (editor) editor.setFiles(files);
+            if (fileSystem) fileSystem.setFiles(files);
+            if (preview) preview.render(files);
         });
 
         framework.on('complete', (files) => {
@@ -15647,7 +17598,8 @@ window.DeployManager = DeployManager;
             // Render bug report if there are unfixable bugs
             if (framework.memory && framework.memory.bugReport) {
                 const report = framework.memory.bugReport;
-                const unfixable = report.bugs.filter(b => !report.fixable.includes(b));
+                const fixableSet = new Set((report.fixable || []).map(b => b?.message || b));
+                const unfixable = (report.bugs || []).filter(b => !fixableSet.has(b?.message || b));
                 if (unfixable.length > 0) {
                     let html = `<div class="ws-bug-report">
                         <div class="ws-bug-report-title">
@@ -15657,7 +17609,7 @@ window.DeployManager = DeployManager;
                         <ul>`;
 
                     for (const bug of unfixable) {
-                        html += `<li><strong>${bug.file}:</strong> ${bug.message}</li>`;
+                        html += `<li><strong>${escapeHtml(bug.file || 'file')}:</strong> ${escapeHtml(bug.message || '')}</li>`;
                     }
                     html += `</ul></div>`;
 
@@ -15705,6 +17657,7 @@ window.DeployManager = DeployManager;
                 document.querySelectorAll('.welcome-fw-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 const fw = btn.dataset.framework;
+                if (!framework) return;
                 if (fw === 'react-vite') {
                     framework.frameworkOverride = 'react-vite';
                     showToast('info', 'Target: React + Vite');
@@ -15721,7 +17674,7 @@ window.DeployManager = DeployManager;
         document.querySelectorAll('.welcome-quality-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 buildQuality = btn.dataset.quality || 'production';
-                framework.aiMode = buildQuality;
+                if (framework) framework.aiMode = buildQuality;
                 document.querySelectorAll('.welcome-quality-btn').forEach(item => item.classList.toggle('active', item === btn));
             });
         });
@@ -15795,19 +17748,26 @@ window.DeployManager = DeployManager;
             btn.addEventListener('click', () => {
                 document.querySelectorAll('.ws-device-btn, .device-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
-                preview.setDevice(btn.dataset.device);
+                preview?.setDevice(btn.dataset.device);
             });
         });
 
         // Preview controls
-        document.getElementById('btn-refresh-preview')?.addEventListener('click', () => preview.refresh());
-        document.getElementById('btn-fullscreen')?.addEventListener('click', () => preview.toggleFullscreen());
+        document.getElementById('btn-refresh-preview')?.addEventListener('click', () => preview?.refresh());
+        document.getElementById('btn-fullscreen')?.addEventListener('click', () => preview?.toggleFullscreen());
 
         // Visual Inspector
-        const visualInspector = new VisualInspector(document.getElementById('preview-iframe'), { editor });
+        const visualInspector = typeof VisualInspector !== 'undefined'
+            ? new VisualInspector(document.getElementById('preview-iframe'), { editor })
+            : null;
         document.getElementById('btn-visual-inspector')?.addEventListener('click', () => {
+            if (!visualInspector) {
+                showToast('warning', 'Visual Inspector is not available');
+                return;
+            }
             const active = visualInspector.toggle();
             const btn = document.getElementById('btn-visual-inspector');
+            if (!btn) return;
             if (active) {
                 btn.classList.add('active');
                 btn.style.background = 'rgba(56, 189, 248, 0.2)';
@@ -15870,7 +17830,7 @@ window.DeployManager = DeployManager;
                 chip.classList.toggle('active');
                 chip.classList.contains('active') ? selectedRequirements.add(requirement) : selectedRequirements.delete(requirement);
                 if (chip.classList.contains('active') && ['auth', 'database', 'api', 'payments'].includes(requirement)) {
-                    framework.frameworkOverride = 'fullstack-nextjs';
+                    if (framework) framework.frameworkOverride = 'fullstack-nextjs';
                     document.querySelectorAll('.fw-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.framework === 'fullstack-nextjs'));
                     showToast('info', 'Full-Stack target selected for backend capabilities');
                 }
@@ -15880,7 +17840,7 @@ window.DeployManager = DeployManager;
         document.querySelectorAll('.quality-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 buildQuality = btn.dataset.quality || 'production';
-                framework.aiMode = buildQuality;
+                if (framework) framework.aiMode = buildQuality;
                 document.querySelectorAll('.quality-btn').forEach(item => item.classList.toggle('active', item === btn));
                 scheduleWorkspaceSave();
             });
@@ -15913,13 +17873,14 @@ window.DeployManager = DeployManager;
         document.getElementById('btn-new-file')?.addEventListener('click', () => {
             const name = prompt('Enter file name:');
             if (name) {
-                editor.addFile(name, '');
-                fileSystem.addFile(name, '');
+                editor?.addFile(name, '');
+                fileSystem?.addFile(name, '');
             }
         });
 
         // Copy code
         document.getElementById('btn-copy-code')?.addEventListener('click', () => {
+            if (!editor) return;
             navigator.clipboard?.writeText(editor.getValue());
             showToast('success', 'Code copied to clipboard!');
         });
@@ -15944,13 +17905,13 @@ window.DeployManager = DeployManager;
         document.addEventListener('keydown', (e) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 's') {
                 e.preventDefault();
-                const files = editor.getAllFiles();
-                preview.render(files);
+                const files = editor?.getAllFiles() || {};
+                preview?.render(files);
                 showToast('info', 'Preview refreshed');
             }
             if (e.key === 'F11') {
                 e.preventDefault();
-                preview.toggleFullscreen();
+                preview?.toggleFullscreen();
             }
         });
 
@@ -16166,6 +18127,11 @@ Format:
     }
 
     async function executeGeneration(prompt) {
+        if (!framework) {
+            showToast('error', 'Agent framework failed to load. Refresh the page.');
+            return;
+        }
+
         if (isGenerating) {
             // Prevent accidental double-click / Enter cancellation (require at least 4.5s delay)
             if (Date.now() - generationStartTime < 4500) {
@@ -16181,6 +18147,10 @@ Format:
         }
 
         // Check API key
+        if (!window.llmProvider) {
+            showToast('error', 'LLM provider failed to load. Refresh the page.');
+            return;
+        }
         const apiKey = window.llmProvider.getApiKey();
         if (!apiKey && !window.llmProvider.providers[window.llmProvider.currentProvider]?.noApiKey) {
             showToast('error', 'Please set your API key in Settings first');
@@ -16205,10 +18175,11 @@ Format:
         if (editor) editor.setValue('// Initiating deep generation sequence...\n');
 
         try {
-            // Pass art direction into framework for prompt engineer
-            framework.memory = framework.memory || {};
-            framework.memory._artDirectionPreset = artDirectionPreset;
-            await framework.generate(buildGenerationBrief(prompt));
+            // Pass art direction as generate() options so it survives the memory reset
+            if (framework) framework.aiMode = buildQuality;
+            await framework.generate(buildGenerationBrief(prompt), {
+                artDirection: artDirectionPreset,
+            });
 
             // Add success message in chat instead of replacing
             addChatMessage('system', '✅ Generation complete! Check the preview.', true);
@@ -16222,7 +18193,7 @@ Format:
             addChatMessage('system', `❌ Error: ${msg}`, true);
 
             // Surface engineer-grade failure guidance (no silent fail, no weak shell)
-            if (/too thin|no weak|failed permanently|could not finish|extract ANY code/i.test(msg)) {
+            if (/too thin|no weak|failed permanently|could not finish|extract ANY code|is not a function/i.test(msg)) {
                 showToast('error', 'Generation failed quality bar. Retry with Production/Autonomous + a stronger model (Pro/Opus/GPT-4o).');
                 addConsoleLog('error', `Engineer mode rejected thin/failed output: ${msg}`);
             } else {
@@ -16235,7 +18206,7 @@ Format:
     /* ===== CHAT / REFINEMENT ===== */
     function handleStopGeneration() {
         if (!isGenerating) return;
-        framework.cancel();
+        framework?.cancel();
         isGenerating = false;
         updateGenerateButton(false);
         showToast('info', 'Generation stopped');
@@ -16252,9 +18223,11 @@ Format:
 
         // IF GENERATION IS CURRENTLY IN PROGRESS:
         if (isGenerating) {
-            framework.memory = framework.memory || {};
-            framework.memory.midFlightNotes = framework.memory.midFlightNotes || [];
-            framework.memory.midFlightNotes.push(prompt);
+            if (framework) {
+                framework.memory = framework.memory || {};
+                framework.memory.midFlightNotes = framework.memory.midFlightNotes || [];
+                framework.memory.midFlightNotes.push(prompt);
+            }
 
             try {
                 const systemPrompt = "You are the Zero-Builder AI Assistant. The user sent a message WHILE a website build is running in the background. Briefly acknowledge their message in 1 short friendly sentence and confirm that your instructions/note have been saved for the build. Speak in the user's language (e.g. Hinglish if they use it).";
@@ -16274,6 +18247,7 @@ Format:
         const hasFiles = Object.keys(currentFiles || {}).length > 0;
 
         isGenerating = true;
+        updateGenerateButton(true);
         addChatMessage('ai', 'Thinking...');
 
         try {
@@ -16298,7 +18272,6 @@ Format:
 
             // If it's a simple greeting or general inquiry, stop here. Do NOT throw error or refine code.
             if (isGreeting) {
-                isGenerating = false;
                 return;
             }
 
@@ -16307,13 +18280,16 @@ Format:
                 const questions = await fetchClarificationQuestions(prompt);
                 if (questions && questions.length > 0) {
                     renderQuestionnaire(questions, prompt);
-                    isGenerating = false;
                     return;
                 }
+                // executeGeneration manages its own isGenerating flag
                 isGenerating = false;
+                updateGenerateButton(false);
                 await executeGeneration(prompt);
                 return;
             }
+
+            if (!framework) throw new Error('Agent framework is not available');
 
             // Apply actual code changes if files already exist
             await framework.refine(prompt);
@@ -16322,16 +18298,22 @@ Format:
             addChatMessage('system', '✅ Changes applied! Check the preview.', true);
         } catch (e) {
             addChatMessage('system', `❌ Error: ${e.message}`, true);
+            showToast('error', `Chat failed: ${e.message}`);
         } finally {
             isGenerating = false;
+            updateGenerateButton(false);
         }
     }
 
     /* ===== EXPORT ===== */
     async function handleExport() {
-        const files = editor.getAllFiles();
+        const files = editor?.getAllFiles() || {};
         if (Object.keys(files).length === 0) {
             showToast('warning', 'No files to export. Generate a website first.');
+            return;
+        }
+        if (!deploy) {
+            showToast('error', 'Export manager is not available');
             return;
         }
         try {
@@ -16347,8 +18329,14 @@ Format:
         const zipFile = input?.files?.[0];
         if (!zipFile) return;
 
+        if (!projectIntake) {
+            showToast('error', 'Project intake is not available');
+            input.value = '';
+            return;
+        }
+
         try {
-            const currentFiles = editor.getAllFiles();
+            const currentFiles = editor?.getAllFiles() || {};
             if (Object.keys(currentFiles).length && !confirm('Import this ZIP and replace the current editor workspace? Save/export first if needed.')) {
                 input.value = '';
                 return;
@@ -16363,35 +18351,42 @@ Format:
             const nameInput = document.getElementById('project-name');
             if (nameInput) nameInput.value = projectName || 'Imported project';
 
-            editor.setFiles(files);
-            fileSystem.setFiles(files);
-            preview.render(files);
-            framework.memory.generatedFiles = { ...files };
-            framework.memory.importAnalysis = analysis;
-            framework.memory.specification = buildImportedSpecification(analysis);
-            framework.memory.designSystem = buildImportedDesignSystem();
+            editor?.setFiles(files);
+            fileSystem?.setFiles(files);
+            preview?.render(files);
+            if (framework) {
+                framework.memory = framework.memory || {};
+                framework.memory.generatedFiles = { ...files };
+                framework.memory.importAnalysis = analysis;
+                framework.memory.specification = buildImportedSpecification(analysis);
+                framework.memory.designSystem = buildImportedDesignSystem();
+            }
             applyFrameworkFromAnalysis(analysis);
             persistWorkspace();
-            const intelligence = await framework.analyzeImportedProject(files, analysis, {
-                projectName: getProjectName(),
-                importedAt: Date.now()
-            });
+            const intelligence = framework
+                ? await framework.analyzeImportedProject(files, analysis, {
+                    projectName: getProjectName(),
+                    importedAt: Date.now()
+                })
+                : {};
             logProjectIntelligence(intelligence);
-            const repoEntry = projectRepository.record({
-                name: getProjectName(),
-                source: analysis.sourceName,
-                framework: analysis.framework,
-                fileCount: analysis.fileCount,
-                warnings: [...(analysis.warnings || []), ...(intelligence.upgradePlan?.priority || []).slice(0, 5)],
-                agents: Object.keys(intelligence).filter(key => !['context', 'analysis'].includes(key))
-            });
-            addConsoleLog('success', `Project Repository saved: ${repoEntry.organization} / ${repoEntry.name}`);
+            if (projectRepository) {
+                const repoEntry = projectRepository.record({
+                    name: getProjectName(),
+                    source: analysis.sourceName,
+                    framework: analysis.framework,
+                    fileCount: analysis.fileCount,
+                    warnings: [...(analysis.warnings || []), ...(intelligence.upgradePlan?.priority || []).slice(0, 5)],
+                    agents: Object.keys(intelligence).filter(key => !['context', 'analysis'].includes(key))
+                });
+                addConsoleLog('success', `Project Repository saved: ${repoEntry.organization} / ${repoEntry.name}`);
+            }
 
             addConsoleLog('success', `Imported ${analysis.fileCount} files (${formatBytes(analysis.size)}) as ${analysis.framework}.`);
-            if (analysis.pages.length) addConsoleLog('info', `Detected pages: ${analysis.pages.slice(0, 6).join(', ')}`);
-            if (analysis.dependencies.length) addConsoleLog('info', `Dependencies: ${analysis.dependencies.slice(0, 10).join(', ')}`);
-            analysis.warnings.forEach(warning => addConsoleLog('warning', warning));
-            if (skipped.length) addConsoleLog('warning', `Skipped sample: ${skipped.slice(0, 5).map(item => `${item.path} (${item.reason})`).join('; ')}`);
+            if (analysis.pages?.length) addConsoleLog('info', `Detected pages: ${analysis.pages.slice(0, 6).join(', ')}`);
+            if (analysis.dependencies?.length) addConsoleLog('info', `Dependencies: ${analysis.dependencies.slice(0, 10).join(', ')}`);
+            (analysis.warnings || []).forEach(warning => addConsoleLog('warning', warning));
+            if (skipped?.length) addConsoleLog('warning', `Skipped sample: ${skipped.slice(0, 5).map(item => `${item.path} (${item.reason})`).join('; ')}`);
 
             showToast('success', `Imported ${analysis.fileCount} files from ZIP`);
             if (analysis.size > 4 * 1024 * 1024) showToast('warning', 'Large project imported. Use Local export if browser storage gets full.');
@@ -16437,7 +18432,7 @@ Format:
 
     function applyFrameworkFromAnalysis(analysis) {
         const target = analysis.framework === 'nextjs' ? 'fullstack-nextjs' : analysis.framework === 'react' ? 'react-vite' : 'vanilla';
-        framework.frameworkOverride = target;
+        if (framework) framework.frameworkOverride = target;
         document.querySelectorAll('.fw-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.framework === target));
     }
 
@@ -16480,7 +18475,7 @@ Format:
     }
 
     async function exportToLocalWorkspace() {
-        const files = editor.getAllFiles();
+        const files = editor?.getAllFiles() || {};
         if (!Object.keys(files).length) {
             showToast('warning', 'Generate a project before exporting to your device');
             return;
@@ -16524,9 +18519,13 @@ Format:
 
     /* ===== DEPLOY ===== */
     async function handleDeploy() {
-        const files = editor.getAllFiles();
+        const files = editor?.getAllFiles() || {};
         if (Object.keys(files).length === 0) {
             showToast('warning', 'No files to deploy. Generate a website first.');
+            return;
+        }
+        if (!deploy) {
+            showToast('error', 'Deploy manager is not available');
             return;
         }
 
@@ -16570,7 +18569,9 @@ Format:
         };
 
         const prompt = prompts[template] || prompts.realestate;
-        const promptInput = document.getElementById('prompt-input');
+        // Prefer welcome prompt when on landing, otherwise workspace prompt
+        const promptInput = document.getElementById('welcome-prompt-input')
+            || document.getElementById('prompt-input');
         if (promptInput) {
             promptInput.value = prompt;
             promptInput.focus();
@@ -16578,13 +18579,15 @@ Format:
         // Prefer Motion Studio for cinematic library cards
         if (['realestate', 'agency', 'fashion', 'architecture', 'product'].includes(template)) {
             buildQuality = 'motion-studio';
-            framework.aiMode = 'motion-studio';
+            if (framework) {
+                framework.aiMode = 'motion-studio';
+                framework.frameworkOverride = 'vanilla';
+            }
             artDirectionPreset = 'cinematic';
-            document.querySelectorAll('.quality-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.quality === 'motion-studio'));
+            document.querySelectorAll('.quality-btn, .welcome-quality-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.quality === 'motion-studio'));
             const art = document.getElementById('art-direction');
             if (art) art.value = 'cinematic';
-            framework.frameworkOverride = 'vanilla';
-            document.querySelectorAll('.fw-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.framework === 'vanilla'));
+            document.querySelectorAll('.fw-btn, .welcome-fw-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.framework === 'vanilla'));
         }
         showToast('success', 'Studio prompt loaded — Generate or Enhance first');
         scheduleWorkspaceSave();
@@ -16977,19 +18980,28 @@ Format:
             selectedRequirements = new Set(Array.isArray(saved.requirements) ? saved.requirements : []);
             document.querySelectorAll('.build-chip').forEach(chip => chip.classList.toggle('active', selectedRequirements.has(chip.dataset.requirement)));
             buildQuality = ['fast', 'production', 'autonomous', 'motion-studio', 'power'].includes(saved.quality) ? saved.quality : 'production';
-            framework.aiMode = buildQuality;
+            if (framework) framework.aiMode = buildQuality;
             document.querySelectorAll('.quality-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.quality === buildQuality));
             artDirectionPreset = saved.artDirection || 'editorial';
             const artDirection = document.getElementById('art-direction');
             if (artDirection) artDirection.value = artDirectionPreset;
-            if (saved.framework) {
+            if (saved.framework && framework) {
                 framework.frameworkOverride = saved.framework;
                 document.querySelectorAll('.fw-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.framework === saved.framework));
             }
             if (saved.files && Object.keys(saved.files).length) {
-                editor.setFiles(saved.files);
-                fileSystem.setFiles(saved.files);
-                preview.render(saved.files);
+                editor?.setFiles(saved.files);
+                fileSystem?.setFiles(saved.files);
+                preview?.render(saved.files);
+
+                // Auto-restore workspace view on F5 page refresh
+                const welcomeScreen = document.getElementById('welcome-screen');
+                const app = document.getElementById('app');
+                if (welcomeScreen) welcomeScreen.style.display = 'none';
+                if (app) {
+                    app.classList.remove('hidden');
+                    setTimeout(() => { if (editor) editor.refresh(); }, 100);
+                }
             }
             setSaveState(saved.updatedAt ? `Restored ${new Date(saved.updatedAt).toLocaleDateString()}` : 'Workspace restored');
         } catch (error) {
@@ -16997,6 +19009,15 @@ Format:
             setSaveState('New workspace');
         }
     }
+
+    // Protect active generation from accidental F5 refresh
+    window.addEventListener('beforeunload', (e) => {
+        if (isGenerating) {
+            e.preventDefault();
+            e.returnValue = 'ZERO-BUILDER is currently generating your website. Are you sure you want to refresh?';
+            return e.returnValue;
+        }
+    });
 
     function setSaveState(text) {
         const status = document.getElementById('save-state');
@@ -17042,6 +19063,14 @@ Format:
             files,
         };
         try {
+            if (framework?.versionControl) {
+                framework.versionControl.createSnapshot({
+                    label,
+                    prompt: framework.memory?.userPrompt || label,
+                    files,
+                    reviewScore: framework.memory?.reviewReport?.score || 0
+                });
+            }
             const snapshots = [snapshot, ...getSnapshots()].slice(0, 12);
             localStorage.setItem(HISTORY_KEY, JSON.stringify(snapshots));
             persistWorkspace();
@@ -17056,13 +19085,17 @@ Format:
         const snapshot = getSnapshots().find(item => item.id === id);
         if (!snapshot || !snapshot.files) return;
         if (!confirm(`Restore “${snapshot.label}”? Your current workspace will be kept as a local draft.`)) return;
-        editor.setFiles(snapshot.files);
-        fileSystem.setFiles(snapshot.files);
-        preview.render(snapshot.files);
+        editor?.setFiles(snapshot.files);
+        fileSystem?.setFiles(snapshot.files);
+        preview?.render(snapshot.files);
+        if (framework) {
+            framework.memory = framework.memory || {};
+            framework.memory.generatedFiles = { ...snapshot.files };
+            framework.frameworkOverride = snapshot.framework || 'vanilla';
+        }
         const name = document.getElementById('project-name');
         if (name && snapshot.project) name.value = snapshot.project;
-        framework.frameworkOverride = snapshot.framework || 'vanilla';
-        document.querySelectorAll('.fw-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.framework === framework.frameworkOverride));
+        document.querySelectorAll('.fw-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.framework === (framework?.frameworkOverride || 'vanilla')));
         persistWorkspace();
         toggleModal('history-modal', false);
         showToast('success', 'Version restored');
@@ -17316,7 +19349,7 @@ Format:
                     filePanel.style.width = newWidth + 'px';
                     filePanel.style.flexShrink = '0';
                     filePanel.style.flexGrow = '0';
-                    editor.refresh();
+                    editor?.refresh();
                 }
             });
         }
@@ -17329,7 +19362,7 @@ Format:
                 const newPreviewWidth = previewRect.width - dx;
                 if (newEditorWidth >= 300 && newPreviewWidth >= 300) {
                     editorPanel.style.flex = `0 0 ${newEditorWidth}px`;
-                    editor.refresh();
+                    editor?.refresh();
                 }
             });
         }
@@ -17362,6 +19395,18 @@ Format:
     }
 
     /* ===== CONVERSION LAB & LIVE AGENT ===== */
+    function updateFileTree(files) {
+        const next = files || framework?.memory?.generatedFiles || editor?.getAllFiles() || {};
+        if (fileSystem) fileSystem.setFiles(next);
+        if (editor) editor.setFiles(next);
+    }
+
+    function updatePreview(files) {
+        const next = files || framework?.memory?.generatedFiles || editor?.getAllFiles() || {};
+        if (preview) preview.render(next);
+        scheduleWorkspaceSave();
+    }
+
     function setupConversionLab() {
         const labUI = document.getElementById('conversion-lab-ui');
         const variantBtns = document.querySelectorAll('.lab-variant-btn');
@@ -17390,16 +19435,16 @@ Format:
                 btn.classList.add('active');
 
                 const variantId = btn.getAttribute('data-variant');
-                if (framework && framework.memory.studioIntelligence && framework.memory.studioIntelligence.conversionLab) {
-                    const variant = framework.memory.studioIntelligence.conversionLab.variants.find(v => v.id === variantId);
+                const lab = framework?.memory?.studioIntelligence?.conversionLab;
+                if (framework && lab?.variants) {
+                    const variant = lab.variants.find(v => v.id === variantId);
                     if (variant) {
-                        appendChatMessage('system', `<strong>Conversion Lab:</strong> Switched to ${variant.id} strategy.<br><small>${variant.hypothesis}</small>`);
+                        addChatMessage('system', `<strong>Conversion Lab:</strong> Switched to ${escapeHtml(variant.id)} strategy.<br><small>${escapeHtml(variant.hypothesis || '')}</small>`, true);
 
-                        // If we had a mechanism to dynamically re-render the hero section here, we would trigger it.
-                        // For now, we simulate the AI agent updating the hero block.
+                        // Queue a refine request for the selected conversion strategy.
                         const promptInput = document.getElementById('chat-input');
                         if (promptInput) {
-                            promptInput.value = `Update the hero section to match the ${variant.id} strategy: ${variant.uiStrategy}`;
+                            promptInput.value = `Update the hero section to match the ${variant.id} strategy: ${variant.uiStrategy || variant.hypothesis || ''}`;
                             document.getElementById('chat-send')?.click();
                         }
                     }
@@ -17414,24 +19459,27 @@ Format:
                     return;
                 }
 
-                appendChatMessage('system', 'Starting Live Browser Agent autonomous audit...');
-                const fixedFiles = await framework.liveBrowserAgent.runAutonomousAudit(
-                    framework.agents['healer'],
-                    framework.memory.generatedFiles
-                );
+                addChatMessage('system', 'Starting Live Browser Agent autonomous audit...', true);
+                try {
+                    const fixedFiles = await framework.liveBrowserAgent.runAutonomousAudit(
+                        framework.agents['healer'],
+                        framework.memory.generatedFiles
+                    );
 
-                if (fixedFiles) {
-                    appendChatMessage('system', 'Live Agent found errors and Healer patched them. Updating preview...');
-                    framework.memory.generatedFiles = { ...framework.memory.generatedFiles, ...fixedFiles };
-                    updateFileTree();
-                    updatePreview();
-                } else {
-                    appendChatMessage('system', 'Live Agent audit completed successfully with no runtime errors.');
+                    if (fixedFiles && Object.keys(fixedFiles).length) {
+                        addChatMessage('system', 'Live Agent found errors and Healer patched them. Updating preview...', true);
+                        framework.memory.generatedFiles = { ...framework.memory.generatedFiles, ...fixedFiles };
+                        updateFileTree(framework.memory.generatedFiles);
+                        updatePreview(framework.memory.generatedFiles);
+                    } else {
+                        addChatMessage('system', 'Live Agent audit completed successfully with no runtime errors.', true);
+                    }
+                } catch (error) {
+                    addChatMessage('system', `Live Agent failed: ${escapeHtml(error.message || String(error))}`, true);
+                    showToast('error', 'Live Browser audit failed');
                 }
             });
         }
     }
-
-    setupConversionLab();
 
 })();

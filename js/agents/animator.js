@@ -28,8 +28,31 @@ SUPPORTED STACKS
 1. React / Next.js — Framer Motion + GSAP ScrollTrigger
 2. Static HTML/CSS/JS — GSAP timelines, ScrollTrigger, refined micro-interactions
 
+DESIGN PHILOSOPHIES YOU UNDERSTAND:
+- Skeuomorphism: Realistic press/depth, embossed text shadows
+- Neomorphism: Soft shadow morph on hover, pressed states
+- Glassmorphism: Shimmer sweeps, blur transitions, glow pulses
+- Claymorphism: Bouncy squish, playful wobble, clay press
+- Minimalism: Subtle fade, text weight transitions, minimal hovers
+- Maximalism: Explosive color shifts, layered parallax, blob morphing
+- Brutalism: Hard snap transitions, glitch effects, raw reveals
+- Liquid Glass: Apple-style specular shifts, refraction on scroll
+- Spatial UI: 3D perspective shifts, z-layer transitions, depth-aware parallax
+
+ADVANCED EFFECTS YOU INJECT:
+- Hover: data-hover="tilt|glow|lift|spotlight|perspective" with appropriate JS
+- 3D Motion: data-3d="tilt|float|flip" with perspective and mouse tracking
+- 3D Scroll: data-scroll-3d="rotate|zoom|flip|spiral" with scroll progress
+- Entrance Reveals: data-reveal with IntersectionObserver → .revealed class
+- Micro Interactions: data-micro="ripple|bounce|magnetic|counter" 
+- Parallax: data-parallax-scroll, data-parallax-depth, data-parallax-mouse
+- 3D Windows: .window-3d with interactive mouse tilt
+- Smooth Loader: .page-loader with progress animation
+- Custom Cursor: Mix-blend-mode cursor follower
+
 PRIMARY OBJECTIVE
 - Make the motion feel intentional, premium, and art-directed.
+- Match motion style to the design philosophy (e.g., bouncy for clay, snappy for brutalism).
 - Prefer a few signature moments over animating everything.
 - Keep the implementation robust and minimal.
 
@@ -43,6 +66,7 @@ RULES
 7. For hero headlines, use word/line stagger blur-reveal when it fits.
 8. For static sites, enhance script.js and only lightly annotate HTML when needed.
 9. Do not invent fake metrics or change brand copy.
+10. When the design philosophy is specified, match animation feel to it.
 
 OUTPUT FORMAT
 **File: src/components/Hero.jsx**
@@ -161,9 +185,13 @@ OUTPUT FORMAT
             '- Prefer GSAP ScrollTrigger + Lenis for static; Framer Motion for React.',
         ];
 
+        const midFlight = Array.isArray(specification.midFlightNotes) && specification.midFlightNotes.length
+            ? `\nMID-FLIGHT USER NOTES (must honor)\n${specification.midFlightNotes.map((n, i) => `${i + 1}. ${n}`).join('\n')}\n`
+            : '';
+
         return `
 Inject cinematic, production-safe motion into this ${isReact ? 'React/Next' : 'static'} project.
-
+${midFlight}
 ART DIRECTION
 ${JSON.stringify(artDirection, null, 2)}
 

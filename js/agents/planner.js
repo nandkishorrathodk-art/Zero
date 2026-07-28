@@ -534,6 +534,10 @@ Output the complete specification JSON now.`;
         // Quality contract
         spec.qualityContract = this._getQualityContract(spec);
 
+        // Design philosophy & advanced effects
+        spec.designPhilosophy = spec.designPhilosophy || engineeredBrief?.designPhilosophy || null;
+        spec.advancedEffects = engineeredBrief?.advancedEffects || spec.advancedEffects || [];
+
         // App architecture for fullstack
         if (spec.framework === 'fullstack-nextjs') {
             spec.appArchitecture = this._normalizeArchitecture(spec.appArchitecture, spec);

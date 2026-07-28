@@ -100,12 +100,30 @@ CINEMATIC WEBSITE CHECKS (categories: hero-scene | scroll-story | motion-perform
 - Is there film-grade restraint (grain/vignette/type) without visual noise?
 - Would this sit next to motionsites.ai craft without looking like Bootstrap AI?
 
+DESIGN PHILOSOPHY CHECKS (each worth up to 5 points, category: design-philosophy):
+- Is the specified design philosophy (skeuomorphism/neomorphism/glassmorphism/claymorphism/minimalism/maximalism/brutalism/liquid-glass/spatial-ui) consistently applied?
+- Are philosophy-specific CSS classes used (e.g., .neo-flat, .glass-card, .brutal-button, .spatial-card)?
+- Do surfaces, buttons, and cards match the design philosophy's visual language?
+- Is the philosophy applied uniformly, or is it a random mix of styles?
+
+ADVANCED EFFECTS CHECKS (category: advanced-effects):
+- Are hover effects present (data-hover attributes on interactive elements)?
+- Is there a smooth page loader (.page-loader with entrance transition)?
+- Are 3D effects used where specified (data-3d, data-scroll-3d, perspective transforms)?
+- Are entrance reveals implemented (data-reveal with IntersectionObserver triggering .revealed)?
+- Are micro interactions present (data-micro for ripple/bounce/magnetic)?
+- Are parallax effects working (data-parallax-scroll, data-parallax-depth)?
+- Are 3D scroll effects present when spec calls for them (data-scroll-3d with rotateX/zoom)?
+- Are 3D window mockups used in demo sections (.window-3d with titlebar)?
+- Are 3D backgrounds present when spec calls for depth (.bg-3d-grid, .bg-3d-particles)?
+
 AESTHETIC CHECKPOINTS (each worth up to 5 points):
 - Does the hero have a SPECIFIC, memorable visual composition (not generic gradient orbs)?
 - Is the typography hierarchy dramatic (hero text >> section titles >> body)?
 - Are there deliberate whitespace rhythms (not just padding: 20px everywhere)?
 - Do animations serve the concept (not animation on everything)?
-- Would this site look distinctive next to 10 other AI-generated sites?`;
+- Would this site look distinctive next to 10 other AI-generated sites?
+- Do the design philosophy, hover effects, 3D elements, and motion systems create a cohesive experience?`;
     }
 
     async execute(files, specification) {

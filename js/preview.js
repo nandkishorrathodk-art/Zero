@@ -26,8 +26,26 @@ class PreviewEngine {
             return;
         }
 
+        if (!this.iframe) {
+            console.warn('PreviewEngine: iframe element is missing');
+            return;
+        }
+
         this.hideEmpty();
         this.previewErrors = [];
+
+        // Fallback when SandboxManager failed to load — still show static HTML if present.
+        if (!this.sandbox) {
+            const html = String(files['index.html'] || '');
+            const css = String(files['styles.css'] || '');
+            const js = String(files['script.js'] || '');
+            this.iframe.srcdoc = html
+                ? html
+                    .replace('</head>', css ? `<style>${css}</style></head>` : '</head>')
+                    .replace('</body>', js ? `<script>${js}<\/script></body>` : '</body>')
+                : '<!doctype html><html><body><h1>Preview unavailable</h1><p>Sandbox manager failed to load.</p></body></html>';
+            return;
+        }
 
         const projectType = this.sandbox.getProjectType(files);
 

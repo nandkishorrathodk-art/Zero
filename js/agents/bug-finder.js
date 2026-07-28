@@ -12,8 +12,7 @@ class BugFinderAgent extends BaseAgent {
             'Static code analysis agent that detects bugs in generated code before preview'
         );
 
-        ```
-    this.config = {
+        this.config = {
         maxFilesToScan: 60,
         builtins: new Set([
             'react',
@@ -556,8 +555,6 @@ _isDefinitelyImportedAsTypeOnly(content, name, source) {
 _escapeRegex(str) {
     return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
-```
-
 }
 
 // Export for browser

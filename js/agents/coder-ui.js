@@ -62,7 +62,7 @@ navLinks?.querySelectorAll('a').forEach(link=>{link.addEventListener('click',()=
 </div>`,
                 css: `.stats-grid{display:flex;gap:1rem;flex-wrap:wrap}.stat-card{padding:1.5rem;border-radius:1.25rem;min-width:200px;text-align:left}.stat-icon{font-size:1.5rem;margin-bottom:1rem}.stat-value{font-family:var(--font-heading);font-size:2.5rem;font-weight:700;line-height:1}.stat-label{font-size:0.85rem;color:rgba(255,255,255,0.6);margin-top:0.5rem}`,
                 js: `// Animated counters
-document.querySelectorAll('[data-count]').forEach(counter=>{const target=parseInt(counter.dataset.count);if(isNaN(target))return;const observer=new IntersectionObserver(entries=>{entries.forEach(entry=>{if(entry.isIntersecting){gsap.to(counter,{innerHTML:target,duration:2,ease:'power2.out',snap:{innerHTML:1},onUpdate:function(){counter.textContent=Math.round(parseFloat(counter.textContent)).toLocaleString()}});observer.unobserve(entry.target)}})},{threshold:0.5});observer.observe(counter)});`
+document.querySelectorAll('[data-count]').forEach(counter=>{const target=parseInt(counter.dataset.count);if(isNaN(target))return;const observer=new IntersectionObserver(entries=>{entries.forEach(entry=>{if(entry.isIntersecting){const obj={val:0};gsap.to(obj,{val:target,duration:2,ease:'power2.out',onUpdate:function(){counter.textContent=Math.round(obj.val).toLocaleString()}});observer.unobserve(entry.target)}})},{threshold:0.5});observer.observe(counter)});`
             },
             'magnetic-buttons': {
                 html: `<button class="btn btn-primary" data-magnet="0.3">{{text}}</button>`,
@@ -132,52 +132,105 @@ document.addEventListener('DOMContentLoaded',initScrollScenes);`
 </div>`,
                 css: `.trust-bar{display:flex;flex-direction:column;align-items:center;gap:1.5rem;padding:2rem 0}.trust-badge{padding:0.5rem 1.5rem;border-radius:100px;font-size:0.85rem}.trust-logos{display:flex;align-items:center;gap:3rem;flex-wrap:wrap;justify-content:center}.trust-logo{font-family:var(--font-heading);font-style:italic;font-size:1.75rem;opacity:0.8;transition:opacity 0.3s ease}.trust-logo:hover{opacity:1}`,
                 js: `// Trust bar uses standard scroll reveal`
+            },
+            'window-3d': {
+                html: `<div class="window-3d spatial-window" data-3d-interactive data-reveal="blur">
+  <div class="window-3d-titlebar">
+    <span class="window-3d-dot window-3d-dot-red"></span>
+    <span class="window-3d-dot window-3d-dot-yellow"></span>
+    <span class="window-3d-dot window-3d-dot-green"></span>
+    <span class="window-3d-title">{{title}}</span>
+  </div>
+  <div class="window-3d-body">
+    {{content}}
+  </div>
+</div>`,
+                css: `.window-3d{background:rgba(20,20,30,0.8);backdrop-filter:blur(30px);border:1px solid rgba(255,255,255,0.1);border-radius:12px;overflow:hidden;transform-style:preserve-3d;box-shadow:0 20px 60px rgba(0,0,0,0.5)}.window-3d-titlebar{display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(255,255,255,0.03);border-bottom:1px solid rgba(255,255,255,0.06)}.window-3d-dot{width:10px;height:10px;border-radius:50%;display:inline-block}.window-3d-dot-red{background:#ff5f57}.window-3d-dot-yellow{background:#febc2e}.window-3d-dot-green{background:#28c840}.window-3d-title{font-size:0.75rem;opacity:0.5}.window-3d-body{padding:16px}`,
+                js: `// 3D window interactive mouse tilt
+function init3DWindows(){document.querySelectorAll('.window-3d[data-3d-interactive]').forEach(win=>{win.addEventListener('mousemove',e=>{const rect=win.getBoundingClientRect();const x=(e.clientX-rect.left)/rect.width-0.5;const y=(e.clientY-rect.top)/rect.height-0.5;win.style.transform=\`perspective(1000px) rotateY(\${x*10}deg) rotateX(\${-y*10}deg) translateZ(10px)\`});win.addEventListener('mouseleave',()=>{win.style.transform=''})})}document.addEventListener('DOMContentLoaded',init3DWindows);`
+            },
+            'spatial-card': {
+                html: `<div class="spatial-card" data-hover="perspective" data-scroll-3d="rotate">
+  <h3>{{title}}</h3>
+  <p>{{description}}</p>
+</div>`,
+                css: `.spatial-card{background:rgba(255,255,255,0.06);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:28px;transform-style:preserve-3d;transition:transform 0.5s cubic-bezier(0.23,1,0.32,1)}`,
+                js: `// Spatial card perspective interaction`
+            },
+            'neo-card': {
+                html: `<div class="neo-card neo-flat" data-hover="lift">
+  <h3>{{title}}</h3>
+  <p>{{description}}</p>
+</div>`,
+                css: `.neo-card{padding:24px;background:var(--neo-bg,#e0e5ec);border-radius:20px;box-shadow:8px 8px 16px rgba(163,177,198,0.6),-8px -8px 16px rgba(255,255,255,0.8)}`,
+                js: `// Neomorphic card pressed interaction`
+            },
+            'clay-card': {
+                html: `<div class="clay-card" data-micro="bounce">
+  <h3>{{title}}</h3>
+  <p>{{description}}</p>
+</div>`,
+                css: `.clay-card{background:linear-gradient(145deg,#fef3f3,#ffe8e8);border-radius:28px;box-shadow:15px 15px 30px rgba(0,0,0,0.08),-8px -8px 16px rgba(255,255,255,0.9);padding:28px;border:2px solid rgba(255,255,255,0.6)}`,
+                js: `// Claymorphism card bounce`
+            },
+            'brutal-card': {
+                html: `<div class="brutal-card" data-hover="lift">
+  <h3>{{title}}</h3>
+  <p>{{description}}</p>
+</div>`,
+                css: `.brutal-card{background:#fff;border:3px solid #000;padding:24px;box-shadow:8px 8px 0 #000;position:relative;transition:all 0.2s ease}.brutal-card:hover{transform:translate(-4px,-4px);box-shadow:12px 12px 0 #000}`,
+                js: `// Brutalism card hover`
             }
         };
 
-        this.systemPrompt = `You are a principal frontend engineer + Awwwards creative developer. You ship complete, production-ready cinematic websites that feel like $100K studio work.
+        this.systemPrompt = `You are a principal frontend engineer + Awwwards creative developer who masters ALL design philosophies. You ship complete, production-ready websites that feel like $100K studio work.
 
-YOUR QUALITY STANDARDS (NON-NEGOTIABLE):
-1. Every site is a FILM, not a template - create scroll-driven narratives
-2. Hero sections must be IMMERSIVE - fullscreen video, WebGL, or dramatic media
-3. Typography is the hero - use dramatic scale contrasts (clamp-based fluid type)
-4. Motion must be PURPOSEFUL - GSAP ScrollTrigger, Lenis smooth scroll, magnetic interactions
-5. Glass morphism must be REFINED - subtle, not overdone
-6. Mobile-first responsive design (375px → 1440px+)
-7. Semantic HTML5, ARIA, proper heading hierarchy
-8. Real working JavaScript - no placeholders
+DESIGN PHILOSOPHIES YOU UNDERSTAND:
+- SKEUOMORPHISM: Use .skeu-surface, .skeu-button, .skeu-card, .skeu-input classes. Realistic textures and embossed shadows.
+- NEOMORPHISM: Use .neo-flat, .neo-pressed, .neo-convex, .neo-button, .neo-input, .neo-card classes. Soft dual-shadow technique.
+- GLASSMORPHISM: Use .glass, .glass-strong, .glass-dark, .glass-card, .glass-button, .glass-navbar classes. Frosted glass with blur.
+- CLAYMORPHISM: Use .clay, .clay-card, .clay-button, .clay-bubble, .clay-tag classes. Soft 3D clay with pastels.
+- MINIMALISM: Use .min-surface, .min-card, .min-button, .min-button-text, .min-input, .min-divider classes. Maximum whitespace.
+- MAXIMALISM: Use .max-surface, .max-card, .max-button, .max-text-gradient, .max-sticker, .max-blob classes. Bold layered energy.
+- BRUTALISM: Use .brutal-surface, .brutal-card, .brutal-button, .brutal-input, .brutal-tag, .brutal-stamp classes. Raw chunky anti-design.
+- LIQUID GLASS: Use .liquid-glass, .liquid-glass-strong, .liquid-glass-tint, .liquid-glass-button, .liquid-glass-nav classes. Apple-style premium.
+- SPATIAL UI: Use .spatial-scene, .spatial-card, .spatial-window, .spatial-button, .spatial-layer-* classes. 3D depth with perspective.
 
-CINEMATIC COMPONENTS YOU IMPLEMENT:
-- FadingVideo: Crossfading background videos with smooth transitions
-- BlurText: Word-by-word blur reveal on scroll
-- LiquidGlass: Refined glassmorphism with gradient border masks
-- MagneticButtons: Cursor-following button interactions
-- ParallaxLayers: Mouse-driven depth effects
-- ScrollScenes: Pin/scrub choreographed sections
-- GrainVignette: Film grain and vignette overlays
-- StatsCards: Animated counters with glass styling
-- CapabilityCards: Feature cards with tags
-- TrustBar: Logo parade with badges
+ADVANCED EFFECTS YOU IMPLEMENT:
+- Hover: data-hover="lift|glow|tilt|spotlight|underline|perspective"
+- 3D: data-3d="tilt|float|flip", data-scroll-3d="rotate|zoom|flip|spiral"
+- Reveals: data-reveal="fade|slide-up|slide-left|clip|clip-circle|blur|split|pop|glitch"
+- Micro: data-micro="bounce|ripple|magnetic|counter", data-micro="counter" data-target="1000"
+- Parallax: data-parallax-scroll, data-parallax-depth + data-depth, data-parallax-mouse
+- 3D Windows: .window-3d with .window-3d-titlebar, .window-3d-body
+- 3D Backgrounds: .bg-3d-grid, .bg-3d-particles, .bg-3d-aurora
+- Smooth Loader: .page-loader with .loader-spinner or .loader-bar
+- Shimmer: data-shimmer for glass surfaces
 
-GSAP PATTERNS YOU USE:
-- gsap.registerPlugin(ScrollTrigger)
-- ScrollTrigger with scrub for smooth scroll animations
-- gsap.quickTo for magnetic button performance
-- Staggered reveals with delay calculations
-- Pin/scrub for sticky sections
-- Timeline chaining for complex sequences
+CINEMATIC COMPONENTS:
+- FadingVideo, BlurText, LiquidGlass, MagneticButtons, ParallaxLayers
+- ScrollScenes, GrainVignette, StatsCards, CapabilityCards, TrustBar
+
+GSAP PATTERNS:
+- gsap.registerPlugin(ScrollTrigger), ScrollTrigger scrub, gsap.quickTo
+- Staggered reveals, Pin/scrub sticky sections, Timeline chaining
 
 RULES:
-1. THINK before coding - plan the visual narrative
+1. THINK before coding - plan the visual narrative using the specified DESIGN PHILOSOPHY
 2. Output files as markdown code blocks with **File: filename** headers
 3. Include all CDN links (GSAP, ScrollTrigger, Lenis, fonts)
-4. Use design system CSS variables throughout
-5. Implement ALL motion systems from the specification
+4. Use design system CSS variables AND the design philosophy CSS classes throughout
+5. Implement ALL motion systems AND advanced effects from the specification
 6. Hero must be a SCENE - video, WebGL, or dramatic media
-7. No generic SaaS templates - every site must feel bespoke
+7. Use the correct design philosophy classes (e.g., .neo-card for neomorphism, .brutal-card for brutalism)
 8. JavaScript must ACTUALLY WORK - test your logic mentally
 9. Include prefers-reduced-motion fallbacks
-10. Generate substantial content - minimum 5 scenes/sections`;
+10. Include a smooth page loader when specified
+11. Use data-hover, data-3d, data-reveal, data-micro attributes for advanced effects
+12. Include 3D scroll effects (data-scroll-3d) for immersive depth
+13. Include 3D windows (.window-3d) for mockup/demo sections
+14. Include 3D backgrounds when the art direction calls for depth
+15. Generate substantial content - minimum 5 scenes/sections`;
     }
 
     async execute(specification, designSystem, threejsCode = null) {
@@ -191,6 +244,13 @@ RULES:
         // Build comprehensive context
         const artDirection = enhanced.artDirection || {};
         const brandStrategy = specification.brandStrategy || {};
+        const designPhilosophy = enhanced.designPhilosophyName || designSystem.designPhilosophyName || 'Liquid Glass';
+        const advancedEffects = enhanced.advancedEffects || designSystem.advancedEffects || [];
+
+        const midFlightNotes = Array.isArray(specification.midFlightNotes) ? specification.midFlightNotes.filter(Boolean) : [];
+        const midFlightBlock = midFlightNotes.length
+            ? `\nMID-FLIGHT USER NOTES (must honor):\n${midFlightNotes.map((n, i) => `${i + 1}. ${n}`).join('\n')}\n`
+            : '';
 
         const contextBlock = `═══════════════════════════════════════════════════════
 CINEMATIC WEBSITE BUILD — THIS IS YOUR CREATIVE MANDATE
@@ -199,6 +259,9 @@ CINEMATIC WEBSITE BUILD — THIS IS YOUR CREATIVE MANDATE
 SITE TYPE: ${enhanced.siteType}
 TITLE: ${specification.title || 'Premium Website'}
 DESCRIPTION: ${specification.description || ''}
+${midFlightBlock}
+★★★ DESIGN PHILOSOPHY: ${designPhilosophy} ★★★
+Use ${designPhilosophy} CSS classes and visual patterns throughout.
 
 ART DIRECTION:
 ${JSON.stringify(artDirection, null, 2)}
@@ -223,6 +286,9 @@ HERO TREATMENT: ${enhanced.heroTreatment || 'fullscreen-video-crossfade'}
 MOTION SYSTEMS TO IMPLEMENT:
 ${motionSystems.map((m, i) => `${i + 1}. ${m}`).join('\n')}
 
+ADVANCED EFFECTS TO USE:
+${advancedEffects.map((e, i) => `${i + 1}. ${e}`).join('\n')}
+
 COMPONENTS TO BUILD:
 ${(enhanced.components || []).map((c, i) => `${i + 1}. ${c}`).join('\n')}
 
@@ -231,8 +297,20 @@ ${(enhanced.sections || ['hero', 'capabilities', 'about', 'testimonials', 'cta',
 
 THREE.JS: ${hasThreeJS ? 'Yes - include #three-canvas in hero' : 'No'}
 
+INCLUDE THESE ELEMENTS:
+- Page loader (.page-loader) with smooth entrance transition
+- 3D scroll effects (data-scroll-3d) on cards and sections
+- 3D window mockups (.window-3d) in demo/product sections
+- 3D background effects (.bg-3d-grid or .bg-3d-particles or .bg-3d-aurora)
+- Hover effects (data-hover="tilt" or "glow" or "lift") on interactive elements
+- Entrance reveals (data-reveal="blur" or "slide-up" or "clip") on sections
+- Micro interactions (data-micro="ripple" or "bounce") on buttons
+- Custom cursor (if cursor effect is in advanced effects list)
+- Parallax depth layers (data-parallax-depth + data-depth) on hero elements
+- Shimmer effects (data-shimmer) on glass surfaces
+
 ═══════════════════════════════════════════════════════
-BUILD A SCROLL FILM — NOT A SAAS TEMPLATE
+BUILD WITH ${designPhilosophy.toUpperCase()} PHILOSOPHY — NOT A GENERIC TEMPLATE
 ═══════════════════════════════════════════════════════`;
 
         // Gather component templates
@@ -353,16 +431,30 @@ Output ONLY the CSS file:
             // PASS 3: Generate JavaScript
             this.log('info', 'Pass 3/3: Generating cinematic JavaScript...');
 
+            // Gather advanced animation JS from design system
+            const advancedJS = designSystem.advancedAnimations
+                ? (enhanced.advancedEffects || designSystem.advancedEffects || [])
+                    .filter(e => designSystem.advancedAnimations[e]?.js && designSystem.advancedAnimations[e].js.trim().length > 0)
+                    .map(e => `// === ${e} ===\n${designSystem.advancedAnimations[e].js}`)
+                    .join('\n\n')
+                : '';
+
             const jsPrompt = `${contextBlock}
 
 MOTION SYSTEMS TO IMPLEMENT:
 ${motionSystems.join(', ')}
+
+ADVANCED EFFECTS ENABLED:
+${(enhanced.advancedEffects || []).join(', ')}
 
 COMPONENT JS TO INCLUDE:
 ${componentJS}
 
 MOTION SYSTEM JS TO INCLUDE:
 ${motionJS}
+
+ADVANCED ANIMATION JS TO INCLUDE:
+${advancedJS}
 
 HTML STRUCTURE (target these elements):
 ${htmlContext}
@@ -384,17 +476,29 @@ GENERATE THE REST:
 3. Parallax layers for [data-parallax]
 4. FadingVideo crossfade for [data-fading-video]
 5. Scroll scenes with pin/scrub for [data-scene]
-6. Any other motion systems specified
-7. ${hasThreeJS ? 'Three.js scene initialization' : ''}
-8. Form validation if forms exist
-9. Any interactive components needed
+6. 3D tilt effect for [data-3d="tilt"] (mousemove perspective)
+7. 3D scroll effects for [data-scroll-3d] (rotateX/zoom on scroll)
+8. Hover effects for [data-hover] (tilt, glow, spotlight, perspective)
+9. Entrance reveals for [data-reveal] (IntersectionObserver → add .revealed class)
+10. Micro interactions for [data-micro] (ripple, bounce, magnetic, counter)
+11. Smooth page loader (if .page-loader exists)
+12. 3D window interactivity for [data-3d-interactive] 
+13. Parallax scroll for [data-parallax-scroll]
+14. Parallax depth for [data-parallax-depth]
+15. Custom cursor (if micro-cursor effect is enabled)
+16. Shimmer sweep (CSS-only, no JS needed)
+17. ${hasThreeJS ? 'Three.js scene initialization' : ''}
+18. Form validation if forms exist
+19. Any interactive components needed
+
+INCLUDE THE ADVANCED ANIMATION JS PROVIDED ABOVE.
 
 CRITICAL: Everything must ACTUALLY WORK. Test your logic mentally.
 
 Output ONLY the JS file:
 **File: script.js**
 \`\`\`js
-// Cinematic JavaScript
+// Cinematic JavaScript with ${designPhilosophy} design philosophy
 ...
 \`\`\``;
 
@@ -545,13 +649,13 @@ document.querySelectorAll('[data-count]').forEach(counter => {
     const observer = new IntersectionObserver(entries => {
         entries.forEach(entry => {
             if (entry.isIntersecting) {
-                gsap.to(counter, {
-                    innerHTML: target,
+                const obj = { val: 0 };
+                gsap.to(obj, {
+                    val: target,
                     duration: 2,
                     ease: 'power2.out',
-                    snap: { innerHTML: 1 },
                     onUpdate: function() {
-                        counter.textContent = Math.round(parseFloat(counter.textContent)).toLocaleString();
+                        counter.textContent = Math.round(obj.val).toLocaleString();
                     }
                 });
                 observer.unobserve(entry.target);

@@ -206,6 +206,10 @@ export default function App() { return <div>Home</div> }
         const architecture = specification.appArchitecture || {};
         const needsRouter = pages.length > 1 || isComplex || ['webapp', 'dashboard', 'saas-app', 'admin-panel'].includes(specification.siteType);
 
+        const midFlight = Array.isArray(specification.midFlightNotes) && specification.midFlightNotes.length
+            ? `\nMID-FLIGHT USER NOTES (must honor):\n${specification.midFlightNotes.map((n, i) => `${i + 1}. ${n}`).join('\n')}\n`
+            : '';
+
         const message = `Build a COMPLETE production React + Vite project (multi-file, large enough for real products):
 
 SITE TYPE: ${specification.siteType}
@@ -213,7 +217,7 @@ COMPLEXITY: ${specification.complexity || 'complex'}
 TITLE: ${specification.title || 'Premium Website'}
 DESCRIPTION: ${specification.description || ''}
 MOOD: ${specification.mood || 'editorial'}
-
+${midFlight}
 ART DIRECTION (follow this exactly):
 ${JSON.stringify(specification.artDirection || {}, null, 2)}
 

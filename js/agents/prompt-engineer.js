@@ -236,18 +236,46 @@ Position: fixed or absolute, backdrop-filter blur(20px)`,
             missingBrand: [
                 'What is the brand or project name?',
                 'Who is this for?',
-                'What makes it different?',
             ],
-            missingAssets: [
-                'Do you already have video, images, or 3D assets?',
-                'Should I assume stock-style references or custom media?',
-            ],
+        };
+
+        this.motionCatalog = {
+            '3d-scroll-rotate': 'Perspective rotateX/translateZ on scroll using data-scroll-3d="rotate"',
+            '3d-scroll-zoom': 'Perspective scale/translateZ zoom on scroll using data-scroll-3d="zoom"',
+            '3d-window-interactive': 'macOS/Spatial style 3D window mockup with mouse tilt using .window-3d',
+            '3d-background-grid': 'Perspective infinite animated grid background using .bg-3d-grid',
+            '3d-background-particles': 'Floating 3D particle field using .bg-3d-particles',
+            'hover-tilt-perspective': 'Mouse tracking 3D tilt transform using data-hover="tilt"',
+            'hover-glow-pulse': 'Radial glow box-shadow animation on hover using data-hover="glow"',
+            'smooth-page-loader': 'Full-screen entrance loader with spinner/bar using .page-loader',
+            'entrance-clip-circle': 'Expanding circle clip-path reveal using data-reveal="clip-circle"',
+            'micro-ripple-click': 'Material/fluid ripple effect on click using data-micro="ripple"',
+            'spatial-depth-layers': '3D z-space layering with perspective transform using .spatial-card'
         };
 
         this.systemPrompt = `
 You are a principal prompt engineer for an Awwwards / Motionsites / Layers / getlayers.ai-class digital studio.
 
 Your job: turn a short user idea into a hyper-detailed studio brief AND a reusable prompt pack that a senior creative developer can execute immediately.
+
+DESIGN PHILOSOPHIES YOU CAN SELECT FROM:
+- skeuomorphism: Realistic textures, embossed surfaces, physical buttons, dual shadows
+- neomorphism: Soft extruded UI, subtle dual-shadows, monochromatic depth
+- glassmorphism: Frosted glass backdrop blur, transparency, gradient borders
+- claymorphism: Soft rounded 3D clay surfaces, pastel palettes, inflated shapes
+- minimalism: Maximum whitespace, essential elements, refined typography, subtle borders
+- maximalism: Bold vibrant layers, mixed typography, expressive decorative energy
+- brutalism: Raw chunky black borders, monospace type, high contrast, exposed grid
+- liquidglass: Apple-style specular frosted glass with luminosity blending and gradient border masks
+- spatialui: 3D depth layers, perspective transforms, z-space cards, AR/VR inspired spatial windows
+
+ADVANCED EFFECTS YOU CAN SELECT FROM:
+- Hover: hover-lift, hover-glow, hover-tilt, hover-spotlight, hover-underline, hover-perspective
+- 3D: 3d-tilt, 3d-float, 3d-flip, 3d-scroll, 3d-background, 3d-window
+- Reveals: entrance-fade, entrance-slide, entrance-clip, entrance-blur, entrance-split, entrance-pop, entrance-glitch
+- Micro: micro-bounce, micro-ripple, micro-magnetic, micro-counter, micro-cursor
+- Parallax: parallax-scroll, parallax-depth, parallax-mouse
+- Loaders: smooth-loader
 
 REFERENCE QUALITY
 - Exact font names, weights, and Google Fonts URLs
@@ -264,6 +292,7 @@ Return a JSON object with these fields:
 {
   "shortTitle": "brand or project name",
   "siteArchetype": "agency-cinematic | real-estate-luxury | architecture-studio | fashion-editorial | hospitality-film | product-cinematic | portfolio-editorial | saas-editorial | webapp",
+  "designPhilosophy": "skeuomorphism | neomorphism | glassmorphism | claymorphism | minimalism | maximalism | brutalism | liquidglass | spatialui",
   "heroTreatment": "fullscreen-video-crossfade | webgl-scene-parallax | photo-mask-editorial | hybrid-video-3d | typography-focused",
   "qualityBar": "awwwords-site-of-the-day | premium-studio-handoff",
   "studioBrief": "15-25 sentence hyper-detailed brief with exact specs",
@@ -300,6 +329,7 @@ Return a JSON object with these fields:
     "materials": ["film grain", "hairline rules", "liquid glass", "backdrop blur"]
   },
   "motionSystems": ["masked-title-reveal", "word-blur-reveal", "magnetic-quickto-cta", "parallax-media-layers", "grain-vignette-grade"],
+  "advancedEffects": ["hover-tilt", "smooth-loader", "3d-scroll", "3d-window", "3d-background", "entrance-blur", "micro-ripple"],
   "componentSpecs": [
     {
       "name": "FadingVideo",
@@ -340,14 +370,15 @@ Return a JSON object with these fields:
 Rules:
 1. studioBrief must be 15-25 sentences and contain exact technical specifications.
 2. Include exact hex colors, font URLs, timing values, easing curves.
-3. Reference signature components (FadingVideo, BlurText, LiquidGlass, MagneticButton) with exact behaviors.
-4. Never invent fake metrics or generic filler copy.
-5. For each motion system, specify the exact GSAP implementation or effect behavior.
-6. Include a componentSpecs array with detailed component definitions.
-7. Include exactColors with hex codes and exactFonts with Google Fonts URLs.
-8. Include scrollChoreography as timeline beats with exact triggers.
-9. Include researchPlan.searchQueries so external research can be driven automatically.
-10. Return valid JSON only. No markdown. No commentary.
+3. Select an explicit designPhilosophy matching the brand mood.
+4. Select 4-7 advancedEffects matching the brief (3D scroll, 3D windows, 3D backgrounds, hover effects, entrance reveals, micro interactions).
+5. Reference signature components (FadingVideo, BlurText, LiquidGlass, MagneticButton, Window3D) with exact behaviors.
+6. Never invent fake metrics or generic filler copy.
+7. For each motion system, specify the exact GSAP implementation or effect behavior.
+8. Include a componentSpecs array with detailed component definitions.
+9. Include exactColors with hex codes and exactFonts with Google Fonts URLs.
+10. Include scrollChoreography as timeline beats with exact triggers.
+11. Return valid JSON only. No markdown. No commentary.
         `.trim();
     }
 

@@ -79,7 +79,7 @@ class BaseAgent {
             (chunk) => {
                 fullText += chunk;
                 const now = Date.now();
-                if (now - lastEmit < 350 || !this.framework) return;
+                if (now - lastEmit < 100 || !this.framework) return;
                 lastEmit = now;
 
                 try {
@@ -88,6 +88,7 @@ class BaseAgent {
                         const merged = { ...(this.framework.memory?.generatedFiles || {}), ...partialFiles };
                         this.framework.memory.generatedFiles = merged;
                         this.framework.emit('filesReady', merged);
+                        this.framework.emit('livePreview', { files: merged, partial: true });
                     }
                 } catch {
                     // Ignore partial parse noise.
@@ -103,6 +104,7 @@ class BaseAgent {
                     const merged = { ...(this.framework.memory?.generatedFiles || {}), ...finalFiles };
                     this.framework.memory.generatedFiles = merged;
                     this.framework.emit('filesReady', merged);
+                    this.framework.emit('livePreview', { files: merged, partial: false });
                 }
             } catch {
                 // ignore final parse noise
@@ -151,7 +153,6 @@ class BaseAgent {
                 .replace(/```json/gi, '')
                 .replace(/```/g, '')
                 .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/(^|[^:])\/\/.*/g, '$1')
                 .replace(/,\s*([\}\]])/g, '$1')
                 .trim();
 
@@ -186,7 +187,7 @@ class BaseAgent {
 
         // 2) Explicit file blocks
         const files = {};
-        const fileRegex = /(?:^|\n)(?:#+\s*|\*\*|__)?(?:File:\s*)?\*?\*?\s*([a-zA-Z0-9_\-./]+\.[a-zA-Z0-9]+)\s*\*?\*?(?:\*\*|__)?[\s\S]*?```[a-zA-Z0-9-]*\n([\s\S]*?)\n```/gi;
+        const fileRegex = /(?:^|\n)(?:#+\s*|\*\*|__)?(?:File:\s*)?\*?\*?\s*([a-zA-Z0-9_\-./]+\.[a-zA-Z0-9]+)\s*\*?\*?(?:\*\*|__)?\s*\n\s*```[a-zA-Z0-9-]*\n([\s\S]*?)\n```/gi;
         let match;
         let foundAny = false;
 
@@ -262,6 +263,9 @@ class AgentFramework {
         this.buildWorkflow = typeof BuildWorkflow !== 'undefined' ? new BuildWorkflow() : null;
         this.autonomousStudio = typeof AutonomousStudio !== 'undefined' ? new AutonomousStudio() : null;
         this.autonomousBatcher = typeof AutonomousBatcher !== 'undefined' ? new AutonomousBatcher() : null;
+        this.conversationMemory = typeof ConversationMemory !== 'undefined' ? new ConversationMemory() : null;
+        this.versionControl = typeof VersionControlManager !== 'undefined' ? new VersionControlManager() : null;
+        this.componentLibrary = typeof ComponentLibrary !== 'undefined' ? new ComponentLibrary() : null;
 
         this.agents = {};
         this._listeners = {};
@@ -290,6 +294,7 @@ class AgentFramework {
             preflightReport: null,
             bugReport: null,
             projectIntelligence: null,
+            midFlightNotes: [],
             _artDirectionPreset: 'editorial',
         };
     }
@@ -330,7 +335,29 @@ class AgentFramework {
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
                 this._checkAbort();
-                return await original(...args);
+                // Smart Retry: on attempt > 1, inject error context cleanly without mutating original caller args
+                let callArgs = args;
+                if (attempt > 1) {
+                    const lastErr = this.memory.errors[this.memory.errors.length - 1];
+                    const errorMsg = lastErr?.message || 'Unknown execution error';
+                    callArgs = args.map((arg, idx) => {
+                        if (idx === 0 && typeof arg === 'object' && arg !== null && !Array.isArray(arg)) {
+                            return {
+                                ...arg,
+                                _retryContext: {
+                                    attempt,
+                                    previousError: errorMsg,
+                                    instruction: `PREVIOUS ATTEMPT FAILED with error: "${errorMsg}". Please fix this issue and output complete, working code.`
+                                }
+                            };
+                        }
+                        if (idx === 0 && typeof arg === 'string') {
+                            return arg + `\n\n[RETRY ATTEMPT ${attempt} WARNING: Previous attempt failed with error: "${errorMsg}". Please correct your output and address this failure directly.]`;
+                        }
+                        return arg;
+                    });
+                }
+                return await original(...callArgs);
             } catch (error) {
                 if (error?.message === 'ABORTED') throw error;
 
@@ -505,7 +532,7 @@ class AgentFramework {
     }
 
     /* ===== MAIN EXECUTION — GENERATE WEBSITE ===== */
-    async generate(userPrompt) {
+    async generate(userPrompt, options = {}) {
         if (this._generationLock) {
             throw new Error('Generation already in progress. Wait for completion or cancel.');
         }
@@ -513,9 +540,16 @@ class AgentFramework {
             throw new Error('Generation already in progress. Wait for completion or cancel.');
         }
 
+        // Preserve caller options that must survive the memory reset below.
+        const artDirectionPreset = options.artDirection
+            || this.memory?._artDirectionPreset
+            || 'editorial';
+
         this._generationLock = true;
         this.memory = this._createEmptyMemory();
         this.memory.userPrompt = userPrompt;
+        this.memory._artDirectionPreset = artDirectionPreset;
+        this.memory.midFlightNotes = [];
         this.errorCount = 0;
         this.abortController = new AbortController();
 
@@ -725,22 +759,35 @@ class AgentFramework {
                         : 'Generating cinematic scroll scenes (HTML/CSS/JS)...',
             });
 
-            let uiFiles;
+            // Fold any chat notes received during plan/design into the coder brief.
+            this._applyMidFlightNotesToSpec();
+
+            let uiFiles = {};
 
             if (isFullstack) {
                 const coderFullstack = this.agents['coder-fullstack'];
+                if (!coderFullstack) throw new Error('Full-stack coder agent not registered');
                 uiFiles = await coderFullstack.execute(this.memory.specification, this.memory.designSystem, null);
             } else if (isReact) {
                 const coderReact = this.agents['coder-react'];
+                if (!coderReact) throw new Error('React coder agent not registered');
                 uiFiles = await coderReact.execute(this.memory.specification, this.memory.designSystem, null);
             } else {
                 const coderUI = this.agents['coder-ui'];
+                if (!coderUI) throw new Error('UI coder agent not registered');
                 uiFiles = await coderUI.execute(
                     this.memory.specification,
                     this.memory.designSystem,
                     this.memory.generatedFiles['three-scene.js'] || null
                 );
             }
+
+            if (!uiFiles || typeof uiFiles !== 'object') {
+                throw new Error('Coder agent returned no file map — generation cannot continue.');
+            }
+
+            // Re-apply notes that arrived while the coder was running (for animator/review).
+            this._applyMidFlightNotesToSpec();
 
             Object.assign(this.memory.generatedFiles, architectFiles, shaderFiles, uiFiles);
             this._recordWorkflowCheckpoint('surfaces');
@@ -823,7 +870,8 @@ class AgentFramework {
                     this.emit('filesReady', this.memory.generatedFiles);
                 }
 
-                const unfixable = (report.bugs || []).filter((b) => !report.fixable.includes(b));
+                const fixableSet = new Set((report.fixable || []).map((b) => b?.message || b));
+                const unfixable = (report.bugs || []).filter((b) => !fixableSet.has(b?.message || b));
                 if (unfixable.length > 0) this.memory.bugReport = report;
             }
 
@@ -836,6 +884,26 @@ class AgentFramework {
             this._transition(this.states.COMPLETE);
             const targetLabel = isFullstack ? 'Next.js full-stack' : isReact ? 'React' : 'static website';
             this.emit('progress', { step: 'complete', percent: 100, message: `${targetLabel} generation complete!` });
+
+            // Record snapshot & conversation memory
+            if (this.versionControl) {
+                this.versionControl.createSnapshot({
+                    label: `Initial Build: ${this.memory.specification?.title || 'Build'}`,
+                    prompt: userPrompt,
+                    files: this.memory.generatedFiles,
+                    reviewScore: this.memory.reviewReport?.score || 0
+                });
+            }
+            if (this.conversationMemory) {
+                this.conversationMemory.recordBuild({
+                    prompt: userPrompt,
+                    framework: fw,
+                    designSystem: this.memory.designSystem,
+                    reviewResult: this.memory.reviewReport,
+                    generatedFiles: this.memory.generatedFiles
+                });
+            }
+
             this.emit('complete', this.memory.generatedFiles);
 
             return this.memory.generatedFiles;
@@ -1137,9 +1205,13 @@ class AgentFramework {
         return next;
     }
 
+    _isMotionStudioMode() {
+        const mode = String(this.aiMode || 'production').toLowerCase();
+        return mode === 'motion-studio' || mode === 'power' || mode === 'autonomous';
+    }
+
     _isCinematicWebsite(spec = {}, brief = null) {
-        const mode = this.aiMode || 'production';
-        if (mode === 'power' || mode === 'motion-studio') return true;
+        if (this._isMotionStudioMode()) return true;
 
         const arch = String(brief?.siteArchetype || spec.siteArchetype || spec.siteType || '').toLowerCase();
         if (/real-estate|architecture|agency|fashion|hospitality|portfolio|cinematic|editorial|luxury/.test(arch)) return true;
@@ -1159,8 +1231,32 @@ class AgentFramework {
 
     _reviewPassThreshold() {
         if (this.aiMode === 'fast') return 85;
-        if (this.aiMode === 'power' || this.aiMode === 'motion-studio' || this.aiMode === 'autonomous') return 92;
+        if (this._isMotionStudioMode()) return 92;
         return 90;
+    }
+
+    _applyMidFlightNotesToSpec() {
+        const notes = Array.isArray(this.memory?.midFlightNotes)
+            ? this.memory.midFlightNotes.map((n) => String(n).trim()).filter(Boolean)
+            : [];
+        if (!notes.length || !this.memory.specification) return;
+
+        const existing = Array.isArray(this.memory.specification.midFlightNotes)
+            ? this.memory.specification.midFlightNotes
+            : [];
+        const merged = Array.from(new Set([...existing, ...notes]));
+        const added = merged.length - existing.length;
+        if (!added) return;
+
+        this.memory.specification.midFlightNotes = merged;
+        this.memory.specification.userPreferences = Array.from(new Set([
+            ...(this.memory.specification.userPreferences || []),
+            ...merged,
+        ]));
+        this.emit('log', {
+            type: 'info',
+            message: `Applied ${added} mid-flight note(s) from chat into the build context`,
+        });
     }
 
     _enforcePremiumSpec(spec = {}, userPrompt = '') {
@@ -1299,19 +1395,72 @@ class AgentFramework {
             add('warning', 'architecture', 'src/components', 'React project has no component split — likely a thin single-file app.', 'Split UI into reusable components under src/components/.');
         }
 
+        // ─── Design Philosophy & Advanced Effects Checks ───
+        const spec = this.memory.specification || {};
+        const designPhilosophy = spec.designPhilosophy || this.memory.designSystem?.designPhilosophy || '';
+        const advancedEffects = spec.advancedEffects || this.memory.designSystem?.advancedEffects || [];
+
+        // Check design philosophy CSS classes are present
+        if (designPhilosophy && allCode) {
+            const philosophyChecks = {
+                skeuomorphism: /\.skeu-|skeu-surface|skeu-button|skeu-card/i,
+                neomorphism: /\.neo-|neo-flat|neo-pressed|neo-button|neo-card/i,
+                glassmorphism: /\.glass|glass-card|glass-button|glass-navbar|backdrop-filter/i,
+                claymorphism: /\.clay|clay-card|clay-button|clay-bubble/i,
+                minimalism: /\.min-|min-card|min-button|min-divider|min-surface/i,
+                maximalism: /\.max-|max-card|max-button|max-surface|max-blob/i,
+                brutalism: /\.brutal-|brutal-card|brutal-button|brutal-surface/i,
+                liquidglass: /liquid-glass|liquid.glass|backdrop-filter.*blur/i,
+                spatialui: /spatial-|perspective:|transform-style.*preserve-3d|spatial-card|spatial-window/i
+            };
+            const regex = philosophyChecks[designPhilosophy];
+            if (regex && !regex.test(allCode)) {
+                add('warning', 'design-philosophy', 'styles.css', `Design philosophy "${designPhilosophy}" was specified but its CSS classes/patterns were not found.`, `Apply ${designPhilosophy} design system classes throughout the generated code.`);
+            }
+        }
+
+        // Check advanced effects implementation
+        if (advancedEffects.length > 0 && allCode) {
+            const hasHover = /data-hover|hover="(lift|glow|tilt|spotlight|perspective)"/i.test(allCode);
+            const has3D = /data-3d|data-scroll-3d|perspective\(|rotateX\(|rotateY\(/i.test(allCode);
+            const hasReveal = /data-reveal|\.revealed/i.test(allCode);
+            const hasMicro = /data-micro|\.ripple|micro.*bounce|micro.*magnetic/i.test(allCode);
+            const hasLoader = /page-loader|loader-spinner|loader-bar/i.test(allCode);
+            const hasParallax = /data-parallax|parallax-scroll|parallax-depth/i.test(allCode);
+
+            if (advancedEffects.some(e => e.startsWith('hover')) && !hasHover) {
+                add('suggestion', 'advanced-effects', 'index.html', 'Hover effects were specified but no data-hover attributes found.', 'Add data-hover="tilt" or data-hover="glow" on cards and interactive elements.');
+            }
+            if (advancedEffects.some(e => e.startsWith('3d')) && !has3D) {
+                add('warning', 'advanced-effects', 'generated files', '3D effects specified but no perspective/rotate transforms or data-3d attributes found.', 'Add data-3d="tilt" on cards, data-scroll-3d on sections, or .window-3d mockups.');
+            }
+            if (advancedEffects.some(e => e.startsWith('entrance')) && !hasReveal) {
+                add('suggestion', 'advanced-effects', 'index.html', 'Entrance reveals specified but no data-reveal attributes found.', 'Add data-reveal="blur" or data-reveal="slide-up" on section elements.');
+            }
+            if (advancedEffects.includes('smooth-loader') && !hasLoader) {
+                add('suggestion', 'advanced-effects', 'index.html', 'Smooth loader effect specified but no .page-loader element found.', 'Add a page loader with .page-loader class and entrance transition.');
+            }
+        }
+
         return { issues, critical: issues.some((issue) => issue.severity === 'critical') };
     }
 
     /* ===== REFINE EXISTING CODE ===== */
     async refine(modificationPrompt) {
-        if (Object.keys(this.memory.generatedFiles).length === 0) {
+        if (Object.keys(this.memory.generatedFiles || {}).length === 0) {
             throw new Error('No website generated yet. Generate one first.');
         }
 
         const refiner = this.agents['refiner'];
         if (!refiner) throw new Error('Refiner agent not registered');
 
+        if (this._generationLock) {
+            throw new Error('Generation already in progress. Wait for completion or cancel.');
+        }
+
+        this._generationLock = true;
         this._transition(this.states.REFINING);
+        this.abortController = new AbortController();
         const projectContext = this.getProjectContext(modificationPrompt);
 
         if (projectContext) {
@@ -1326,6 +1475,7 @@ class AgentFramework {
         this.emit('log', { type: 'info', message: `Refining: ${modificationPrompt}` });
 
         try {
+            this._checkAbort();
             const updatedFiles = await refiner.execute(
                 this.memory.generatedFiles,
                 modificationPrompt,
@@ -1333,11 +1483,13 @@ class AgentFramework {
                 this.memory.designSystem
             );
 
-            Object.assign(this.memory.generatedFiles, updatedFiles);
+            if (updatedFiles && typeof updatedFiles === 'object') {
+                Object.assign(this.memory.generatedFiles, updatedFiles);
+            }
             this.memory.refinementHistory.push({
                 prompt: modificationPrompt,
                 timestamp: Date.now(),
-                filesChanged: Object.keys(updatedFiles),
+                filesChanged: Object.keys(updatedFiles || {}),
             });
 
             this._transition(this.states.COMPLETE);
@@ -1347,10 +1499,17 @@ class AgentFramework {
 
             return this.memory.generatedFiles;
         } catch (error) {
+            if (error?.message === 'ABORTED') {
+                this._transition(this.states.IDLE);
+                this.emit('log', { type: 'warning', message: 'Refinement cancelled by user' });
+                return null;
+            }
             this._transition(this.states.ERROR);
             this.emit('error', { message: error.message });
             this._transition(this.states.IDLE);
             throw error;
+        } finally {
+            this._generationLock = false;
         }
     }
 
@@ -1359,6 +1518,9 @@ class AgentFramework {
         if (this.abortController) {
             this.abortController.abort();
         }
+        // Allow a fresh generate/refine after cancel even if a long LLM call
+        // is still unwinding — the finally blocks still clear the lock safely.
+        this._generationLock = false;
     }
 
     _checkAbort() {

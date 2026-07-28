@@ -345,6 +345,10 @@ export default function Page() { return <div>Home</div> }
             .map(([name, body]) => `\n**File: ${name}**\n\`\`\`\n${body}\n\`\`\``)
             .join('\n');
 
+        const midFlight = Array.isArray(specification.midFlightNotes) && specification.midFlightNotes.length
+            ? `\nMID-FLIGHT USER NOTES (must honor)\n${specification.midFlightNotes.map((n, i) => `${i + 1}. ${n}`).join('\n')}\n`
+            : '';
+
         return `
 Build a complete Next.js 14 full-stack product.
 
@@ -356,7 +360,7 @@ ${title}
 
 DESCRIPTION
 ${description}
-
+${midFlight}
 COMPLEXITY
 ${specification.complexity || 'ultra-complex'}
 
