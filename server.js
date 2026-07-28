@@ -97,4 +97,10 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(port, () => console.log(`ZERO-BUILDER running at http://localhost:${port}`));
+if (require.main === module) {
+  server.listen(port, () => console.log(`ZERO-BUILDER running at http://localhost:${port}`));
+}
+
+module.exports = (req, res) => {
+  server.emit('request', req, res);
+};
