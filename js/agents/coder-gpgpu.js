@@ -571,9 +571,9 @@ function initThreeScene(container) {
 
     normalizeCode(code) {
         let output = String(code || '').trim();
-        output = output.replace(/^```(?:javascript|js)?\\s*/i, '').replace(/```$/i, '').trim();
-        if (!/\\bfunction\\s+initThreeScene\\s*\\(/.test(output) && !/\\bconst\\s+initThreeScene\\s*=/.test(output)) {
-            output = `function initThreeScene(container) {\\n${output}\\n}`;
+        output = output.replace(/^```(?:javascript|js)?\s*/i, '').replace(/```$/i, '').trim();
+        if (!/\bfunction\s+initThreeScene\s*\(/.test(output) && !/\bconst\s+initThreeScene\s*=/.test(output)) {
+            output = `function initThreeScene(container) {\n${output}\n}`;
         }
         return output;
     }
