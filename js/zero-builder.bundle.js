@@ -688,7 +688,10 @@ class LLMProvider {
                 if (!baseUrl) {
                     throw new Error(`No Base URL configured for ${provider.name}. Go to Settings → AI Provider and set the Custom Base URL.`);
                 }
-                const actualModel = this.currentProvider === 'custom' ? this.customModelName || model : model;
+                let actualModel = this.currentProvider === 'custom' ? (this.customModelName || model) : model;
+                if (!actualModel || actualModel === 'custom') {
+                    actualModel = (baseUrl.includes('openrouter.ai')) ? 'meta-llama/llama-3.3-70b-instruct:free' : 'gpt-4o';
+                }
                 return this._chatOpenAI(messages, actualModel, apiKey, baseUrl, options);
             default:
                 throw new Error(`Unknown format: ${provider.format}`);
@@ -719,7 +722,10 @@ class LLMProvider {
                 if (!baseUrl) {
                     throw new Error(`No Base URL configured for ${provider.name}. Go to Settings → AI Provider and set the Custom Base URL.`);
                 }
-                const actualModel = this.currentProvider === 'custom' ? this.customModelName || model : model;
+                let actualModel = this.currentProvider === 'custom' ? (this.customModelName || model) : model;
+                if (!actualModel || actualModel === 'custom') {
+                    actualModel = (baseUrl.includes('openrouter.ai')) ? 'meta-llama/llama-3.3-70b-instruct:free' : 'gpt-4o';
+                }
                 return this._streamOpenAI(messages, actualModel, apiKey, baseUrl, options, onChunk);
             default:
                 throw new Error(`Unknown format: ${provider.format}`);
