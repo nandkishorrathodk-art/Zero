@@ -1,9 +1,6 @@
 {
   "version": 2,
-  "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": "/server.js"
-    }
-  ]
+  "framework": null,
+  "buildCommand": "node build-bundle.js",
+  "outputDirectory": "."
 }
