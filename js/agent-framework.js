@@ -350,7 +350,7 @@ class AgentFramework {
         const criticalCoders = new Set(['coder-ui', 'coder-react', 'coder-fullstack', 'architect', 'refiner']);
         const maxAttempts = (methodName === 'execute' || methodName === 'executeFromReview' || methodName === 'expandToProductionScale')
             ? (criticalCoders.has(agentName) ? 3 : 2)
-            : 1;
+            : 2;
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {

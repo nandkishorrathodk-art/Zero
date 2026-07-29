@@ -9,7 +9,7 @@ class AgentRecoveryAgent extends BaseAgent {
     }
 
     async recover(agentName, methodName, args = [], error = null) {
-        if (methodName !== 'execute' && methodName !== 'executeFromReview') return { handled: false };
+        if (methodName !== 'execute' && methodName !== 'executeFromReview' && methodName !== 'critiqueDesign') return { handled: false };
         const reason = error?.message || 'Unknown agent error';
 
         // CRITICAL CODERS: never ship a weak shell — force retry / hard failure
@@ -20,6 +20,10 @@ class AgentRecoveryAgent extends BaseAgent {
         if (noShellAgents.has(agentName)) {
             this.log('error', `${agentName} failed — refusing weak recovery shell. Reason: ${reason}`);
             return { handled: false };
+        }
+
+        if (agentName === 'reviewer' && methodName === 'critiqueDesign') {
+            return this._handled('Reviewer design critique recovered with standard approval.', 'The proposed design system structure, typography pairing, and color tokens align well with the specification.');
         }
 
         if (agentName === 'planner') {

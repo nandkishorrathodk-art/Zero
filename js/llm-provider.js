@@ -120,11 +120,15 @@ class LLMProvider {
                 this.customModelName = s.customModelName || '';
                 this.tokenUsage = s.tokenUsage || { total: 0, today: 0 };
 
-                // Auto-sanitize broken content-safety / nemotron models
-                if (typeof this.customModelName === 'string' && (this.customModelName.includes('content-safety') || this.customModelName.includes('nemotron'))) {
-                    this.customModelName = '';
-                    this.currentProvider = 'gemini';
-                    this.currentModel = 'gemini-2.5-flash';
+                // Auto-sanitize broken content-safety / nemotron / deprecated free models
+                if (typeof this.customModelName === 'string') {
+                    if (this.customModelName.includes('content-safety') || this.customModelName.includes('nemotron')) {
+                        this.customModelName = '';
+                        this.currentProvider = 'gemini';
+                        this.currentModel = 'gemini-2.5-flash';
+                    } else if (this.customModelName === 'meta-llama/llama-3.3-70b-instruct:free') {
+                        this.customModelName = 'meta-llama/llama-3.3-70b-instruct';
+                    }
                 }
             }
         } catch (e) {
@@ -273,8 +277,8 @@ class LLMProvider {
                     throw new Error(`No Base URL configured for ${provider.name}. Go to Settings → AI Provider and set the Custom Base URL.`);
                 }
                 let actualModel = this.currentProvider === 'custom' ? (this.customModelName || model) : model;
-                if (!actualModel || actualModel === 'custom') {
-                    actualModel = (baseUrl.includes('openrouter.ai')) ? 'meta-llama/llama-3.3-70b-instruct:free' : 'gpt-4o';
+                if (!actualModel || actualModel === 'custom' || actualModel === 'meta-llama/llama-3.3-70b-instruct:free') {
+                    actualModel = (baseUrl.includes('openrouter.ai')) ? 'meta-llama/llama-3.3-70b-instruct' : 'gpt-4o';
                 }
                 return this._chatOpenAI(messages, actualModel, apiKey, baseUrl, options);
             default:
@@ -307,8 +311,8 @@ class LLMProvider {
                     throw new Error(`No Base URL configured for ${provider.name}. Go to Settings → AI Provider and set the Custom Base URL.`);
                 }
                 let actualModel = this.currentProvider === 'custom' ? (this.customModelName || model) : model;
-                if (!actualModel || actualModel === 'custom') {
-                    actualModel = (baseUrl.includes('openrouter.ai')) ? 'meta-llama/llama-3.3-70b-instruct:free' : 'gpt-4o';
+                if (!actualModel || actualModel === 'custom' || actualModel === 'meta-llama/llama-3.3-70b-instruct:free') {
+                    actualModel = (baseUrl.includes('openrouter.ai')) ? 'meta-llama/llama-3.3-70b-instruct' : 'gpt-4o';
                 }
                 return this._streamOpenAI(messages, actualModel, apiKey, baseUrl, options, onChunk);
             default:
@@ -549,6 +553,23 @@ class LLMProvider {
 
             if (!response.ok) {
                 const errText = await response.text();
+                if ((response.status === 404 || response.status === 400) && retries < maxRetries) {
+                    const slugMatch = errText.match(/use this slug instead:\s*([a-zA-Z0-9_\-\.\/:]+)/i);
+                    let suggestedModel = slugMatch ? slugMatch[1].trim() : null;
+                    if (!suggestedModel && body.model && body.model.includes(':free')) {
+                        suggestedModel = body.model.replace(':free', '');
+                    }
+                    if (suggestedModel && suggestedModel !== body.model) {
+                        console.warn(`[LLMProvider] Model '${body.model}' returned ${response.status}. Auto-healing model slug to '${suggestedModel}' and retrying...`);
+                        body.model = suggestedModel;
+                        if (this.currentProvider === 'custom') {
+                            this.customModelName = suggestedModel;
+                            this.saveSettings();
+                        }
+                        retries++;
+                        continue;
+                    }
+                }
                 throw new Error(this._parseErrorMessage(response.status, errText));
             }
 
@@ -634,6 +655,23 @@ class LLMProvider {
 
             if (!response.ok) {
                 const errText = await response.text();
+                if ((response.status === 404 || response.status === 400) && retries < maxRetries) {
+                    const slugMatch = errText.match(/use this slug instead:\s*([a-zA-Z0-9_\-\.\/:]+)/i);
+                    let suggestedModel = slugMatch ? slugMatch[1].trim() : null;
+                    if (!suggestedModel && body.model && body.model.includes(':free')) {
+                        suggestedModel = body.model.replace(':free', '');
+                    }
+                    if (suggestedModel && suggestedModel !== body.model) {
+                        console.warn(`[LLMProvider] Model '${body.model}' returned ${response.status}. Auto-healing model slug to '${suggestedModel}' and retrying...`);
+                        body.model = suggestedModel;
+                        if (this.currentProvider === 'custom') {
+                            this.customModelName = suggestedModel;
+                            this.saveSettings();
+                        }
+                        retries++;
+                        continue;
+                    }
+                }
                 throw new Error(this._parseErrorMessage(response.status, errText));
             }
             throw new Error(`Stream error (${response.status}): ${err}`);
