@@ -54,7 +54,8 @@ try {
   const root = __dirname;
   const bundle = files.map(f => fs.readFileSync(path.join(root, f), 'utf8')).join('\n;\n');
   fs.writeFileSync(path.join(root, 'js/zero.bundle.js'), bundle, 'utf8');
-  console.log('Zero JS Bundle compiled successfully! (' + (bundle.length / 1024).toFixed(1) + ' KB)');
+  fs.writeFileSync(path.join(root, 'js/zero-builder.bundle.js'), bundle, 'utf8');
+  console.log('Zero JS Bundles compiled successfully! (' + (bundle.length / 1024).toFixed(1) + ' KB)');
 } catch (err) {
   console.error('Error building JS bundle:', err.message);
 }

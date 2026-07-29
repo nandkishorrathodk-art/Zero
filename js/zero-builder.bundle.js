@@ -535,7 +535,7 @@ class LLMProvider {
                 this.tokenUsage = s.tokenUsage || { total: 0, today: 0 };
 
                 // Auto-sanitize broken content-safety / nemotron models
-                if (this.customModelName.includes('content-safety') || this.customModelName.includes('nemotron')) {
+                if (typeof this.customModelName === 'string' && (this.customModelName.includes('content-safety') || this.customModelName.includes('nemotron'))) {
                     this.customModelName = '';
                     this.currentProvider = 'gemini';
                     this.currentModel = 'gemini-2.5-flash';
@@ -593,7 +593,7 @@ class LLMProvider {
         const apiKey = this.apiKeys[this.currentProvider];
         const model = options.model || this.currentModel;
         
-        if (!provider.noApiKey && !apiKey) {
+        if (!provider.noApiKey && this.currentProvider !== 'custom' && !apiKey) {
             throw new Error(`No API key configured for ${provider.name}. Go to Settings → AI Provider.`);
         }
 
@@ -626,7 +626,7 @@ class LLMProvider {
         const apiKey = this.apiKeys[this.currentProvider];
         const model = options.model || this.currentModel;
 
-        if (!provider.noApiKey && !apiKey) {
+        if (!provider.noApiKey && this.currentProvider !== 'custom' && !apiKey) {
             throw new Error(`No API key configured for ${provider.name}. Go to Settings → AI Provider.`);
         }
 
@@ -2971,11 +2971,33 @@ class AgentFramework {
                 this.memory.specification.has3D = true;
                 this.emit('progress', { step: 'coding-3d', percent: 38, message: 'Building WebGL / 3D cinematic engine...' });
 
+                const advEffects = Array.isArray(this.memory.specification.advancedEffects)
+                    ? this.memory.specification.advancedEffects
+                    : [];
+
                 if (!isReact && !isFullstack) {
-                    const coder3d = this.agents['coder-3d'];
-                    if (coder3d) {
-                        this.memory.generatedFiles['three-scene.js'] = await coder3d.execute(this.memory.specification, this.memory.designSystem);
-                        this.emit('log', { type: 'success', message: 'Vanilla WebGL/3D scene generated' });
+                    // Dispatch to specialized 3D agent if requested, else fall back to Coder3D
+                    if (advEffects.includes('gpgpu-particles') && this.agents['coder-gpgpu']) {
+                        this.emit('log', { type: 'info', message: 'Dispatching to GPGPU Particle Agent...' });
+                        this.memory.generatedFiles['three-scene.js'] = await this.agents['coder-gpgpu'].execute(this.memory.specification, this.memory.designSystem);
+                    } else if (advEffects.includes('webgpu-tsl') && this.agents['coder-webgpu']) {
+                        this.emit('log', { type: 'info', message: 'Dispatching to WebGPU/TSL Agent...' });
+                        this.memory.generatedFiles['three-scene.js'] = await this.agents['coder-webgpu'].execute(this.memory.specification, this.memory.designSystem);
+                    } else if (advEffects.includes('rapier-physics') && this.agents['coder-physics']) {
+                        this.emit('log', { type: 'info', message: 'Dispatching to Rapier Physics Agent...' });
+                        this.memory.generatedFiles['three-scene.js'] = await this.agents['coder-physics'].execute(this.memory.specification, this.memory.designSystem);
+                    } else {
+                        const coder3d = this.agents['coder-3d'];
+                        if (coder3d) {
+                            this.memory.generatedFiles['three-scene.js'] = await coder3d.execute(this.memory.specification, this.memory.designSystem);
+                            this.emit('log', { type: 'success', message: 'Vanilla WebGL/3D scene generated' });
+                        }
+                    }
+
+                    // Secondary helper: Audio bridge if requested
+                    if (advEffects.includes('audio-reactive') && this.agents['coder-audio']) {
+                        this.emit('log', { type: 'info', message: 'Generating Audio-Reactive Bridge...' });
+                        this.memory.generatedFiles['audio-bridge.js'] = await this.agents['coder-audio'].execute(this.memory.specification, this.memory.designSystem);
                     }
                 } else {
                     const shaderWizard = this.agents['coder-shader'];
@@ -11106,6 +11128,1570 @@ if (typeof window !== 'undefined') {
 
 ;
 /* ============================================================
+   GPGPU PARTICLE AGENT — Generates massive particle systems
+   using ping-pong FBO (Frame Buffer Object) technique with
+   WebGLRenderTarget for 100k-500k+ particles
+   ============================================================ */
+
+class CoderGPGPUAgent extends BaseAgent {
+    constructor() {
+        super(
+            'CoderGPGPU',
+            'Generates GPGPU particle systems with ping-pong FBO for 100k+ particles'
+        );
+
+        this.config = {
+            temperature: 0.65,
+            maxTokens: 32768,
+        };
+
+        this.systemPrompt = `
+You are an expert Three.js GPGPU particle system developer. You create massive, GPU-driven particle systems using the ping-pong FBO technique.
+
+CORE TECHNIQUE — GPGPU Ping-Pong FBO
+
+The key insight: store particle data (position, velocity) in textures, run simulation in fragment shaders, and read positions back when rendering particles.
+
+ARCHITECTURE
+
+1. DATA TEXTURES
+   - Two pairs of WebGLRenderTargets: posA/posB and velA/velB
+   - Format: RGBAFormat, type: FloatType
+   - Dimensions: power-of-2 (256×256 = 65,536 particles, 512×512 = 262,144)
+   - Initialize with random positions and zero/random velocities
+
+2. SIMULATION PASS
+   - Full-screen quad (PlaneGeometry 2×2) with OrthographicCamera
+   - Position simulation shader:
+     * Read current position from posA texture
+     * Read current velocity from velA texture
+     * Apply forces (curl noise, attractors, mouse repulsion, gravity)
+     * Write new position to posB
+   - Velocity simulation shader:
+     * Read current velocity from velA
+     * Apply damping, forces, curl noise
+     * Write new velocity to velB
+   - Render to WebGLRenderTarget (not screen)
+   - Swap A ↔ B each frame
+
+3. RENDER PASS
+   - Points mesh with BufferGeometry
+   - Vertex shader reads position from position texture using UV lookup
+   - UV = particle index mapped to texture coordinates
+   - Fragment shader: soft circle with glow, colored by velocity magnitude
+   - Additive blending for glow effect
+
+4. FORCES
+   - Curl noise: divergence-free flow for organic swirling motion
+   - Point attractors: pull particles toward mouse or fixed points
+   - Mouse repulsion: push particles away from cursor position
+   - Gravity: subtle downward pull with bounce
+   - Turbulence: layered noise at different frequencies
+   - Damping: velocity *= 0.98 per frame for stability
+
+TEMPLATE STRUCTURE
+
+function initThreeScene(container) {
+    // Setup
+    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, w/h, 0.1, 100);
+    
+    // Simulation setup
+    const simScene = new THREE.Scene();
+    const simCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const simQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));
+    simScene.add(simQuad);
+    
+    // Create render targets
+    const SIZE = 256; // 256×256 = 65,536 particles
+    const rtOptions = { format: THREE.RGBAFormat, type: THREE.FloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter };
+    let posA = new THREE.WebGLRenderTarget(SIZE, SIZE, rtOptions);
+    let posB = new THREE.WebGLRenderTarget(SIZE, SIZE, rtOptions);
+    
+    // Initialize position data texture
+    const posData = new Float32Array(SIZE * SIZE * 4);
+    for (let i = 0; i < SIZE * SIZE; i++) {
+        posData[i*4+0] = (Math.random() - 0.5) * 10; // x
+        posData[i*4+1] = (Math.random() - 0.5) * 10; // y
+        posData[i*4+2] = (Math.random() - 0.5) * 10; // z
+        posData[i*4+3] = 1.0;
+    }
+    const posTex = new THREE.DataTexture(posData, SIZE, SIZE, THREE.RGBAFormat, THREE.FloatType);
+    posTex.needsUpdate = true;
+    // Initialize posA by rendering data texture to it
+    
+    // Simulation material
+    const simMat = new THREE.ShaderMaterial({
+        uniforms: {
+            uPositions: { value: null },
+            uTime: { value: 0 },
+            uDelta: { value: 0 },
+            uMouse: { value: new THREE.Vector3() },
+        },
+        vertexShader: '...', // passthrough
+        fragmentShader: '...' // simulation logic
+    });
+    
+    // Particle render
+    const particleGeo = new THREE.BufferGeometry();
+    const uvs = new Float32Array(SIZE * SIZE * 2);
+    for (let i = 0; i < SIZE * SIZE; i++) {
+        uvs[i*2+0] = (i % SIZE) / SIZE;
+        uvs[i*2+1] = Math.floor(i / SIZE) / SIZE;
+    }
+    particleGeo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    // Also set position attribute (can be dummy, vertex shader overrides)
+    
+    // Animation loop
+    function animate() {
+        // 1. Run simulation: render simQuad with simMat to posB
+        simMat.uniforms.uPositions.value = posA.texture;
+        renderer.setRenderTarget(posB);
+        renderer.render(simScene, simCamera);
+        
+        // 2. Swap
+        [posA, posB] = [posB, posA];
+        
+        // 3. Render particles reading from posA
+        particleMat.uniforms.uPositions.value = posA.texture;
+        renderer.setRenderTarget(null);
+        renderer.render(scene, camera);
+        
+        requestAnimationFrame(animate);
+    }
+    
+    // Cleanup function
+    return function dispose() {
+        posA.dispose(); posB.dispose();
+        // ... dispose all materials, geometries, renderer
+    };
+}
+
+RULES
+
+1. Use THREE from global scope (CDN), not ES modules.
+2. Function name: initThreeScene(container)
+3. Use WebGLRenderTarget with FloatType for data textures.
+4. Always implement ping-pong swap pattern.
+5. Include inline simplex/curl noise in GLSL.
+6. Mouse interaction must affect particle forces.
+7. Use additive blending for particles (THREE.AdditiveBlending).
+8. Background transparent (alpha: true).
+9. Dispose ALL resources (targets, materials, geometries, textures, renderer).
+10. Use THREE.Clock for delta-time.
+11. Particle UV lookup: map 1D index to 2D texture coordinate.
+12. Keep GLSL compact and performant.
+
+PERFORMANCE
+
+* Texture size 256×256 = 65k particles (good default)
+* 512×512 = 262k for "massive" requests
+* Use NearestFilter on data textures (no interpolation)
+* Math.min(devicePixelRatio, 2)
+* No antialiasing needed for particles
+* Keep simulation shader simple: position += velocity * delta
+`.trim();
+    }
+
+    detectHints(specification = {}) {
+        const blob = JSON.stringify(specification || {}).toLowerCase();
+        const advEffects = Array.isArray(specification.advancedEffects) ? specification.advancedEffects : [];
+
+        const wantsMassive = /million|500k|massive|huge|100k/i.test(blob);
+        const texSize = wantsMassive ? 512 : 256;
+        const particleCount = texSize * texSize;
+
+        const colors = specification.colorPalette || {};
+        const mood = specification.mood || 'cinematic';
+
+        return {
+            texSize,
+            particleCount,
+            wantsMassive,
+            mood,
+            primary: colors.primary || '#7C3AED',
+            secondary: colors.secondary || '#0EA5E9',
+            accent: colors.accent || '#FDE68A',
+            background: colors.background || '#050816',
+            wantsCurl: /curl|organic|flow|swirl/i.test(blob),
+            wantsAttractor: /attract|orbit|gravit|pull/i.test(blob),
+            wantsGalaxy: /galaxy|star|cosmos|space|nebula/i.test(blob),
+        };
+    }
+
+    buildPrompt(specification = {}) {
+        const hints = this.detectHints(specification);
+
+        return `
+Create a GPGPU particle system using Three.js with ${hints.particleCount.toLocaleString()} particles (${hints.texSize}×${hints.texSize} data textures).
+
+CONTEXT
+${JSON.stringify(specification.artDirection || {}, null, 2)}
+
+PARTICLE STYLE
+${hints.wantsGalaxy ? '- Galaxy/cosmos: spiral arm formation, warm core, cool edges, depth fog' : ''}
+${hints.wantsCurl ? '- Organic curl noise flow: particles follow divergence-free field, swirling ribbons' : ''}
+${hints.wantsAttractor ? '- Attractor orbits: particles orbit around mouse or fixed points, gravitational pull' : ''}
+${!hints.wantsGalaxy && !hints.wantsCurl && !hints.wantsAttractor ? '- Elegant floating field: gentle noise drift, mouse repulsion, soft glow' : ''}
+
+PALETTE
+Primary: ${hints.primary}, Secondary: ${hints.secondary}, Accent: ${hints.accent}
+
+MOOD: ${hints.mood}
+
+REQUIREMENTS
+* initThreeScene(container) function
+* ${hints.texSize}×${hints.texSize} WebGLRenderTarget pair (FloatType, RGBAFormat, NearestFilter)
+* Ping-pong simulation: read from A, write to B, swap
+* Simulation fragment shader with inline simplex/curl noise
+* Forces: noise drift + mouse interaction + damping
+* Particle render: Points mesh, vertex shader reads position texture via UV
+* Fragment shader: soft glowing circle with additive blending
+* Color particles by velocity magnitude or position
+* Transparent background (alpha: true)
+* Dispose everything on cleanup
+* Use THREE from global scope
+
+OUTPUT: Only JavaScript code. No markdown. No JSON.
+`.trim();
+    }
+
+    buildFallback(specification = {}) {
+        const hints = this.detectHints(specification);
+        const S = hints.texSize;
+
+        return `
+function initThreeScene(container) {
+    const S = ${S};
+    const COUNT = S * S;
+    const w = container.clientWidth || window.innerWidth;
+    const h = container.clientHeight || window.innerHeight;
+
+    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: false });
+    renderer.setSize(w, h);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    container.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, w / h, 0.1, 200);
+    camera.position.z = 15;
+
+    const clock = new THREE.Clock();
+    const mouse = new THREE.Vector2(0, 0);
+    container.addEventListener('mousemove', (e) => {
+        const rect = container.getBoundingClientRect();
+        mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    });
+
+    // --- Simulation setup ---
+    const simScene = new THREE.Scene();
+    const simCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const simQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));
+    simScene.add(simQuad);
+
+    const rtOpts = {
+        format: THREE.RGBAFormat,
+        type: THREE.FloatType,
+        minFilter: THREE.NearestFilter,
+        magFilter: THREE.NearestFilter,
+        depthBuffer: false,
+        stencilBuffer: false,
+    };
+
+    let posA = new THREE.WebGLRenderTarget(S, S, rtOpts);
+    let posB = new THREE.WebGLRenderTarget(S, S, rtOpts);
+    let velA = new THREE.WebGLRenderTarget(S, S, rtOpts);
+    let velB = new THREE.WebGLRenderTarget(S, S, rtOpts);
+
+    // Initialize data textures
+    const posData = new Float32Array(S * S * 4);
+    const velData = new Float32Array(S * S * 4);
+    for (let i = 0; i < S * S; i++) {
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        const r = Math.pow(Math.random(), 0.33) * 8;
+        posData[i*4+0] = r * Math.sin(phi) * Math.cos(theta);
+        posData[i*4+1] = r * Math.sin(phi) * Math.sin(theta);
+        posData[i*4+2] = r * Math.cos(phi);
+        posData[i*4+3] = 1.0;
+        velData[i*4+0] = (Math.random() - 0.5) * 0.02;
+        velData[i*4+1] = (Math.random() - 0.5) * 0.02;
+        velData[i*4+2] = (Math.random() - 0.5) * 0.02;
+        velData[i*4+3] = 1.0;
+    }
+
+    // Render initial data into targets
+    const initPosTex = new THREE.DataTexture(posData, S, S, THREE.RGBAFormat, THREE.FloatType);
+    initPosTex.needsUpdate = true;
+    const initVelTex = new THREE.DataTexture(velData, S, S, THREE.RGBAFormat, THREE.FloatType);
+    initVelTex.needsUpdate = true;
+
+    const copyMat = new THREE.MeshBasicMaterial({ map: initPosTex });
+    simQuad.material = copyMat;
+    renderer.setRenderTarget(posA);
+    renderer.render(simScene, simCamera);
+    copyMat.map = initVelTex;
+    renderer.setRenderTarget(velA);
+    renderer.render(simScene, simCamera);
+    copyMat.dispose();
+    initPosTex.dispose();
+    initVelTex.dispose();
+
+    // Simulation shader
+    const simVert = \`
+        varying vec2 vUv;
+        void main() {
+            vUv = uv;
+            gl_Position = vec4(position, 1.0);
+        }
+    \`;
+
+    const simFrag = \`
+        precision highp float;
+        uniform sampler2D uPositions;
+        uniform sampler2D uVelocities;
+        uniform float uTime;
+        uniform float uDelta;
+        uniform vec2 uMouse;
+        varying vec2 vUv;
+
+        vec3 mod289(vec3 x) { return x - floor(x / 289.0) * 289.0; }
+        vec4 mod289(vec4 x) { return x - floor(x / 289.0) * 289.0; }
+        vec4 permute(vec4 x) { return mod289(((x * 34.0) + 1.0) * x); }
+        vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+
+        float snoise(vec3 v) {
+            const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+            const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+            vec3 i = floor(v + dot(v, C.yyy));
+            vec3 x0 = v - i + dot(i, C.xxx);
+            vec3 g = step(x0.yzx, x0.xyz);
+            vec3 l = 1.0 - g;
+            vec3 i1 = min(g.xyz, l.zxy);
+            vec3 i2 = max(g.xyz, l.zxy);
+            vec3 x1 = x0 - i1 + C.xxx;
+            vec3 x2 = x0 - i2 + C.yyy;
+            vec3 x3 = x0 - D.yyy;
+            i = mod289(i);
+            vec4 p = permute(permute(permute(
+                i.z + vec4(0.0, i1.z, i2.z, 1.0))
+                + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+                + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+            float n_ = 0.142857142857;
+            vec3 ns = n_ * D.wyz - D.xzx;
+            vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+            vec4 x_ = floor(j * ns.z);
+            vec4 y_ = floor(j - 7.0 * x_);
+            vec4 x = x_ * ns.x + ns.yyyy;
+            vec4 y = y_ * ns.x + ns.yyyy;
+            vec4 h = 1.0 - abs(x) - abs(y);
+            vec4 b0 = vec4(x.xy, y.xy);
+            vec4 b1 = vec4(x.zw, y.zw);
+            vec4 s0 = floor(b0) * 2.0 + 1.0;
+            vec4 s1 = floor(b1) * 2.0 + 1.0;
+            vec4 sh = -step(h, vec4(0.0));
+            vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;
+            vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;
+            vec3 p0 = vec3(a0.xy, h.x);
+            vec3 p1 = vec3(a0.zw, h.y);
+            vec3 p2 = vec3(a1.xy, h.z);
+            vec3 p3 = vec3(a1.zw, h.w);
+            vec4 norm = taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
+            p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+            vec4 m = max(0.6 - vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)), 0.0);
+            m = m * m;
+            return 42.0 * dot(m*m, vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
+        }
+
+        vec3 curlNoise(vec3 p) {
+            float e = 0.1;
+            float n1 = snoise(p + vec3(e, 0, 0));
+            float n2 = snoise(p - vec3(e, 0, 0));
+            float n3 = snoise(p + vec3(0, e, 0));
+            float n4 = snoise(p - vec3(0, e, 0));
+            float n5 = snoise(p + vec3(0, 0, e));
+            float n6 = snoise(p - vec3(0, 0, e));
+            float x = (n3 - n4) - (n5 - n6);
+            float y = (n5 - n6) - (n1 - n2);
+            float z = (n1 - n2) - (n3 - n4);
+            return normalize(vec3(x, y, z)) * 0.5;
+        }
+
+        void main() {
+            vec4 pos = texture2D(uPositions, vUv);
+            vec4 vel = texture2D(uVelocities, vUv);
+
+            // Curl noise force
+            vec3 curl = curlNoise(pos.xyz * 0.15 + uTime * 0.08);
+            vel.xyz += curl * uDelta * 2.0;
+
+            // Mouse repulsion
+            vec3 mousePos = vec3(uMouse * 8.0, 0.0);
+            vec3 toMouse = pos.xyz - mousePos;
+            float dist = length(toMouse);
+            if (dist < 3.0) {
+                vel.xyz += normalize(toMouse) * (3.0 - dist) * uDelta * 4.0;
+            }
+
+            // Center attractor (gentle)
+            vel.xyz -= pos.xyz * uDelta * 0.15;
+
+            // Damping
+            vel.xyz *= 0.985;
+
+            // Update position
+            pos.xyz += vel.xyz * uDelta * 60.0;
+
+            gl_FragColor = pos;
+        }
+    \`;
+
+    const posMat = new THREE.ShaderMaterial({
+        uniforms: {
+            uPositions: { value: posA.texture },
+            uVelocities: { value: velA.texture },
+            uTime: { value: 0 },
+            uDelta: { value: 0 },
+            uMouse: { value: new THREE.Vector2() },
+        },
+        vertexShader: simVert,
+        fragmentShader: simFrag,
+    });
+
+    const velMat = new THREE.ShaderMaterial({
+        uniforms: {
+            uPositions: { value: posA.texture },
+            uVelocities: { value: velA.texture },
+            uTime: { value: 0 },
+            uDelta: { value: 0 },
+            uMouse: { value: new THREE.Vector2() },
+        },
+        vertexShader: simVert,
+        fragmentShader: simFrag,
+    });
+
+    // --- Particle rendering ---
+    const pGeo = new THREE.BufferGeometry();
+    const refs = new Float32Array(COUNT * 2);
+    const dummy = new Float32Array(COUNT * 3);
+    for (let i = 0; i < COUNT; i++) {
+        refs[i*2+0] = (i % S + 0.5) / S;
+        refs[i*2+1] = (Math.floor(i / S) + 0.5) / S;
+        dummy[i*3] = dummy[i*3+1] = dummy[i*3+2] = 0;
+    }
+    pGeo.setAttribute('position', new THREE.BufferAttribute(dummy, 3));
+    pGeo.setAttribute('reference', new THREE.BufferAttribute(refs, 2));
+
+    const pMat = new THREE.ShaderMaterial({
+        uniforms: {
+            uPositions: { value: posA.texture },
+            uColor1: { value: new THREE.Color('${hints.primary}') },
+            uColor2: { value: new THREE.Color('${hints.secondary}') },
+            uColor3: { value: new THREE.Color('${hints.accent}') },
+        },
+        vertexShader: \`
+            attribute vec2 reference;
+            uniform sampler2D uPositions;
+            varying float vSpeed;
+            varying float vDepth;
+            void main() {
+                vec4 pos = texture2D(uPositions, reference);
+                vec4 mvPos = modelViewMatrix * vec4(pos.xyz, 1.0);
+                gl_Position = projectionMatrix * mvPos;
+                gl_PointSize = max(1.5, 4.0 / -mvPos.z);
+                vSpeed = length(pos.xyz) * 0.1;
+                vDepth = smoothstep(-20.0, 5.0, mvPos.z);
+            }
+        \`,
+        fragmentShader: \`
+            precision highp float;
+            uniform vec3 uColor1;
+            uniform vec3 uColor2;
+            uniform vec3 uColor3;
+            varying float vSpeed;
+            varying float vDepth;
+            void main() {
+                float d = length(gl_PointCoord - 0.5);
+                if (d > 0.5) discard;
+                float alpha = smoothstep(0.5, 0.1, d) * vDepth * 0.8;
+                vec3 col = mix(uColor1, uColor2, vSpeed);
+                col = mix(col, uColor3, smoothstep(0.3, 0.7, vSpeed));
+                gl_FragColor = vec4(col, alpha);
+            }
+        \`,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+    });
+
+    const points = new THREE.Points(pGeo, pMat);
+    scene.add(points);
+
+    // --- Animation ---
+    function animate() {
+        const delta = Math.min(clock.getDelta(), 0.05);
+        const elapsed = clock.getElapsedTime();
+
+        // Update simulation uniforms
+        posMat.uniforms.uPositions.value = posA.texture;
+        posMat.uniforms.uVelocities.value = velA.texture;
+        posMat.uniforms.uTime.value = elapsed;
+        posMat.uniforms.uDelta.value = delta;
+        posMat.uniforms.uMouse.value.set(mouse.x, mouse.y);
+
+        // Simulate positions
+        simQuad.material = posMat;
+        renderer.setRenderTarget(posB);
+        renderer.render(simScene, simCamera);
+
+        // Simulate velocities (uses same shader, writes to velB)
+        velMat.uniforms.uPositions.value = posA.texture;
+        velMat.uniforms.uVelocities.value = velA.texture;
+        velMat.uniforms.uTime.value = elapsed;
+        velMat.uniforms.uDelta.value = delta;
+        velMat.uniforms.uMouse.value.set(mouse.x, mouse.y);
+        simQuad.material = velMat;
+        renderer.setRenderTarget(velB);
+        renderer.render(simScene, simCamera);
+
+        // Swap
+        [posA, posB] = [posB, posA];
+        [velA, velB] = [velB, velA];
+
+        // Render particles
+        pMat.uniforms.uPositions.value = posA.texture;
+        renderer.setRenderTarget(null);
+        renderer.render(scene, camera);
+
+        camera.position.x = Math.sin(elapsed * 0.1) * 2;
+        camera.position.y = Math.cos(elapsed * 0.15) * 1;
+        camera.lookAt(0, 0, 0);
+
+        requestAnimationFrame(animate);
+    }
+    animate();
+
+    // --- Resize ---
+    function onResize() {
+        const nw = container.clientWidth || window.innerWidth;
+        const nh = container.clientHeight || window.innerHeight;
+        camera.aspect = nw / nh;
+        camera.updateProjectionMatrix();
+        renderer.setSize(nw, nh);
+    }
+    window.addEventListener('resize', onResize);
+
+    // --- Cleanup ---
+    return function dispose() {
+        window.removeEventListener('resize', onResize);
+        posA.dispose(); posB.dispose();
+        velA.dispose(); velB.dispose();
+        posMat.dispose(); velMat.dispose(); pMat.dispose();
+        pGeo.dispose();
+        renderer.dispose();
+        container.removeChild(renderer.domElement);
+    };
+}
+`.trim();
+    }
+
+    normalizeCode(code) {
+        let output = String(code || '').trim();
+        output = output.replace(/^```(?:javascript|js)?\\s*/i, '').replace(/```$/i, '').trim();
+        if (!/\\bfunction\\s+initThreeScene\\s*\\(/.test(output) && !/\\bconst\\s+initThreeScene\\s*=/.test(output)) {
+            output = `function initThreeScene(container) {\\n${output}\\n}`;
+        }
+        return output;
+    }
+
+    validateCode(code) {
+        const text = String(code || '');
+        return {
+            hasEntryPoint: /\b(initThreeScene)\s*\(/.test(text),
+            hasRenderTarget: /WebGLRenderTarget/i.test(text),
+            hasFloatType: /FloatType/.test(text),
+            hasPingPong: /posA|posB|swap|ping.?pong/i.test(text),
+            hasSimShader: /uPositions|uVelocities|simulation/i.test(text),
+            hasDispose: /\.dispose\(\)/.test(text),
+        };
+    }
+
+    async execute(specification = {}, designSystem = null) {
+        this.log('info', `Generating GPGPU particle system (${this.detectHints(specification).particleCount.toLocaleString()} particles)...`);
+
+        const prompt = this.buildPrompt(specification);
+
+        let response = '';
+        try {
+            response = await this.callLLM(prompt, this.systemPrompt, {
+                temperature: this.config.temperature,
+                maxTokens: this.config.maxTokens,
+            });
+        } catch (error) {
+            this.log('warning', `GPGPU LLM call failed: ${error.message} — using fallback`);
+            return this.buildFallback(specification);
+        }
+
+        let code = this.extractCode(response, 'javascript');
+        code = this.normalizeCode(code);
+
+        const validation = this.validateCode(code);
+
+        if (!validation.hasEntryPoint || !validation.hasRenderTarget || !validation.hasPingPong) {
+            this.log('warning', 'Generated GPGPU code incomplete — using fallback');
+            return this.buildFallback(specification);
+        }
+
+        if (!validation.hasDispose) {
+            this.log('warning', 'Generated GPGPU code missing dispose — appending cleanup reminder');
+        }
+
+        this.log('success', `GPGPU particle system generated (${this.detectHints(specification).particleCount.toLocaleString()} particles)`);
+        return code;
+    }
+}
+
+if (typeof window !== 'undefined') {
+    window.CoderGPGPUAgent = CoderGPGPUAgent;
+}
+
+;
+/* ============================================================
+   WEBGPU AGENT — Generates Three.js WebGPURenderer scenes with
+   TSL (Three Shading Language) node materials & WebGL fallback
+   ============================================================ */
+
+class CoderWebGPUAgent extends BaseAgent {
+    constructor() {
+        super(
+            'CoderWebGPU',
+            'Generates WebGPU + TSL node shader scenes with WebGL fallback'
+        );
+
+        this.config = {
+            temperature: 0.62,
+            maxTokens: 24576,
+        };
+
+        this.systemPrompt = `
+You are a cutting-edge Three.js WebGPU developer utilizing WebGPURenderer and TSL (Three Shading Language) nodes.
+
+CORE TECHNIQUE — WebGPU + TSL (Three Shading Language)
+
+WebGPU brings high-performance compute shaders, storage buffers, and node-based materials to web graphics.
+
+ARCHITECTURE & TSL CONCEPTS
+
+1. DUAL RENDERER SETUP (WebGPU + WebGL Fallback)
+   - Try WebGPURenderer first (async init required)
+   - Fall back to standard WebGLRenderer if navigator.gpu is missing or fails:
+   
+   let renderer;
+   if (navigator.gpu && typeof THREE.WebGPURenderer !== 'undefined') {
+       try {
+           renderer = new THREE.WebGPURenderer({ alpha: true, antialias: true });
+           await renderer.init();
+       } catch (e) {
+           renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+       }
+   } else {
+       renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+   }
+
+2. TSL NODE MATERIALS (when available)
+   - TSL builds shader logic using node graphs instead of raw GLSL string parsing
+   - Node imports: import { color, vec2, vec3, float, timerLocal, positionLocal, uv, sin, mix, texture } from 'three/nodes'
+   - Material assignment:
+     const material = new THREE.MeshBasicNodeMaterial();
+     const time = timerLocal();
+     material.colorNode = mix(color(0xff0000), color(0x0000ff), sin(time));
+     material.positionNode = positionLocal.add(vec3(0, sin(time.mul(2.0)).mul(0.5), 0));
+
+3. COMPUTE SHADERS
+   - ComputeNode for parallel calculations on GPU
+   - StorageBufferAttribute for GPU data storage
+   - renderer.compute(computeNode) inside render loop
+
+4. FALLBACK COMPATIBILITY
+   - Three.js TSL nodes can run on WebGLRenderer in modern Three.js versions, but standard THREE.ShaderMaterial or standard materials MUST be provided as a 100% reliable fallback.
+
+RULES
+1. Output only valid JavaScript code.
+2. Entry point: async function initThreeScene(container)
+3. Check navigator.gpu explicitly before instantiating WebGPURenderer.
+4. Always wrap WebGPU initialization in try...catch block with WebGL fallback.
+5. Make sure the scene is visually compelling and responsive.
+6. Provide proper cleanup function returning from initThreeScene.
+`.trim();
+    }
+
+    detectHints(specification = {}) {
+        const blob = JSON.stringify(specification || {}).toLowerCase();
+        const colors = specification.colorPalette || {};
+        return {
+            primary: colors.primary || '#7C3AED',
+            secondary: colors.secondary || '#0EA5E9',
+            accent: colors.accent || '#FDE68A',
+            wantsCompute: /compute|storage|particles|gpu/i.test(blob),
+        };
+    }
+
+    buildPrompt(specification = {}) {
+        const hints = this.detectHints(specification);
+        return `
+Create a futuristic Three.js scene utilizing WebGPURenderer with WebGL fallback.
+
+PALETTE: Primary: ${hints.primary}, Secondary: ${hints.secondary}, Accent: ${hints.accent}
+
+REQUIREMENTS:
+- Entry point: async function initThreeScene(container)
+- Dual renderer logic: try WebGPURenderer first, fallback to WebGLRenderer
+- Node material / GLSL shader composition for dynamic surface or particles
+- Animated, interactive, responsive, transparent background
+- Complete resource cleanup on dispose return function
+- Output ONLY raw JavaScript code.
+`.trim();
+    }
+
+    buildFallback(specification = {}) {
+        const hints = this.detectHints(specification);
+        return `
+async function initThreeScene(container) {
+    const w = container.clientWidth || window.innerWidth;
+    const h = container.clientHeight || window.innerHeight;
+
+    let renderer;
+    let isWebGPU = false;
+
+    if (navigator.gpu && typeof THREE.WebGPURenderer !== 'undefined') {
+        try {
+            renderer = new THREE.WebGPURenderer({ alpha: true, antialias: true });
+            await renderer.init();
+            isWebGPU = true;
+        } catch (e) {
+            console.warn('WebGPU init failed, falling back to WebGL:', e.message);
+            renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+        }
+    } else {
+        renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    }
+
+    renderer.setSize(w, h);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    container.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, w / h, 0.1, 100);
+    camera.position.z = 8;
+
+    // Glowing Torus Knot
+    const geo = new THREE.TorusKnotGeometry(2, 0.6, 128, 32);
+    const mat = new THREE.MeshStandardMaterial({
+        color: new THREE.Color('${hints.primary}'),
+        roughness: 0.2,
+        metalness: 0.8,
+        wireframe: true
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    scene.add(mesh);
+
+    // Lights
+    const light1 = new THREE.DirectionalLight('${hints.accent}', 2);
+    light1.position.set(5, 5, 5);
+    scene.add(light1);
+    const light2 = new THREE.PointLight('${hints.secondary}', 3, 20);
+    light2.position.set(-5, -5, 2);
+    scene.add(light2);
+
+    const clock = new THREE.Clock();
+
+    function animate() {
+        const elapsed = clock.getElapsedTime();
+        mesh.rotation.x = elapsed * 0.3;
+        mesh.rotation.y = elapsed * 0.5;
+        light2.position.x = Math.sin(elapsed * 2) * 6;
+        light2.position.y = Math.cos(elapsed * 1.5) * 6;
+
+        if (isWebGPU && typeof renderer.renderAsync === 'function') {
+            renderer.renderAsync(scene, camera);
+        } else {
+            renderer.render(scene, camera);
+        }
+        requestAnimationFrame(animate);
+    }
+    animate();
+
+    function onResize() {
+        const nw = container.clientWidth || window.innerWidth;
+        const nh = container.clientHeight || window.innerHeight;
+        camera.aspect = nw / nh;
+        camera.updateProjectionMatrix();
+        renderer.setSize(nw, nh);
+    }
+    window.addEventListener('resize', onResize);
+
+    return function dispose() {
+        window.removeEventListener('resize', onResize);
+        geo.dispose();
+        mat.dispose();
+        renderer.dispose();
+        container.removeChild(renderer.domElement);
+    };
+}
+`.trim();
+    }
+
+    validateCode(code) {
+        const text = String(code || '');
+        return {
+            hasEntryPoint: /initThreeScene\s*\(/.test(text),
+            hasWebGPUCheck: /navigator\.gpu/i.test(text),
+            hasRendererFallback: /WebGLRenderer/i.test(text),
+        };
+    }
+
+    async execute(specification = {}, designSystem = null) {
+        this.log('info', 'Generating WebGPU / TSL scene with WebGL fallback...');
+
+        const prompt = this.buildPrompt(specification);
+
+        let response = '';
+        try {
+            response = await this.callLLM(prompt, this.systemPrompt, {
+                temperature: this.config.temperature,
+                maxTokens: this.config.maxTokens,
+            });
+        } catch (error) {
+            this.log('warning', `WebGPU LLM call failed: ${error.message} — using fallback`);
+            return this.buildFallback(specification);
+        }
+
+        let code = this.extractCode(response, 'javascript');
+        code = String(code || '').trim()
+            .replace(/^```(?:javascript|js)?\s*/i, '')
+            .replace(/```$/i, '')
+            .trim();
+
+        const validation = this.validateCode(code);
+
+        if (!validation.hasEntryPoint || !validation.hasWebGPUCheck) {
+            this.log('warning', 'Generated WebGPU code incomplete — using fallback');
+            return this.buildFallback(specification);
+        }
+
+        this.log('success', 'WebGPU scene generated with WebGL fallback');
+        return code;
+    }
+}
+
+if (typeof window !== 'undefined') {
+    window.CoderWebGPUAgent = CoderWebGPUAgent;
+}
+
+;
+/* ============================================================
+   PHYSICS AGENT — Generates Rapier3D physics integration
+   for Three.js scenes: rigid bodies, colliders, constraints
+   ============================================================ */
+
+class CoderPhysicsAgent extends BaseAgent {
+    constructor() {
+        super(
+            'CoderPhysics',
+            'Generates Rapier3D physics for Three.js scenes'
+        );
+
+        this.config = {
+            temperature: 0.6,
+            maxTokens: 24576,
+        };
+
+        this.systemPrompt = `
+You are an expert physics simulation developer using Rapier3D with Three.js.
+
+CORE TECHNIQUE — Rapier3D Physics Integration
+
+Rapier is a fast, deterministic physics engine compiled to WebAssembly.
+CDN: loaded via importmap or global RAPIER from @dimforge/rapier3d-compat.
+
+ARCHITECTURE
+
+1. INITIALIZATION (async)
+   - Import RAPIER from CDN or global
+   - await RAPIER.init() — must be async, WASM needs to load
+   - const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 })
+
+2. RIGID BODIES
+   - RigidBodyDesc.dynamic() — affected by forces/gravity
+   - RigidBodyDesc.fixed() — static, immovable (floors, walls)
+   - RigidBodyDesc.kinematicPositionBased() — user-controlled movement
+   - body.setTranslation({ x, y, z }, true)
+   - body.setRotation({ x, y, z, w }, true) — quaternion
+
+3. COLLIDERS
+   - ColliderDesc.cuboid(hx, hy, hz) — box half-extents
+   - ColliderDesc.ball(radius) — sphere
+   - ColliderDesc.cylinder(halfHeight, radius)
+   - ColliderDesc.capsule(halfHeight, radius)
+   - ColliderDesc.trimesh(vertices, indices) — custom mesh
+   - Attach to body: world.createCollider(colliderDesc, body)
+
+4. SIMULATION LOOP
+   - world.step() — advance simulation by one timestep
+   - For each body: read position and rotation
+   - Apply to corresponding Three.js mesh:
+     mesh.position.copy(body.translation())
+     mesh.quaternion.copy(body.rotation())
+
+5. FORCES & IMPULSES
+   - body.applyImpulse({ x, y, z }, true) — instant force
+   - body.applyForce({ x, y, z }, true) — continuous force
+   - body.setLinvel({ x, y, z }, true) — set velocity directly
+
+6. CONSTRAINTS (joints)
+   - RevoluteJoint — hinge
+   - BallJoint — ball-and-socket
+   - PrismaticJoint — slider
+   - FixedJoint — weld
+
+TEMPLATE PATTERN
+
+async function initThreeScene(container) {
+    // Three.js setup
+    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, w/h, 0.1, 100);
+    
+    // Rapier setup
+    await RAPIER.init();
+    const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
+    
+    // Ground (fixed)
+    const groundBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+    world.createCollider(RAPIER.ColliderDesc.cuboid(50, 0.1, 50), groundBody);
+    const groundMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(100, 0.2, 100),
+        new THREE.MeshStandardMaterial({ color: '#333' })
+    );
+    scene.add(groundMesh);
+    
+    // Dynamic objects
+    const bodies = [];
+    const meshes = [];
+    for (let i = 0; i < 50; i++) {
+        const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
+            .setTranslation(Math.random()*10-5, 10+i*2, Math.random()*10-5);
+        const body = world.createRigidBody(bodyDesc);
+        world.createCollider(RAPIER.ColliderDesc.cuboid(0.5, 0.5, 0.5), body);
+        bodies.push(body);
+        
+        const mesh = new THREE.Mesh(
+            new THREE.BoxGeometry(1, 1, 1),
+            new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL(Math.random(), 0.7, 0.5) })
+        );
+        scene.add(mesh);
+        meshes.push(mesh);
+    }
+    
+    // Animation loop
+    function animate() {
+        world.step();
+        for (let i = 0; i < bodies.length; i++) {
+            const pos = bodies[i].translation();
+            const rot = bodies[i].rotation();
+            meshes[i].position.set(pos.x, pos.y, pos.z);
+            meshes[i].quaternion.set(rot.x, rot.y, rot.z, rot.w);
+        }
+        renderer.render(scene, camera);
+        requestAnimationFrame(animate);
+    }
+    animate();
+}
+
+CDN LOADING
+Option 1 (script tag): <script src="https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.14.0/rapier.js"></script>
+Then: const RAPIER = window.RAPIER;
+
+Option 2 (dynamic import): const RAPIER = await import('https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.14.0/+esm');
+
+RULES
+
+1. Use THREE from global scope.
+2. RAPIER from global scope (CDN loaded).
+3. Function: initThreeScene(container) — must be async for RAPIER.init().
+4. Always create a ground plane (fixed body).
+5. Sync Three.js meshes with Rapier bodies every frame.
+6. Add lighting (ambient + directional) for visible meshes.
+7. Handle resize.
+8. Dispose world, renderer, geometries, materials on cleanup.
+9. Keep body count reasonable (50-200 for real-time).
+10. Use BufferGeometry, not legacy Geometry.
+
+PERFORMANCE
+* 50-100 dynamic bodies is smooth on most devices
+* Use simple colliders (cuboid, ball) over trimesh when possible
+* world.step() with default timestep (1/60)
+* Reuse materials and geometries via instancing when >20 identical shapes
+`.trim();
+    }
+
+    buildPrompt(specification = {}) {
+        const blob = JSON.stringify(specification || {}).toLowerCase();
+        const wantsDominos = /domino|chain|cascade/i.test(blob);
+        const wantsRagdoll = /ragdoll|character|body/i.test(blob);
+        const wantsVehicle = /car|vehicle|wheel/i.test(blob);
+        const wantsDestruction = /destruct|break|shatter|explode/i.test(blob);
+
+        return `
+Create a Three.js scene with Rapier3D physics.
+
+CONTEXT
+${JSON.stringify(specification.artDirection || {}, null, 2)}
+
+PHYSICS TYPE
+${wantsDominos ? '- Domino cascade / chain reaction' : ''}
+${wantsRagdoll ? '- Ragdoll character with joints' : ''}
+${wantsVehicle ? '- Vehicle with wheel constraints' : ''}
+${wantsDestruction ? '- Destructible objects / shattering' : ''}
+${!wantsDominos && !wantsRagdoll && !wantsVehicle && !wantsDestruction ? '- Falling objects onto ground plane with mouse interaction' : ''}
+
+PALETTE
+${JSON.stringify(specification.colorPalette || { primary: '#C84B31', secondary: '#173F5F' }, null, 2)}
+
+REQUIREMENTS
+* async function initThreeScene(container)
+* await RAPIER.init() — RAPIER from global scope (CDN)
+* Fixed ground body + dynamic objects (50-100)
+* Sync mesh position/rotation from body.translation()/rotation() each frame
+* Add ambient + directional lighting
+* Mouse click to spawn new objects or apply impulses
+* Transparent background (alpha: true)
+* Handle resize
+* Dispose everything on cleanup
+
+OUTPUT: Only JavaScript code.
+`.trim();
+    }
+
+    buildFallback(specification = {}) {
+        const colors = specification.colorPalette || {};
+        const primary = colors.primary || '#C84B31';
+        const secondary = colors.secondary || '#173F5F';
+
+        return `
+async function initThreeScene(container) {
+    const w = container.clientWidth || window.innerWidth;
+    const h = container.clientHeight || window.innerHeight;
+
+    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    renderer.setSize(w, h);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    container.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 200);
+    camera.position.set(0, 12, 20);
+    camera.lookAt(0, 2, 0);
+
+    // Lighting
+    const ambient = new THREE.AmbientLight(0xffffff, 0.4);
+    scene.add(ambient);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(10, 20, 10);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.set(1024, 1024);
+    scene.add(dirLight);
+
+    // Rapier init
+    await RAPIER.init();
+    const gravity = { x: 0.0, y: -9.81, z: 0.0 };
+    const world = new RAPIER.World(gravity);
+
+    // Ground
+    const groundBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+    world.createCollider(RAPIER.ColliderDesc.cuboid(25, 0.1, 25), groundBody);
+    const groundMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(50, 0.2, 50),
+        new THREE.MeshStandardMaterial({ color: '#222', roughness: 0.9 })
+    );
+    groundMesh.receiveShadow = true;
+    scene.add(groundMesh);
+
+    // Dynamic cubes
+    const bodies = [];
+    const meshes = [];
+    const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+    const colors = [new THREE.Color('${primary}'), new THREE.Color('${secondary}'), new THREE.Color('#F6C85F')];
+
+    function spawnBox(x, y, z) {
+        const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
+            .setTranslation(x, y, z)
+            .setRotation({ x: Math.random()*0.5, y: Math.random()*0.5, z: Math.random()*0.5, w: 1 });
+        const body = world.createRigidBody(bodyDesc);
+        world.createCollider(
+            RAPIER.ColliderDesc.cuboid(0.5, 0.5, 0.5).setRestitution(0.3).setFriction(0.7),
+            body
+        );
+
+        const mat = new THREE.MeshStandardMaterial({
+            color: colors[Math.floor(Math.random() * colors.length)],
+            roughness: 0.5,
+            metalness: 0.3,
+        });
+        const mesh = new THREE.Mesh(boxGeo, mat);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        scene.add(mesh);
+
+        bodies.push(body);
+        meshes.push(mesh);
+    }
+
+    // Initial spawn
+    for (let i = 0; i < 60; i++) {
+        spawnBox(
+            (Math.random() - 0.5) * 8,
+            5 + i * 1.5,
+            (Math.random() - 0.5) * 8
+        );
+    }
+
+    // Mouse click to spawn
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+    container.addEventListener('click', function(e) {
+        const rect = container.getBoundingClientRect();
+        pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(pointer, camera);
+        const dir = raycaster.ray.direction;
+        spawnBox(dir.x * 5, 15, dir.z * 5);
+    });
+
+    // Animation
+    const clock = new THREE.Clock();
+    function animate() {
+        world.step();
+
+        for (let i = 0; i < bodies.length; i++) {
+            const pos = bodies[i].translation();
+            const rot = bodies[i].rotation();
+            meshes[i].position.set(pos.x, pos.y, pos.z);
+            meshes[i].quaternion.set(rot.x, rot.y, rot.z, rot.w);
+
+            // Remove fallen objects
+            if (pos.y < -20) {
+                scene.remove(meshes[i]);
+                meshes[i].material.dispose();
+                world.removeRigidBody(bodies[i]);
+                bodies.splice(i, 1);
+                meshes.splice(i, 1);
+                i--;
+            }
+        }
+
+        const t = clock.getElapsedTime();
+        camera.position.x = Math.sin(t * 0.15) * 20;
+        camera.position.z = Math.cos(t * 0.15) * 20;
+        camera.lookAt(0, 3, 0);
+
+        renderer.render(scene, camera);
+        requestAnimationFrame(animate);
+    }
+    animate();
+
+    // Resize
+    function onResize() {
+        const nw = container.clientWidth || window.innerWidth;
+        const nh = container.clientHeight || window.innerHeight;
+        camera.aspect = nw / nh;
+        camera.updateProjectionMatrix();
+        renderer.setSize(nw, nh);
+    }
+    window.addEventListener('resize', onResize);
+
+    // Cleanup
+    return function dispose() {
+        window.removeEventListener('resize', onResize);
+        for (let i = 0; i < meshes.length; i++) {
+            meshes[i].material.dispose();
+        }
+        boxGeo.dispose();
+        world.free();
+        renderer.dispose();
+        container.removeChild(renderer.domElement);
+    };
+}
+`.trim();
+    }
+
+    validateCode(code) {
+        const text = String(code || '');
+        return {
+            hasEntryPoint: /initThreeScene\s*\(/.test(text),
+            hasRapierInit: /RAPIER\.init\(\)|rapier.*init/i.test(text),
+            hasWorld: /new\s+RAPIER\.World/i.test(text),
+            hasRigidBody: /RigidBodyDesc/i.test(text),
+            hasCollider: /ColliderDesc/i.test(text),
+            hasStep: /world\.step\(\)/i.test(text),
+            hasSync: /translation\(\)|rotation\(\)/i.test(text),
+        };
+    }
+
+    async execute(specification = {}, designSystem = null) {
+        this.log('info', 'Generating Rapier3D physics scene...');
+
+        const prompt = this.buildPrompt(specification);
+
+        let response = '';
+        try {
+            response = await this.callLLM(prompt, this.systemPrompt, {
+                temperature: this.config.temperature,
+                maxTokens: this.config.maxTokens,
+            });
+        } catch (error) {
+            this.log('warning', `Physics LLM call failed: ${error.message} — using fallback`);
+            return this.buildFallback(specification);
+        }
+
+        let code = this.extractCode(response, 'javascript');
+        code = String(code || '').trim()
+            .replace(/^```(?:javascript|js)?\s*/i, '')
+            .replace(/```$/i, '')
+            .trim();
+
+        const validation = this.validateCode(code);
+
+        if (!validation.hasEntryPoint || !validation.hasRapierInit || !validation.hasWorld || !validation.hasStep) {
+            this.log('warning', 'Generated physics code incomplete — using fallback');
+            return this.buildFallback(specification);
+        }
+
+        this.log('success', 'Rapier3D physics scene generated');
+        return code;
+    }
+}
+
+if (typeof window !== 'undefined') {
+    window.CoderPhysicsAgent = CoderPhysicsAgent;
+}
+
+;
+/* ============================================================
+   AUDIO-REACTIVE AGENT — Generates Web Audio API analysis
+   bridge that feeds frequency band uniforms to Three.js shaders
+   ============================================================ */
+
+class CoderAudioAgent extends BaseAgent {
+    constructor() {
+        super(
+            'CoderAudio',
+            'Generates audio-reactive bridge: Web Audio API → shader uniforms'
+        );
+
+        this.config = {
+            temperature: 0.6,
+            maxTokens: 16384,
+        };
+
+        this.systemPrompt = `
+You are an expert Web Audio API developer who creates audio-reactive visual bridges for Three.js scenes.
+
+CORE TECHNIQUE — Audio Analysis → Shader Uniforms
+
+1. AUDIO SOURCE
+   - Option A: Microphone via navigator.mediaDevices.getUserMedia({ audio: true })
+   - Option B: Audio file via new Audio(url) + audioContext.createMediaElementSource()
+   - Option C: Simulated sine-wave fallback when no audio permission
+
+2. ANALYSIS PIPELINE
+   - AudioContext → createAnalyser()
+   - analyser.fftSize = 64 (gives 32 frequency bins)
+   - Uint8Array(analyser.frequencyBinCount) for frequency data
+   - Each frame: analyser.getByteFrequencyData(dataArray)
+
+3. FREQUENCY BANDS
+   - Bass: average of bins 0-4 (low frequencies: kick, sub-bass)
+   - Mid: average of bins 5-15 (vocals, melody, snare)
+   - High: average of bins 16-31 (hi-hats, cymbals, brightness)
+   - Normalize each to 0.0-1.0: band = avgBins / 255.0
+
+4. SMOOTHING
+   - Smooth with exponential lerp to prevent jitter:
+   - smoothBass += (rawBass - smoothBass) * 0.12
+   - Use different rates for attack (fast, 0.15) vs release (slow, 0.05)
+
+5. OUTPUT — Uniform Bridge Object
+   The audio bridge returns an object with:
+   - update(): call each animation frame
+   - values: { bass: 0-1, mid: 0-1, high: 0-1, volume: 0-1 }
+   - connectToMaterial(shaderMaterial): auto-sets uBass, uMid, uHigh, uVolume
+   - dispose(): cleanup AudioContext and streams
+
+TEMPLATE PATTERN
+
+function createAudioBridge(options) {
+    let audioContext, analyser, source, dataArray;
+    const values = { bass: 0, mid: 0, high: 0, volume: 0 };
+    let isActive = false;
+
+    async function init() {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 64;
+        analyser.smoothingTimeConstant = 0.8;
+        dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            source = audioContext.createMediaStreamSource(stream);
+            source.connect(analyser);
+            isActive = true;
+        } catch (e) {
+            console.warn('Audio permission denied, using simulated audio');
+            isActive = false; // Will use fallback simulation
+        }
+    }
+
+    function update(time) {
+        if (isActive && analyser) {
+            analyser.getByteFrequencyData(dataArray);
+            let bassSum = 0, midSum = 0, highSum = 0;
+            for (let i = 0; i < 5; i++) bassSum += dataArray[i];
+            for (let i = 5; i < 16; i++) midSum += dataArray[i];
+            for (let i = 16; i < 32; i++) highSum += dataArray[i];
+            const rawBass = bassSum / (5 * 255);
+            const rawMid = midSum / (11 * 255);
+            const rawHigh = highSum / (16 * 255);
+            values.bass += (rawBass - values.bass) * 0.12;
+            values.mid += (rawMid - values.mid) * 0.1;
+            values.high += (rawHigh - values.high) * 0.08;
+            values.volume = (values.bass + values.mid + values.high) / 3;
+        } else {
+            // Simulated audio fallback
+            values.bass = 0.3 + Math.sin(time * 2.0) * 0.3;
+            values.mid = 0.2 + Math.sin(time * 3.5 + 1.0) * 0.2;
+            values.high = 0.15 + Math.sin(time * 5.0 + 2.0) * 0.15;
+            values.volume = (values.bass + values.mid + values.high) / 3;
+        }
+    }
+
+    function connectToMaterial(material) {
+        if (material.uniforms) {
+            if (material.uniforms.uBass) material.uniforms.uBass.value = values.bass;
+            if (material.uniforms.uMid) material.uniforms.uMid.value = values.mid;
+            if (material.uniforms.uHigh) material.uniforms.uHigh.value = values.high;
+            if (material.uniforms.uVolume) material.uniforms.uVolume.value = values.volume;
+        }
+    }
+
+    function dispose() {
+        if (source && source.mediaStream) {
+            source.mediaStream.getTracks().forEach(t => t.stop());
+        }
+        if (audioContext) audioContext.close();
+    }
+
+    return { init, update, values, connectToMaterial, dispose };
+}
+
+RULES
+
+1. Output only valid JavaScript code.
+2. No ES modules — use global function pattern.
+3. Always include microphone fallback (simulated sine-wave).
+4. Smooth values with exponential lerp — never raw jumps.
+5. Provide connectToMaterial() helper for easy shader integration.
+6. Provide dispose() for cleanup.
+7. The bridge must work standalone — not dependent on Three.js.
+8. Audio analysis runs in the same animation frame as the 3D render.
+`.trim();
+    }
+
+    buildPrompt(specification = {}) {
+        const blob = JSON.stringify(specification || {}).toLowerCase();
+        const wantsMic = /microphone|mic|live|realtime|voice/i.test(blob);
+        const wantsFile = /file|mp3|song|track|playlist/i.test(blob);
+
+        return `
+Create an audio-reactive bridge for a Three.js scene.
+
+CONTEXT
+${JSON.stringify(specification.artDirection || {}, null, 2)}
+
+AUDIO SOURCE
+${wantsMic ? '- Primary: Microphone input (getUserMedia)' : ''}
+${wantsFile ? '- Primary: Audio file playback' : ''}
+${!wantsMic && !wantsFile ? '- Primary: Microphone with simulated fallback' : ''}
+- Always include sine-wave simulation fallback if audio is unavailable.
+
+OUTPUT REQUIREMENTS
+* Global function: createAudioBridge(options) returning { init, update, values, connectToMaterial, dispose }
+* Values object: { bass: 0-1, mid: 0-1, high: 0-1, volume: 0-1 }
+* Smoothed with exponential lerp (attack 0.12-0.15, release 0.05-0.08)
+* connectToMaterial(mat) sets uBass, uMid, uHigh, uVolume on shader uniforms
+* Proper dispose of AudioContext and media streams
+* No ES modules. Output only JavaScript code.
+`.trim();
+    }
+
+    buildFallback() {
+        return `
+function createAudioBridge(options) {
+    const opts = options || {};
+    let audioContext = null;
+    let analyser = null;
+    let source = null;
+    let dataArray = null;
+    let isActive = false;
+
+    const values = { bass: 0, mid: 0, high: 0, volume: 0 };
+
+    async function init() {
+        try {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 64;
+            analyser.smoothingTimeConstant = 0.8;
+            dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+            if (opts.audioElement) {
+                source = audioContext.createMediaElementSource(opts.audioElement);
+                source.connect(analyser);
+                analyser.connect(audioContext.destination);
+                isActive = true;
+            } else {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                source = audioContext.createMediaStreamSource(stream);
+                source.connect(analyser);
+                isActive = true;
+            }
+        } catch (e) {
+            console.warn('Audio unavailable, using simulation:', e.message);
+            isActive = false;
+        }
+    }
+
+    function update(time) {
+        if (isActive && analyser && dataArray) {
+            analyser.getByteFrequencyData(dataArray);
+
+            let bassSum = 0, midSum = 0, highSum = 0;
+            for (let i = 0; i < 5; i++) bassSum += dataArray[i];
+            for (let i = 5; i < 16; i++) midSum += dataArray[i];
+            for (let i = 16; i < 32; i++) highSum += dataArray[i];
+
+            const rawBass = bassSum / (5 * 255);
+            const rawMid = midSum / (11 * 255);
+            const rawHigh = highSum / (16 * 255);
+
+            // Smooth with different attack/release
+            const attackRate = 0.15;
+            const releaseRate = 0.06;
+
+            values.bass += ((rawBass > values.bass ? attackRate : releaseRate) * (rawBass - values.bass));
+            values.mid += ((rawMid > values.mid ? attackRate : releaseRate) * (rawMid - values.mid));
+            values.high += ((rawHigh > values.high ? attackRate : releaseRate) * (rawHigh - values.high));
+        } else {
+            // Simulated audio — organic sine-wave beats
+            const t = time || 0;
+            values.bass = 0.35 + Math.sin(t * 1.8) * 0.25 + Math.sin(t * 0.7) * 0.1;
+            values.mid = 0.25 + Math.sin(t * 3.2 + 1.0) * 0.2 + Math.sin(t * 1.5 + 0.5) * 0.08;
+            values.high = 0.15 + Math.sin(t * 5.5 + 2.0) * 0.12 + Math.sin(t * 2.3 + 1.2) * 0.06;
+        }
+
+        values.volume = (values.bass * 0.5 + values.mid * 0.3 + values.high * 0.2);
+    }
+
+    function connectToMaterial(material) {
+        if (!material || !material.uniforms) return;
+        if (material.uniforms.uBass !== undefined) material.uniforms.uBass.value = values.bass;
+        if (material.uniforms.uMid !== undefined) material.uniforms.uMid.value = values.mid;
+        if (material.uniforms.uHigh !== undefined) material.uniforms.uHigh.value = values.high;
+        if (material.uniforms.uVolume !== undefined) material.uniforms.uVolume.value = values.volume;
+    }
+
+    function dispose() {
+        if (source && source.mediaStream) {
+            source.mediaStream.getTracks().forEach(function(t) { t.stop(); });
+        }
+        if (audioContext && audioContext.state !== 'closed') {
+            audioContext.close();
+        }
+        audioContext = null;
+        analyser = null;
+        source = null;
+        dataArray = null;
+        isActive = false;
+    }
+
+    return { init: init, update: update, values: values, connectToMaterial: connectToMaterial, dispose: dispose, isActive: function() { return isActive; } };
+}
+`.trim();
+    }
+
+    validateCode(code) {
+        const text = String(code || '');
+        return {
+            hasCreateBridge: /createAudioBridge/i.test(text),
+            hasAudioContext: /AudioContext/i.test(text),
+            hasAnalyser: /createAnalyser|AnalyserNode/i.test(text),
+            hasFrequencyData: /getByteFrequencyData|frequencyBinCount/i.test(text),
+            hasBands: /bass|mid|high/i.test(text),
+            hasDispose: /dispose/i.test(text),
+            hasFallback: /simulat|fallback|sine|Math\.sin/i.test(text),
+        };
+    }
+
+    async execute(specification = {}, designSystem = null) {
+        this.log('info', 'Creating audio-reactive bridge...');
+
+        const prompt = this.buildPrompt(specification);
+
+        let response = '';
+        try {
+            response = await this.callLLM(prompt, this.systemPrompt, {
+                temperature: this.config.temperature,
+                maxTokens: this.config.maxTokens,
+            });
+        } catch (error) {
+            this.log('warning', `Audio bridge LLM call failed: ${error.message} — using fallback`);
+            return this.buildFallback();
+        }
+
+        let code = this.extractCode(response, 'javascript');
+        code = String(code || '').trim()
+            .replace(/^```(?:javascript|js)?\s*/i, '')
+            .replace(/```$/i, '')
+            .trim();
+
+        const validation = this.validateCode(code);
+
+        if (!validation.hasCreateBridge || !validation.hasAudioContext || !validation.hasBands) {
+            this.log('warning', 'Generated audio code incomplete — using fallback');
+            return this.buildFallback();
+        }
+
+        if (!validation.hasFallback) {
+            this.log('warning', 'Audio code missing simulation fallback — user may get silence without mic');
+        }
+
+        this.log('success', 'Audio-reactive bridge generated');
+        return code;
+    }
+}
+
+if (typeof window !== 'undefined') {
+    window.CoderAudioAgent = CoderAudioAgent;
+}
+
+;
+/* ============================================================
    MOTION DIRECTOR AGENT — Cinematic motion for React AND static
    ============================================================ */
 
@@ -17761,6 +19347,10 @@ window.DeployManager = DeployManager;
                 if (typeof CoderUIAgent !== 'undefined') framework.registerAgent('coder-ui', new CoderUIAgent());
                 if (typeof CoderReactAgent !== 'undefined') framework.registerAgent('coder-react', new CoderReactAgent());
                 if (typeof CoderShaderAgent !== 'undefined') framework.registerAgent('coder-shader', new CoderShaderAgent());
+                if (typeof CoderGPGPUAgent !== 'undefined') framework.registerAgent('coder-gpgpu', new CoderGPGPUAgent());
+                if (typeof CoderWebGPUAgent !== 'undefined') framework.registerAgent('coder-webgpu', new CoderWebGPUAgent());
+                if (typeof CoderPhysicsAgent !== 'undefined') framework.registerAgent('coder-physics', new CoderPhysicsAgent());
+                if (typeof CoderAudioAgent !== 'undefined') framework.registerAgent('coder-audio', new CoderAudioAgent());
                 if (typeof AnimatorAgent !== 'undefined') framework.registerAgent('animator', new AnimatorAgent());
                 if (typeof ArchitectAgent !== 'undefined') framework.registerAgent('architect', new ArchitectAgent());
                 if (typeof CoderFullstackAgent !== 'undefined') framework.registerAgent('coder-fullstack', new CoderFullstackAgent());
@@ -18003,12 +19593,16 @@ window.DeployManager = DeployManager;
             btn.addEventListener('click', () => selectProvider(btn.dataset.provider));
         });
 
-        // Provider settings change — show/hide custom fields
+        // Provider settings change — show/hide custom fields & update API key input
         document.getElementById('settings-provider')?.addEventListener('change', (e) => {
-            const isCustom = e.target.value === 'custom' || e.target.value === 'ollama';
+            const selectedProv = e.target.value;
+            const isCustom = selectedProv === 'custom' || selectedProv === 'ollama';
             const customFields = document.getElementById('custom-provider-fields');
             if (customFields) customFields.style.display = isCustom ? 'block' : 'none';
-            updateModelDropdown(e.target.value);
+            updateModelDropdown(selectedProv);
+
+            const settingsKey = document.getElementById('settings-api-key');
+            if (settingsKey) settingsKey.value = window.llmProvider.getApiKey(selectedProv) || '';
         });
 
         // Test connection
@@ -18395,6 +19989,7 @@ Format:
         }
 
         // Transition UI to workspace
+        localStorage.setItem('zb_active_view', 'workspace');
         const welcomeScreen = document.getElementById('welcome-screen');
         const app = document.getElementById('app');
 
@@ -18936,9 +20531,20 @@ Format:
         if (settingsProvider) settingsProvider.value = providerId;
         updateModelDropdown(providerId);
 
-        if (providerId === 'custom' && (!window.llmProvider.customBaseUrl || !window.llmProvider.getApiKey('custom'))) {
+        const customFields = document.getElementById('custom-provider-fields');
+        if (customFields) customFields.style.display = (providerId === 'custom' || providerId === 'ollama') ? 'block' : 'none';
+
+        const customUrl = document.getElementById('settings-custom-url');
+        const customModel = document.getElementById('settings-custom-model');
+        if (customUrl) customUrl.value = window.llmProvider.customBaseUrl || '';
+        if (customModel) customModel.value = window.llmProvider.customModelName || '';
+
+        const settingsKey = document.getElementById('settings-api-key');
+        if (settingsKey) settingsKey.value = window.llmProvider.getApiKey(providerId) || '';
+
+        if (providerId === 'custom' && (!window.llmProvider.customBaseUrl)) {
             toggleModal('settings-modal', true);
-            showToast('warning', 'Please enter your Custom Base URL, Model Name, and API Key in Settings.');
+            showToast('warning', 'Please enter your Custom Base URL and Model Name in Settings.');
         } else {
             showToast('info', `Switched to ${window.llmProvider.providers[providerId].name}`);
         }
@@ -19001,7 +20607,7 @@ Format:
 
         // Save LLM settings
         if (providerId) window.llmProvider.setProvider(providerId, modelId);
-        if (apiKey !== undefined) window.llmProvider.setApiKey(providerId, apiKey);
+        if (apiKey !== undefined && providerId) window.llmProvider.setApiKey(providerId, apiKey);
         window.llmProvider.customBaseUrl = customUrl || '';
         window.llmProvider.customModelName = customModel || '';
         window.llmProvider.saveSettings();
@@ -19043,7 +20649,7 @@ Format:
 
         const apiKey = window.llmProvider.getApiKey();
         const settingsKey = document.getElementById('settings-api-key');
-        if (settingsKey && apiKey) settingsKey.value = apiKey;
+        if (settingsKey) settingsKey.value = apiKey || '';
 
         // Load Tavily research key
         const tavilyKey = document.getElementById('settings-tavily-key');
@@ -19308,8 +20914,12 @@ Format:
                 editor?.setFiles(saved.files);
                 fileSystem?.setFiles(saved.files);
                 preview?.render(saved.files);
+            }
 
-                // Auto-restore workspace view on F5 page refresh
+            // Auto-restore workspace view on F5 page refresh
+            const activeView = localStorage.getItem('zb_active_view');
+            const hasFiles = saved.files && Object.keys(saved.files).length > 0;
+            if (activeView === 'workspace' || hasFiles) {
                 const welcomeScreen = document.getElementById('welcome-screen');
                 const app = document.getElementById('app');
                 if (welcomeScreen) welcomeScreen.style.display = 'none';

@@ -535,7 +535,7 @@ class LLMProvider {
                 this.tokenUsage = s.tokenUsage || { total: 0, today: 0 };
 
                 // Auto-sanitize broken content-safety / nemotron models
-                if (this.customModelName.includes('content-safety') || this.customModelName.includes('nemotron')) {
+                if (typeof this.customModelName === 'string' && (this.customModelName.includes('content-safety') || this.customModelName.includes('nemotron'))) {
                     this.customModelName = '';
                     this.currentProvider = 'gemini';
                     this.currentModel = 'gemini-2.5-flash';
@@ -593,7 +593,7 @@ class LLMProvider {
         const apiKey = this.apiKeys[this.currentProvider];
         const model = options.model || this.currentModel;
         
-        if (!provider.noApiKey && !apiKey) {
+        if (!provider.noApiKey && this.currentProvider !== 'custom' && !apiKey) {
             throw new Error(`No API key configured for ${provider.name}. Go to Settings → AI Provider.`);
         }
 
@@ -626,7 +626,7 @@ class LLMProvider {
         const apiKey = this.apiKeys[this.currentProvider];
         const model = options.model || this.currentModel;
 
-        if (!provider.noApiKey && !apiKey) {
+        if (!provider.noApiKey && this.currentProvider !== 'custom' && !apiKey) {
             throw new Error(`No API key configured for ${provider.name}. Go to Settings → AI Provider.`);
         }
 
@@ -19593,12 +19593,16 @@ window.DeployManager = DeployManager;
             btn.addEventListener('click', () => selectProvider(btn.dataset.provider));
         });
 
-        // Provider settings change — show/hide custom fields
+        // Provider settings change — show/hide custom fields & update API key input
         document.getElementById('settings-provider')?.addEventListener('change', (e) => {
-            const isCustom = e.target.value === 'custom' || e.target.value === 'ollama';
+            const selectedProv = e.target.value;
+            const isCustom = selectedProv === 'custom' || selectedProv === 'ollama';
             const customFields = document.getElementById('custom-provider-fields');
             if (customFields) customFields.style.display = isCustom ? 'block' : 'none';
-            updateModelDropdown(e.target.value);
+            updateModelDropdown(selectedProv);
+
+            const settingsKey = document.getElementById('settings-api-key');
+            if (settingsKey) settingsKey.value = window.llmProvider.getApiKey(selectedProv) || '';
         });
 
         // Test connection
@@ -19985,6 +19989,7 @@ Format:
         }
 
         // Transition UI to workspace
+        localStorage.setItem('zb_active_view', 'workspace');
         const welcomeScreen = document.getElementById('welcome-screen');
         const app = document.getElementById('app');
 
@@ -20526,9 +20531,20 @@ Format:
         if (settingsProvider) settingsProvider.value = providerId;
         updateModelDropdown(providerId);
 
-        if (providerId === 'custom' && (!window.llmProvider.customBaseUrl || !window.llmProvider.getApiKey('custom'))) {
+        const customFields = document.getElementById('custom-provider-fields');
+        if (customFields) customFields.style.display = (providerId === 'custom' || providerId === 'ollama') ? 'block' : 'none';
+
+        const customUrl = document.getElementById('settings-custom-url');
+        const customModel = document.getElementById('settings-custom-model');
+        if (customUrl) customUrl.value = window.llmProvider.customBaseUrl || '';
+        if (customModel) customModel.value = window.llmProvider.customModelName || '';
+
+        const settingsKey = document.getElementById('settings-api-key');
+        if (settingsKey) settingsKey.value = window.llmProvider.getApiKey(providerId) || '';
+
+        if (providerId === 'custom' && (!window.llmProvider.customBaseUrl)) {
             toggleModal('settings-modal', true);
-            showToast('warning', 'Please enter your Custom Base URL, Model Name, and API Key in Settings.');
+            showToast('warning', 'Please enter your Custom Base URL and Model Name in Settings.');
         } else {
             showToast('info', `Switched to ${window.llmProvider.providers[providerId].name}`);
         }
@@ -20591,7 +20607,7 @@ Format:
 
         // Save LLM settings
         if (providerId) window.llmProvider.setProvider(providerId, modelId);
-        if (apiKey !== undefined) window.llmProvider.setApiKey(providerId, apiKey);
+        if (apiKey !== undefined && providerId) window.llmProvider.setApiKey(providerId, apiKey);
         window.llmProvider.customBaseUrl = customUrl || '';
         window.llmProvider.customModelName = customModel || '';
         window.llmProvider.saveSettings();
@@ -20633,7 +20649,7 @@ Format:
 
         const apiKey = window.llmProvider.getApiKey();
         const settingsKey = document.getElementById('settings-api-key');
-        if (settingsKey && apiKey) settingsKey.value = apiKey;
+        if (settingsKey) settingsKey.value = apiKey || '';
 
         // Load Tavily research key
         const tavilyKey = document.getElementById('settings-tavily-key');
@@ -20898,8 +20914,12 @@ Format:
                 editor?.setFiles(saved.files);
                 fileSystem?.setFiles(saved.files);
                 preview?.render(saved.files);
+            }
 
-                // Auto-restore workspace view on F5 page refresh
+            // Auto-restore workspace view on F5 page refresh
+            const activeView = localStorage.getItem('zb_active_view');
+            const hasFiles = saved.files && Object.keys(saved.files).length > 0;
+            if (activeView === 'workspace' || hasFiles) {
                 const welcomeScreen = document.getElementById('welcome-screen');
                 const app = document.getElementById('app');
                 if (welcomeScreen) welcomeScreen.style.display = 'none';

@@ -119,7 +119,7 @@ class LLMProvider {
                 this.tokenUsage = s.tokenUsage || { total: 0, today: 0 };
 
                 // Auto-sanitize broken content-safety / nemotron models
-                if (this.customModelName.includes('content-safety') || this.customModelName.includes('nemotron')) {
+                if (typeof this.customModelName === 'string' && (this.customModelName.includes('content-safety') || this.customModelName.includes('nemotron'))) {
                     this.customModelName = '';
                     this.currentProvider = 'gemini';
                     this.currentModel = 'gemini-2.5-flash';
@@ -177,7 +177,7 @@ class LLMProvider {
         const apiKey = this.apiKeys[this.currentProvider];
         const model = options.model || this.currentModel;
         
-        if (!provider.noApiKey && !apiKey) {
+        if (!provider.noApiKey && this.currentProvider !== 'custom' && !apiKey) {
             throw new Error(`No API key configured for ${provider.name}. Go to Settings → AI Provider.`);
         }
 
@@ -210,7 +210,7 @@ class LLMProvider {
         const apiKey = this.apiKeys[this.currentProvider];
         const model = options.model || this.currentModel;
 
-        if (!provider.noApiKey && !apiKey) {
+        if (!provider.noApiKey && this.currentProvider !== 'custom' && !apiKey) {
             throw new Error(`No API key configured for ${provider.name}. Go to Settings → AI Provider.`);
         }
 
