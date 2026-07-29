@@ -256,7 +256,7 @@ try {
             if (!orig) return;
             console[method] = function (...args) {
                 const msg = args.map(a => (typeof a === 'string' ? a : (a?.message || ''))).join(' ');
-                if (/tailwindcss|Babel|production|PostCSS|cdn\\.tailwindcss/i.test(msg)) return;
+                if (/tailwindcss|Babel|production|PostCSS|cdn\\.tailwindcss|deprecated with r150|removed with r160/i.test(msg)) return;
                 orig.apply(console, args);
             };
         });
@@ -493,7 +493,7 @@ try {
             },
             {
                 test: /from\s*['"]@studio-freight\/lenis['"]|from\s*['"]lenis['"]|from\s*['"]https?:\/\/[^'"]*lenis[^'"]*['"]/i,
-                cdn: 'https://cdn.jsdelivr.net/gh/studio-freight/lenis@1.0.29/bundled/lenis.min.js',
+                cdn: 'https://unpkg.com/lenis@1.1.14/dist/lenis.min.js',
             },
         ];
 
