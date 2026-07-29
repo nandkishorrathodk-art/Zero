@@ -1353,7 +1353,9 @@ Format:
 
         // Save LLM settings
         if (providerId) window.llmProvider.setProvider(providerId, modelId);
-        if (apiKey !== undefined && providerId) window.llmProvider.setApiKey(providerId, apiKey);
+        if (providerId && typeof apiKey === 'string' && apiKey.trim() !== '') {
+            window.llmProvider.setApiKey(providerId, apiKey.trim());
+        }
         window.llmProvider.customBaseUrl = customUrl || '';
         window.llmProvider.customModelName = customModel || '';
         window.llmProvider.saveSettings();

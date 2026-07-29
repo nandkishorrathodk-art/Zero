@@ -125,6 +125,15 @@ class LLMProvider {
                     this.currentModel = 'gemini-2.5-flash';
                 }
             }
+
+            // Standalone Key Backup Recovery: Never lose API keys on JSON reset/corruption
+            const knownProviders = ['gemini', 'openai', 'anthropic', 'deepseek', 'groq', 'mistral', 'custom'];
+            knownProviders.forEach((p) => {
+                if (!this.apiKeys[p]) {
+                    const backupKey = localStorage.getItem(`zb_key_${p}`);
+                    if (backupKey) this.apiKeys[p] = backupKey;
+                }
+            });
         } catch (e) {
             console.warn('Failed to load LLM settings:', e);
         }
@@ -140,6 +149,11 @@ class LLMProvider {
                 customModelName: this.customModelName,
                 tokenUsage: this.tokenUsage,
             }));
+
+            // Backup API keys individually to prevent loss
+            Object.entries(this.apiKeys || {}).forEach(([p, key]) => {
+                if (key) localStorage.setItem(`zb_key_${p}`, key);
+            });
         } catch (e) {
             console.warn('Failed to save LLM settings:', e);
         }
