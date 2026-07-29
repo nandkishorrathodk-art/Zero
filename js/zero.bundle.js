@@ -591,7 +591,17 @@ class LLMProvider {
     }
 
     getApiKey(providerId) {
-        return this.apiKeys[providerId || this.currentProvider] || '';
+        const id = providerId || this.currentProvider;
+        let key = (this.apiKeys && this.apiKeys[id]) || localStorage.getItem(`zb_key_${id}`) || '';
+        if ((!key || !key.trim()) && id === 'custom') {
+            // Fallback: If custom key is blank, check if user saved a key for any other provider
+            const providersToTry = ['gemini', 'openai', 'groq', 'deepseek', 'anthropic'];
+            for (const p of providersToTry) {
+                const altKey = (this.apiKeys && this.apiKeys[p]) || localStorage.getItem(`zb_key_${p}`);
+                if (altKey && altKey.trim()) return altKey.trim();
+            }
+        }
+        return key ? key.trim() : '';
     }
 
     getProviderInfo() {
@@ -840,8 +850,12 @@ class LLMProvider {
             throw new Error(`API key missing: ${url} requires an API key. Please open Settings (⚙️) → AI Provider and enter your API Key.`);
         }
 
-        const headers = { 'Content-Type': 'application/json' };
-        if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+        const headers = {
+            'Content-Type': 'application/json',
+            'HTTP-Referer': typeof window !== 'undefined' ? window.location.origin : 'http://localhost:4173',
+            'X-Title': 'Zero-Builder AI Engine',
+        };
+        if (apiKey) headers['Authorization'] = `Bearer ${apiKey.trim()}`;
 
         let retries = 0;
         const maxRetries = 3;
@@ -909,8 +923,12 @@ class LLMProvider {
             throw new Error(`API key missing: ${url} requires an API key. Please open Settings (⚙️) → AI Provider and enter your API Key.`);
         }
 
-        const headers = { 'Content-Type': 'application/json' };
-        if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+        const headers = {
+            'Content-Type': 'application/json',
+            'HTTP-Referer': typeof window !== 'undefined' ? window.location.origin : 'http://localhost:4173',
+            'X-Title': 'Zero-Builder AI Engine',
+        };
+        if (apiKey) headers['Authorization'] = `Bearer ${apiKey.trim()}`;
 
         let response;
         try {
