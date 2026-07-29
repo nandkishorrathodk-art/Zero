@@ -6750,7 +6750,7 @@ Return valid JSON only. No markdown. No commentary. No code fences.
             ])).slice(0, this.config.maxChecklistItems);
         }
 
-        if (isProduct) {
+        if (isProductBrief) {
             normalized.productUX = {
                 primaryJobToBeDone: this.safeString(normalized.productUX.primaryJobToBeDone, this.safeString(specification?.goal, '')),
                 keyScreens: normalized.productUX.keyScreens.length
