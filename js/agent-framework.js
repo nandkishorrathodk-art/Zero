@@ -223,6 +223,26 @@ class BaseAgent {
 
         if (foundAny) return files;
 
+        // 4) Ultimate fallback: if LLM returned raw un-fenced code (CSS, HTML, JS)
+        const trimmed = String(text || '').trim();
+        if (trimmed.length > 20) {
+            if (/^\/\*|^@import|^:root|^body\s*\{|^\.[a-zA-Z0-9_-]+\s*\{/i.test(trimmed)) {
+                files['styles.css'] = trimmed;
+                return files;
+            }
+            if (/^<!DOCTYPE|<html|<div|<header|<section|<main/i.test(trimmed)) {
+                files['index.html'] = trimmed;
+                return files;
+            }
+            if (/^(?:import|export|function|const|let|var|class|\(function)\s/i.test(trimmed)) {
+                files['script.js'] = trimmed;
+                return files;
+            }
+            // Default raw fallback to script.js or styles.css
+            files['styles.css'] = trimmed;
+            return files;
+        }
+
         throw new Error(`Failed to extract any code blocks from LLM response. Raw output: ${String(text).slice(0, 500)}`);
     }
 }

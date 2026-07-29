@@ -694,7 +694,7 @@ class LLMProvider {
         const data = await response.json();
         // Gemini may return multiple parts; join them. Also surface blocked responses.
         const parts = data.candidates?.[0]?.content?.parts || [];
-        const text = parts.map((p) => p.text || '').join('') || '';
+        const text = this._cleanOutputText(parts.map((p) => p.text || '').join('') || '');
         if (!text && data.promptFeedback?.blockReason) {
             throw new Error(`Gemini blocked the request: ${data.promptFeedback.blockReason}`);
         }
@@ -813,8 +813,7 @@ class LLMProvider {
             throw new Error(`API error (${response.status}): ${err}`);
         }
 
-        const data = await response.json();
-        const text = data.choices?.[0]?.message?.content || '';
+        const text = this._cleanOutputText(data.choices?.[0]?.message?.content || '');
         this._trackTokens(data.usage?.total_tokens || text.length / 4);
         return text;
     }
@@ -1004,6 +1003,14 @@ class LLMProvider {
 
         this._trackTokens(fullText.length / 4);
         return fullText;
+    }
+
+    /* ===== CLEANING OUTPUT (Reasoning / Think Tags) ===== */
+    _cleanOutputText(text) {
+        let output = String(text || '');
+        // Strip <think>...</think> reasoning blocks from DeepSeek R1 / Reasoning LLMs
+        output = output.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+        return output;
     }
 
     /* ===== TOKEN TRACKING ===== */
@@ -2463,6 +2470,26 @@ class BaseAgent {
         }
 
         if (foundAny) return files;
+
+        // 4) Ultimate fallback: if LLM returned raw un-fenced code (CSS, HTML, JS)
+        const trimmed = String(text || '').trim();
+        if (trimmed.length > 20) {
+            if (/^\/\*|^@import|^:root|^body\s*\{|^\.[a-zA-Z0-9_-]+\s*\{/i.test(trimmed)) {
+                files['styles.css'] = trimmed;
+                return files;
+            }
+            if (/^<!DOCTYPE|<html|<div|<header|<section|<main/i.test(trimmed)) {
+                files['index.html'] = trimmed;
+                return files;
+            }
+            if (/^(?:import|export|function|const|let|var|class|\(function)\s/i.test(trimmed)) {
+                files['script.js'] = trimmed;
+                return files;
+            }
+            // Default raw fallback to script.js or styles.css
+            files['styles.css'] = trimmed;
+            return files;
+        }
 
         throw new Error(`Failed to extract any code blocks from LLM response. Raw output: ${String(text).slice(0, 500)}`);
     }
@@ -20072,6 +20099,13 @@ Format:
         generationStartTime = Date.now();
         updateGenerateButton(true);
 
+        // Ensure workspace is active and welcome screen hidden immediately
+        localStorage.setItem('zb_active_view', 'workspace');
+        const welcomeScreen = document.getElementById('welcome-screen');
+        const appEl = document.getElementById('app');
+        if (welcomeScreen) welcomeScreen.style.display = 'none';
+        if (appEl) appEl.classList.remove('hidden');
+
         // Ensure an AI message bubble exists in chat for streaming live progress
         addChatMessage('ai', 'Architecting and building your website...');
 
@@ -20881,6 +20915,7 @@ Format:
                 updatedAt: Date.now(),
             };
             localStorage.setItem(WORKSPACE_KEY, JSON.stringify(payload));
+            localStorage.setItem('zb_active_view', 'workspace');
             setSaveState(`Saved ${new Date(payload.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
             syncWorkspaceToServer(payload);
         } catch (error) {
@@ -20918,8 +20953,8 @@ Format:
 
             // Auto-restore workspace view on F5 page refresh
             const activeView = localStorage.getItem('zb_active_view');
-            const hasFiles = saved.files && Object.keys(saved.files).length > 0;
-            if (activeView === 'workspace' || hasFiles) {
+            const hasFiles = saved && saved.files && Object.keys(saved.files).length > 0;
+            if (activeView === 'workspace' || hasFiles || (saved && saved.prompt)) {
                 const welcomeScreen = document.getElementById('welcome-screen');
                 const app = document.getElementById('app');
                 if (welcomeScreen) welcomeScreen.style.display = 'none';

@@ -278,7 +278,7 @@ class LLMProvider {
         const data = await response.json();
         // Gemini may return multiple parts; join them. Also surface blocked responses.
         const parts = data.candidates?.[0]?.content?.parts || [];
-        const text = parts.map((p) => p.text || '').join('') || '';
+        const text = this._cleanOutputText(parts.map((p) => p.text || '').join('') || '');
         if (!text && data.promptFeedback?.blockReason) {
             throw new Error(`Gemini blocked the request: ${data.promptFeedback.blockReason}`);
         }
@@ -397,8 +397,7 @@ class LLMProvider {
             throw new Error(`API error (${response.status}): ${err}`);
         }
 
-        const data = await response.json();
-        const text = data.choices?.[0]?.message?.content || '';
+        const text = this._cleanOutputText(data.choices?.[0]?.message?.content || '');
         this._trackTokens(data.usage?.total_tokens || text.length / 4);
         return text;
     }
@@ -588,6 +587,14 @@ class LLMProvider {
 
         this._trackTokens(fullText.length / 4);
         return fullText;
+    }
+
+    /* ===== CLEANING OUTPUT (Reasoning / Think Tags) ===== */
+    _cleanOutputText(text) {
+        let output = String(text || '');
+        // Strip <think>...</think> reasoning blocks from DeepSeek R1 / Reasoning LLMs
+        output = output.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+        return output;
     }
 
     /* ===== TOKEN TRACKING ===== */

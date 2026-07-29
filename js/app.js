@@ -792,6 +792,13 @@ Format:
         generationStartTime = Date.now();
         updateGenerateButton(true);
 
+        // Ensure workspace is active and welcome screen hidden immediately
+        localStorage.setItem('zb_active_view', 'workspace');
+        const welcomeScreen = document.getElementById('welcome-screen');
+        const appEl = document.getElementById('app');
+        if (welcomeScreen) welcomeScreen.style.display = 'none';
+        if (appEl) appEl.classList.remove('hidden');
+
         // Ensure an AI message bubble exists in chat for streaming live progress
         addChatMessage('ai', 'Architecting and building your website...');
 
@@ -1601,6 +1608,7 @@ Format:
                 updatedAt: Date.now(),
             };
             localStorage.setItem(WORKSPACE_KEY, JSON.stringify(payload));
+            localStorage.setItem('zb_active_view', 'workspace');
             setSaveState(`Saved ${new Date(payload.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
             syncWorkspaceToServer(payload);
         } catch (error) {
@@ -1638,8 +1646,8 @@ Format:
 
             // Auto-restore workspace view on F5 page refresh
             const activeView = localStorage.getItem('zb_active_view');
-            const hasFiles = saved.files && Object.keys(saved.files).length > 0;
-            if (activeView === 'workspace' || hasFiles) {
+            const hasFiles = saved && saved.files && Object.keys(saved.files).length > 0;
+            if (activeView === 'workspace' || hasFiles || (saved && saved.prompt)) {
                 const welcomeScreen = document.getElementById('welcome-screen');
                 const app = document.getElementById('app');
                 if (welcomeScreen) welcomeScreen.style.display = 'none';
