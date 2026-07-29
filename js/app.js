@@ -1366,7 +1366,7 @@ Format:
 
         // Save LLM settings
         if (providerId) window.llmProvider.setProvider(providerId, modelId);
-        if (providerId && typeof apiKey === 'string' && apiKey.trim() !== '') {
+        if (providerId && typeof apiKey === 'string') {
             window.llmProvider.setApiKey(providerId, apiKey.trim());
         }
         window.llmProvider.customBaseUrl = customUrl || '';

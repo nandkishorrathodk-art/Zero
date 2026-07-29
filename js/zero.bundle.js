@@ -523,6 +523,8 @@ class LLMProvider {
 
     /* ===== SETTINGS PERSISTENCE ===== */
     _loadSettings() {
+        this.apiKeys = {};
+
         try {
             const saved = localStorage.getItem('zb_llm_settings');
             if (saved) {
@@ -541,22 +543,25 @@ class LLMProvider {
                     this.currentModel = 'gemini-2.5-flash';
                 }
             }
-
-            // Standalone Key Backup Recovery: Never lose API keys on JSON reset/corruption
-            const knownProviders = ['gemini', 'openai', 'anthropic', 'deepseek', 'groq', 'mistral', 'custom'];
-            knownProviders.forEach((p) => {
-                if (!this.apiKeys[p]) {
-                    const backupKey = localStorage.getItem(`zb_key_${p}`);
-                    if (backupKey) this.apiKeys[p] = backupKey;
-                }
-            });
         } catch (e) {
-            console.warn('Failed to load LLM settings:', e);
+            console.warn('Failed to parse LLM settings JSON:', e);
         }
+
+        // ALWAYS recover keys from standalone localStorage backups outside try-catch
+        const knownProviders = ['gemini', 'openai', 'anthropic', 'deepseek', 'groq', 'mistral', 'custom'];
+        knownProviders.forEach((p) => {
+            const backupKey = localStorage.getItem(`zb_key_${p}`);
+            if (backupKey && backupKey.trim()) {
+                this.apiKeys[p] = backupKey.trim();
+            }
+        });
+
+        console.log('[LLMProvider] Initialized. Current Provider:', this.currentProvider, 'Gemini Key Present:', !!this.getApiKey('gemini'), 'Total Keys:', Object.keys(this.apiKeys));
     }
 
     saveSettings() {
         try {
+            this.apiKeys = this.apiKeys || {};
             localStorage.setItem('zb_current_provider', this.currentProvider);
             localStorage.setItem('zb_current_model', this.currentModel);
             localStorage.setItem('zb_llm_settings', JSON.stringify({
@@ -570,7 +575,9 @@ class LLMProvider {
 
             // Backup API keys individually to prevent loss
             Object.entries(this.apiKeys || {}).forEach(([p, key]) => {
-                if (key) localStorage.setItem(`zb_key_${p}`, key);
+                if (key && typeof key === 'string' && key.trim()) {
+                    localStorage.setItem(`zb_key_${p}`, key.trim());
+                }
             });
         } catch (e) {
             console.warn('Failed to save LLM settings:', e);
@@ -581,12 +588,19 @@ class LLMProvider {
     setProvider(providerId, modelId) {
         if (!this.providers[providerId]) throw new Error(`Unknown provider: ${providerId}`);
         this.currentProvider = providerId;
-        this.currentModel = modelId || this.providers[providerId].models[0].id;
+        const providerModels = this.providers[providerId].models;
+        const validModel = providerModels.find(m => m.id === modelId);
+        this.currentModel = validModel ? validModel.id : (providerModels[0]?.id || 'custom');
         this.saveSettings();
     }
 
     setApiKey(providerId, key) {
-        this.apiKeys[providerId] = key;
+        const cleanKey = String(key || '').trim();
+        this.apiKeys = this.apiKeys || {};
+        this.apiKeys[providerId] = cleanKey;
+        if (cleanKey) {
+            localStorage.setItem(`zb_key_${providerId}`, cleanKey);
+        }
         this.saveSettings();
     }
 
@@ -20853,7 +20867,7 @@ Format:
 
         // Save LLM settings
         if (providerId) window.llmProvider.setProvider(providerId, modelId);
-        if (providerId && typeof apiKey === 'string' && apiKey.trim() !== '') {
+        if (providerId && typeof apiKey === 'string') {
             window.llmProvider.setApiKey(providerId, apiKey.trim());
         }
         window.llmProvider.customBaseUrl = customUrl || '';
