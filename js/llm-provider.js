@@ -488,8 +488,7 @@ class LLMProvider {
         const headers = {
             'Content-Type': 'application/json',
             'HTTP-Referer': typeof window !== 'undefined' ? window.location.origin : 'http://localhost:4173',
-            'X-Title': 'Zero-Builder AI Engine',
-            'X-Client': 'Zero-Builder-Studio',
+            'X-Title': 'Zero-Engineer',
         };
         if (apiKey) headers['Authorization'] = `Bearer ${apiKey.trim()}`;
 
@@ -574,8 +573,7 @@ class LLMProvider {
         const headers = {
             'Content-Type': 'application/json',
             'HTTP-Referer': typeof window !== 'undefined' ? window.location.origin : 'http://localhost:4173',
-            'X-Title': 'Zero-Builder AI Engine',
-            'X-Client': 'Zero-Builder-Studio',
+            'X-Title': 'Zero-Engineer',
         };
         if (apiKey) headers['Authorization'] = `Bearer ${apiKey.trim()}`;
 
