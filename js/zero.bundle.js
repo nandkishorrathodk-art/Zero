@@ -527,8 +527,8 @@ class LLMProvider {
             const saved = localStorage.getItem('zb_llm_settings');
             if (saved) {
                 const s = JSON.parse(saved);
-                this.currentProvider = s.currentProvider || 'gemini';
-                this.currentModel = s.currentModel || 'gemini-2.5-flash';
+                this.currentProvider = localStorage.getItem('zb_current_provider') || s.currentProvider || 'gemini';
+                this.currentModel = localStorage.getItem('zb_current_model') || s.currentModel || 'gemini-2.5-flash';
                 this.apiKeys = s.apiKeys || {};
                 this.customBaseUrl = s.customBaseUrl || '';
                 this.customModelName = s.customModelName || '';
@@ -557,6 +557,8 @@ class LLMProvider {
 
     saveSettings() {
         try {
+            localStorage.setItem('zb_current_provider', this.currentProvider);
+            localStorage.setItem('zb_current_model', this.currentModel);
             localStorage.setItem('zb_llm_settings', JSON.stringify({
                 currentProvider: this.currentProvider,
                 currentModel: this.currentModel,
@@ -20732,6 +20734,7 @@ Format:
         if (settingsProvider) settingsProvider.value = provider;
 
         updateModelDropdown(provider);
+        updateProviderUI();
 
         const apiKey = window.llmProvider.getApiKey();
         const settingsKey = document.getElementById('settings-api-key');

@@ -1394,6 +1394,7 @@ Format:
         if (settingsProvider) settingsProvider.value = provider;
 
         updateModelDropdown(provider);
+        updateProviderUI();
 
         const apiKey = window.llmProvider.getApiKey();
         const settingsKey = document.getElementById('settings-api-key');
