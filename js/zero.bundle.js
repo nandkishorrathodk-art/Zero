@@ -654,7 +654,7 @@ class LLMProvider {
     async chat(messages, options = {}) {
         this._autoSelectActiveProvider();
         const provider = this.providers[this.currentProvider];
-        const apiKey = this.apiKeys[this.currentProvider];
+        const apiKey = this.getApiKey(this.currentProvider);
         const model = options.model || this.currentModel;
 
         if (!this._isProviderReady(this.currentProvider)) {
@@ -665,19 +665,16 @@ class LLMProvider {
             case 'gemini':
                 return this._chatGemini(messages, model, apiKey, options);
             case 'openai':
-                return this._chatOpenAI(messages, model, apiKey, provider.baseUrl, options);
+                return this._chatOpenAI(messages, model, apiKey, this._normalizeBaseUrl(provider.baseUrl), options);
             case 'anthropic':
                 return this._chatAnthropic(messages, model, apiKey, options);
             case 'openai-compatible':
-                const baseUrl = this.currentProvider === 'custom' 
-                    ? this.customBaseUrl 
-                    : provider.baseUrl;
+                const rawUrl = this.currentProvider === 'custom' ? this.customBaseUrl : provider.baseUrl;
+                const baseUrl = this._normalizeBaseUrl(rawUrl);
                 if (!baseUrl) {
                     throw new Error(`No Base URL configured for ${provider.name}. Go to Settings → AI Provider and set the Custom Base URL.`);
                 }
-                const actualModel = this.currentProvider === 'custom'
-                    ? this.customModelName || model
-                    : model;
+                const actualModel = this.currentProvider === 'custom' ? this.customModelName || model : model;
                 return this._chatOpenAI(messages, actualModel, apiKey, baseUrl, options);
             default:
                 throw new Error(`Unknown format: ${provider.format}`);
@@ -688,7 +685,7 @@ class LLMProvider {
     async stream(messages, options = {}, onChunk) {
         this._autoSelectActiveProvider();
         const provider = this.providers[this.currentProvider];
-        const apiKey = this.apiKeys[this.currentProvider];
+        const apiKey = this.getApiKey(this.currentProvider);
         const model = options.model || this.currentModel;
 
         if (!this._isProviderReady(this.currentProvider)) {
@@ -699,11 +696,12 @@ class LLMProvider {
             case 'gemini':
                 return this._streamGemini(messages, model, apiKey, options, onChunk);
             case 'openai':
-                return this._streamOpenAI(messages, model, apiKey, provider.baseUrl, options, onChunk);
+                return this._streamOpenAI(messages, model, apiKey, this._normalizeBaseUrl(provider.baseUrl), options, onChunk);
             case 'anthropic':
                 return this._streamAnthropic(messages, model, apiKey, options, onChunk);
             case 'openai-compatible':
-                const baseUrl = this.currentProvider === 'custom' ? this.customBaseUrl : provider.baseUrl;
+                const rawUrl = this.currentProvider === 'custom' ? this.customBaseUrl : provider.baseUrl;
+                const baseUrl = this._normalizeBaseUrl(rawUrl);
                 if (!baseUrl) {
                     throw new Error(`No Base URL configured for ${provider.name}. Go to Settings → AI Provider and set the Custom Base URL.`);
                 }
@@ -836,26 +834,68 @@ class LLMProvider {
             }));
     }
 
+    _normalizeBaseUrl(rawUrl) {
+        if (!rawUrl) return '';
+        let url = String(rawUrl).trim().replace(/\/+$/, '');
+        if (url.includes('openrouter.ai')) {
+            if (!url.endsWith('/api/v1') && !url.endsWith('/v1')) {
+                url = url.endsWith('/api') ? `${url}/v1` : `${url}/api/v1`;
+            }
+        } else if (url.includes('api.openai.com') && !url.endsWith('/v1')) {
+            url = `${url}/v1`;
+        } else if (url.includes('api.deepseek.com') && !url.endsWith('/v1')) {
+            url = `${url}/v1`;
+        } else if (url.includes('api.groq.com') && !url.includes('/openai/v1') && !url.includes('/v1')) {
+            url = `${url}/openai/v1`;
+        } else if (url.includes('api.mistral.ai') && !url.endsWith('/v1')) {
+            url = `${url}/v1`;
+        }
+        return url;
+    }
+
+    _parseErrorMessage(status, rawText) {
+        let msg = String(rawText || '').trim();
+        try {
+            const json = JSON.parse(msg);
+            if (json.error?.message) msg = json.error.message;
+            else if (json.message) msg = json.message;
+            else if (json.error) msg = typeof json.error === 'string' ? json.error : JSON.stringify(json.error);
+        } catch (e) {}
+        if (status === 401) {
+            return `Authentication Error (401): ${msg || 'Missing or invalid API Key. Please check Settings → AI Provider.'}`;
+        }
+        if (status === 429) {
+            return `Rate Limit Exceeded (429): ${msg || 'Too many requests. Please retry after a few seconds or switch provider.'}`;
+        }
+        return `API error (${status}): ${msg}`;
+    }
+
     /* ===== OPENAI / OPENAI-COMPATIBLE ADAPTER ===== */
     async _chatOpenAI(messages, model, apiKey, baseUrl, options) {
-        const url = `${baseUrl}/chat/completions`;
+        const cleanBaseUrl = this._normalizeBaseUrl(baseUrl);
+        const url = cleanBaseUrl.endsWith('/chat/completions') ? cleanBaseUrl : `${cleanBaseUrl}/chat/completions`;
         
+        const systemPrompt = this._extractSystemPrompt(messages, options);
+        const conversation = (messages || []).filter((m) => m && m.role !== 'system');
         const allMessages = [];
-        if (options.systemPrompt) {
-            allMessages.push({ role: 'system', content: options.systemPrompt });
+        if (systemPrompt) {
+            allMessages.push({ role: 'system', content: systemPrompt });
         }
-        allMessages.push(...messages);
+        allMessages.push(...conversation);
+
+        const maxLimits = { gemini: 32768, openai: 16384, groq: 8192, mistral: 8192, anthropic: 8192, custom: 16384 };
+        const maxTokens = Math.min(options.maxTokens || 4096, maxLimits[this.currentProvider] || 8192);
 
         const body = {
             model,
             messages: allMessages,
             temperature: options.temperature || 0.7,
-            max_tokens: options.maxTokens || 32768,
+            max_tokens: maxTokens,
         };
 
         const isLocal = url.includes('localhost') || url.includes('127.0.0.1') || url.includes('192.168.');
         if (apiKey && (apiKey.includes('•') || apiKey.includes('●'))) {
-            throw new Error(`Invalid API Key Format: You entered bullet mask characters ("••••••••") instead of your real API key. Please clear the API Key box in Settings and paste your actual OpenRouter key (e.g. sk-or-v1-...).`);
+            throw new Error(`Invalid API Key Format: You entered bullet mask characters ("••••••••") instead of your real API key. Please clear the API Key box in Settings and paste your actual key (e.g. sk-or-v1-...).`);
         }
         if (!apiKey && !isLocal) {
             throw new Error(`API key missing: ${url} requires an API key. Please open Settings (⚙️) → AI Provider and enter your API Key.`);
@@ -865,44 +905,48 @@ class LLMProvider {
             'Content-Type': 'application/json',
             'HTTP-Referer': typeof window !== 'undefined' ? window.location.origin : 'http://localhost:4173',
             'X-Title': 'Zero-Builder AI Engine',
+            'X-Client': 'Zero-Builder-Studio',
         };
         if (apiKey) headers['Authorization'] = `Bearer ${apiKey.trim()}`;
 
         let retries = 0;
         const maxRetries = 3;
+        const retryStatuses = [408, 409, 425, 429, 500, 502, 503, 504];
 
         while (retries <= maxRetries) {
             let response;
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 60000);
             try {
                 response = await fetch(url, {
                     method: 'POST',
                     headers,
                     body: JSON.stringify(body),
+                    signal: controller.signal,
                 });
             } catch (e) {
+                if (e.name === 'AbortError') {
+                    throw new Error(`Network Timeout (60s): Request to ${url} timed out. Please check your network connection or try again.`);
+                }
                 if (window.location.protocol === 'https:' && (url.includes('localhost') || url.includes('127.0.0.1'))) {
                     throw new Error(`Browser Security Blocked Local Connection: You are on HTTPS but trying to connect to local Ollama. Please open http://zero-ai.surge.sh (without the 's') or run Zero-Builder locally using 'node server.js'.`);
                 }
-                throw new Error(`Network Error: Failed to connect to ${url}. Please verify your Base URL (e.g. openrouter.ai instead of openrouter.io) and check your internet connection. (${e.message})`);
+                throw new Error(`Network Error: Failed to connect to ${url}. (${e.message})`);
+            } finally {
+                clearTimeout(timeoutId);
             }
 
-            if (response.status === 429 && retries < maxRetries) {
+            if (retryStatuses.includes(response.status) && retries < maxRetries) {
                 retries++;
-                const waitMs = retries * 3000;
-                console.warn(`[LLMProvider] Rate limit 429 hit on ${url}. Retrying in ${waitMs / 1000}s (attempt ${retries}/${maxRetries})...`);
+                const waitMs = retries * 2000;
+                console.warn(`[LLMProvider] Retryable status ${response.status} hit on ${url}. Retrying in ${waitMs / 1000}s (attempt ${retries}/${maxRetries})...`);
                 await new Promise((r) => setTimeout(r, waitMs));
                 continue;
             }
 
             if (!response.ok) {
-                const err = await response.text();
-                if (response.status === 401) {
-                    throw new Error(`Authentication Error (401): Missing Authentication header. If your custom API requires an API key (e.g. OpenRouter, Together AI, Groq), please enter it in Settings → AI Provider → API Key.`);
-                }
-                if (response.status === 429) {
-                    throw new Error(`Rate limit exceeded (429) on OpenRouter/Provider. Please wait 10-15 seconds and try again, or switch to Google Gemini / Groq / OpenAI in Settings.`);
-                }
-                throw new Error(`API error (${response.status}): ${err}`);
+                const errText = await response.text();
+                throw new Error(this._parseErrorMessage(response.status, errText));
             }
 
             const data = await response.json();
@@ -913,23 +957,32 @@ class LLMProvider {
     }
 
     async _streamOpenAI(messages, model, apiKey, baseUrl, options, onChunk) {
-        const url = `${baseUrl}/chat/completions`;
+        const cleanBaseUrl = this._normalizeBaseUrl(baseUrl);
+        const url = cleanBaseUrl.endsWith('/chat/completions') ? cleanBaseUrl : `${cleanBaseUrl}/chat/completions`;
         
+        const systemPrompt = this._extractSystemPrompt(messages, options);
+        const conversation = (messages || []).filter((m) => m && m.role !== 'system');
         const allMessages = [];
-        if (options.systemPrompt) {
-            allMessages.push({ role: 'system', content: options.systemPrompt });
+        if (systemPrompt) {
+            allMessages.push({ role: 'system', content: systemPrompt });
         }
-        allMessages.push(...messages);
+        allMessages.push(...conversation);
+
+        const maxLimits = { gemini: 32768, openai: 16384, groq: 8192, mistral: 8192, anthropic: 8192, custom: 16384 };
+        const maxTokens = Math.min(options.maxTokens || 4096, maxLimits[this.currentProvider] || 8192);
 
         const body = {
             model,
             messages: allMessages,
             temperature: options.temperature || 0.7,
-            max_tokens: options.maxTokens || 32768,
+            max_tokens: maxTokens,
             stream: true,
         };
 
         const isLocal = url.includes('localhost') || url.includes('127.0.0.1') || url.includes('192.168.');
+        if (apiKey && (apiKey.includes('•') || apiKey.includes('●'))) {
+            throw new Error(`Invalid API Key Format: You entered bullet mask characters ("••••••••") instead of your real API key. Please clear the API Key box in Settings and paste your actual key.`);
+        }
         if (!apiKey && !isLocal) {
             throw new Error(`API key missing: ${url} requires an API key. Please open Settings (⚙️) → AI Provider and enter your API Key.`);
         }
@@ -938,27 +991,48 @@ class LLMProvider {
             'Content-Type': 'application/json',
             'HTTP-Referer': typeof window !== 'undefined' ? window.location.origin : 'http://localhost:4173',
             'X-Title': 'Zero-Builder AI Engine',
+            'X-Client': 'Zero-Builder-Studio',
         };
         if (apiKey) headers['Authorization'] = `Bearer ${apiKey.trim()}`;
 
-        let response;
-        try {
-            response = await fetch(url, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify(body),
-            });
-        } catch (e) {
-            if (window.location.protocol === 'https:' && (url.includes('localhost') || url.includes('127.0.0.1'))) {
-                throw new Error(`Browser Security Blocked Local Connection: You are on HTTPS but trying to connect to local Ollama. Please open http://zero-ai.surge.sh (without the 's') or run Zero-Builder locally using 'node server.js'.`);
-            }
-            throw new Error(`Network Error: Failed to connect to ${url}. Please verify your Base URL (e.g. openrouter.ai instead of openrouter.io) and check your internet connection. (${e.message})`);
-        }
+        let retries = 0;
+        const maxRetries = 3;
+        const retryStatuses = [408, 409, 425, 429, 500, 502, 503, 504];
 
-        if (!response.ok) {
-            const err = await response.text();
-            if (response.status === 401) {
-                throw new Error(`Authentication Error (401): Missing Authentication header. If your custom API requires an API key (e.g. OpenRouter, Together AI, Groq), please enter it in Settings → AI Provider → API Key.`);
+        while (retries <= maxRetries) {
+            let response;
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 60000);
+            try {
+                response = await fetch(url, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(body),
+                    signal: controller.signal,
+                });
+            } catch (e) {
+                if (e.name === 'AbortError') {
+                    throw new Error(`Network Timeout (60s): Request to ${url} timed out. Please check your network connection or try again.`);
+                }
+                if (window.location.protocol === 'https:' && (url.includes('localhost') || url.includes('127.0.0.1'))) {
+                    throw new Error(`Browser Security Blocked Local Connection: You are on HTTPS but trying to connect to local Ollama. Please open http://zero-ai.surge.sh (without the 's') or run Zero-Builder locally using 'node server.js'.`);
+                }
+                throw new Error(`Network Error: Failed to connect to ${url}. (${e.message})`);
+            } finally {
+                clearTimeout(timeoutId);
+            }
+
+            if (retryStatuses.includes(response.status) && retries < maxRetries) {
+                retries++;
+                const waitMs = retries * 2000;
+                console.warn(`[LLMProvider] Retryable status ${response.status} hit on ${url}. Retrying in ${waitMs / 1000}s (attempt ${retries}/${maxRetries})...`);
+                await new Promise((r) => setTimeout(r, waitMs));
+                continue;
+            }
+
+            if (!response.ok) {
+                const errText = await response.text();
+                throw new Error(this._parseErrorMessage(response.status, errText));
             }
             throw new Error(`Stream error (${response.status}): ${err}`);
         }
@@ -1118,6 +1192,11 @@ class LLMProvider {
 
     /* ===== TOKEN TRACKING ===== */
     _trackTokens(count) {
+        const todayStr = new Date().toDateString();
+        if (this.lastTokenDay !== todayStr) {
+            this.tokenUsage.today = 0;
+            this.lastTokenDay = todayStr;
+        }
         this.tokenUsage.total += Math.round(count);
         this.tokenUsage.today += Math.round(count);
         this.saveSettings();
