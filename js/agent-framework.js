@@ -730,11 +730,33 @@ class AgentFramework {
                 this.memory.specification.has3D = true;
                 this.emit('progress', { step: 'coding-3d', percent: 38, message: 'Building WebGL / 3D cinematic engine...' });
 
+                const advEffects = Array.isArray(this.memory.specification.advancedEffects)
+                    ? this.memory.specification.advancedEffects
+                    : [];
+
                 if (!isReact && !isFullstack) {
-                    const coder3d = this.agents['coder-3d'];
-                    if (coder3d) {
-                        this.memory.generatedFiles['three-scene.js'] = await coder3d.execute(this.memory.specification, this.memory.designSystem);
-                        this.emit('log', { type: 'success', message: 'Vanilla WebGL/3D scene generated' });
+                    // Dispatch to specialized 3D agent if requested, else fall back to Coder3D
+                    if (advEffects.includes('gpgpu-particles') && this.agents['coder-gpgpu']) {
+                        this.emit('log', { type: 'info', message: 'Dispatching to GPGPU Particle Agent...' });
+                        this.memory.generatedFiles['three-scene.js'] = await this.agents['coder-gpgpu'].execute(this.memory.specification, this.memory.designSystem);
+                    } else if (advEffects.includes('webgpu-tsl') && this.agents['coder-webgpu']) {
+                        this.emit('log', { type: 'info', message: 'Dispatching to WebGPU/TSL Agent...' });
+                        this.memory.generatedFiles['three-scene.js'] = await this.agents['coder-webgpu'].execute(this.memory.specification, this.memory.designSystem);
+                    } else if (advEffects.includes('rapier-physics') && this.agents['coder-physics']) {
+                        this.emit('log', { type: 'info', message: 'Dispatching to Rapier Physics Agent...' });
+                        this.memory.generatedFiles['three-scene.js'] = await this.agents['coder-physics'].execute(this.memory.specification, this.memory.designSystem);
+                    } else {
+                        const coder3d = this.agents['coder-3d'];
+                        if (coder3d) {
+                            this.memory.generatedFiles['three-scene.js'] = await coder3d.execute(this.memory.specification, this.memory.designSystem);
+                            this.emit('log', { type: 'success', message: 'Vanilla WebGL/3D scene generated' });
+                        }
+                    }
+
+                    // Secondary helper: Audio bridge if requested
+                    if (advEffects.includes('audio-reactive') && this.agents['coder-audio']) {
+                        this.emit('log', { type: 'info', message: 'Generating Audio-Reactive Bridge...' });
+                        this.memory.generatedFiles['audio-bridge.js'] = await this.agents['coder-audio'].execute(this.memory.specification, this.memory.designSystem);
                     }
                 } else {
                     const shaderWizard = this.agents['coder-shader'];

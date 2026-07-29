@@ -23,6 +23,10 @@ const files = [
   'js/agents/coder-fullstack.js',
   'js/agents/coder-3d.js',
   'js/agents/coder-shader.js',
+  'js/agents/coder-gpgpu.js',
+  'js/agents/coder-webgpu.js',
+  'js/agents/coder-physics.js',
+  'js/agents/coder-audio.js',
   'js/agents/animator.js',
   'js/agents/architect.js',
   'js/agents/reviewer.js',
@@ -49,8 +53,8 @@ const files = [
 try {
   const root = __dirname;
   const bundle = files.map(f => fs.readFileSync(path.join(root, f), 'utf8')).join('\n;\n');
-  fs.writeFileSync(path.join(root, 'js/zero-builder.bundle.js'), bundle, 'utf8');
-  console.log('Zero-Builder JS Bundle compiled successfully! (' + (bundle.length / 1024).toFixed(1) + ' KB)');
+  fs.writeFileSync(path.join(root, 'js/zero.bundle.js'), bundle, 'utf8');
+  console.log('Zero JS Bundle compiled successfully! (' + (bundle.length / 1024).toFixed(1) + ' KB)');
 } catch (err) {
   console.error('Error building JS bundle:', err.message);
 }

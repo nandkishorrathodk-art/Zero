@@ -67,6 +67,10 @@
                 if (typeof CoderUIAgent !== 'undefined') framework.registerAgent('coder-ui', new CoderUIAgent());
                 if (typeof CoderReactAgent !== 'undefined') framework.registerAgent('coder-react', new CoderReactAgent());
                 if (typeof CoderShaderAgent !== 'undefined') framework.registerAgent('coder-shader', new CoderShaderAgent());
+                if (typeof CoderGPGPUAgent !== 'undefined') framework.registerAgent('coder-gpgpu', new CoderGPGPUAgent());
+                if (typeof CoderWebGPUAgent !== 'undefined') framework.registerAgent('coder-webgpu', new CoderWebGPUAgent());
+                if (typeof CoderPhysicsAgent !== 'undefined') framework.registerAgent('coder-physics', new CoderPhysicsAgent());
+                if (typeof CoderAudioAgent !== 'undefined') framework.registerAgent('coder-audio', new CoderAudioAgent());
                 if (typeof AnimatorAgent !== 'undefined') framework.registerAgent('animator', new AnimatorAgent());
                 if (typeof ArchitectAgent !== 'undefined') framework.registerAgent('architect', new ArchitectAgent());
                 if (typeof CoderFullstackAgent !== 'undefined') framework.registerAgent('coder-fullstack', new CoderFullstackAgent());
