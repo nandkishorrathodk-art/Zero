@@ -20662,11 +20662,20 @@ Format:
         const settingsKey = document.getElementById('settings-api-key');
         if (settingsKey) settingsKey.value = window.llmProvider.getApiKey(providerId) || '';
 
-        if (providerId === 'custom' && (!window.llmProvider.customBaseUrl)) {
-            toggleModal('settings-modal', true);
-            showToast('warning', 'Please enter your Custom Base URL and Model Name in Settings.');
+        if (providerId === 'custom') {
+            const hasKey = window.llmProvider.getApiKey('custom');
+            const url = window.llmProvider.customBaseUrl || '';
+            if (!hasKey && !url.includes('localhost') && !url.includes('127.0.0.1')) {
+                toggleModal('settings-modal', true);
+                showToast('warning', 'OpenRouter / Custom Cloud API requires an API key. Get your key from https://openrouter.ai/keys and enter it in Settings → API Key.');
+            } else if (!url) {
+                toggleModal('settings-modal', true);
+                showToast('warning', 'Please enter your Custom Base URL and Model Name in Settings.');
+            } else {
+                showToast('info', `Switched to Custom Endpoint (${url})`);
+            }
         } else {
-            showToast('info', `Switched to ${window.llmProvider.providers[providerId].name}`);
+            showToast('info', `Switched to ${window.llmProvider.providers[providerId]?.name || providerId}`);
         }
     }
 
