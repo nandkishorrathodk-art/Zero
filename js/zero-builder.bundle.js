@@ -616,24 +616,32 @@ class LLMProvider {
     _isProviderReady(id) {
         const p = this.providers[id];
         if (!p) return false;
-        if (p.noApiKey) return true; // Ollama local (no auth needed)
+        const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+        if (id === 'ollama') {
+            // Ollama local is ONLY allowed when running on HTTP / local device, NOT on HTTPS Vercel
+            return !isHttps;
+        }
         const key = this.getApiKey(id);
         if (key && key.trim().length > 0) return true; // Has valid API Key
         if (id === 'custom') {
             const url = String(this.customBaseUrl || '').toLowerCase();
             const isLocal = url.includes('localhost') || url.includes('127.0.0.1') || url.includes('192.168.');
-            if (isLocal && url.length > 0) return true; // Local unauthenticated custom server
+            if (isLocal && url.length > 0) return !isHttps; // Local custom server
         }
         return false;
     }
 
     _autoSelectActiveProvider() {
+        const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+        if (this.currentProvider === 'ollama' && isHttps) {
+            this.currentProvider = 'gemini';
+        }
         if (this._isProviderReady(this.currentProvider)) {
             return; // Current provider is ready!
         }
-        // Search for any provider that IS ready
+        // Search for any cloud provider that IS ready with a valid API key
         for (const id of Object.keys(this.providers)) {
-            if (this._isProviderReady(id)) {
+            if (id !== 'ollama' && this._isProviderReady(id)) {
                 this.currentProvider = id;
                 this.currentModel = this.providers[id].models[0]?.id || 'custom';
                 this.saveSettings();
