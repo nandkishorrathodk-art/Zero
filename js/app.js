@@ -208,6 +208,11 @@
         framework.on('complete', (files) => {
             isGenerating = false;
             updateGenerateButton(false);
+            if (files && Object.keys(files).length > 0) {
+                if (editor) editor.setFiles(files);
+                if (fileSystem) fileSystem.setFiles(files);
+                if (preview) preview.render(files);
+            }
             createSnapshot('Completed build');
             showToast('success', 'Website generated successfully!');
 

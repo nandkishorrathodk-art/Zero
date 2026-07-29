@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZERO-ENGINEER v4.0 – Build Production Sites in Seconds</title>
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@1&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <!-- CSS -->
+  <link rel="stylesheet" href="styles.css">
+  <!-- GSAP & ScrollTrigger -->
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/gsap.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/ScrollTrigger.min.js" defer></script>
+  <!-- Lenis for smooth scrolling -->
+  <script src="https://unpkg.com/lenis@1.1.14/dist/lenis.min.js" defer></script>
+  <!-- Three.js -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js" defer></script>
+  <!-- Three‑scene init -->
+  <script src="three-scene.js" defer></script>
+  <!-- Custom JS -->
+  <script src="script.js" defer></script>
+</head>
+<body class="bg-black text-white">
+
+  <!-- Page Loader -->
+  <div class="page-loader" role="status" aria-live="polite">
+    <div class="loader-spinner"></div>
+  </div>
+
+  <!-- Hero Section -->
+  <header data-scene="hero" class="hero hero-section">
+    <!-- Navigation -->
+    <nav class="navbar glass-nav liquid-glass" data-scroll-3d="float">
+      <div class="logo">ZERO‑ENGINEER</div>
+      <button class="menu-toggle" aria-label="Open menu" data-animate="fade">
+        <span></span><span></span><span></span>
+      </button>
+      <ul class="menu" data-animate="slide-up">
+        <li><a href="#swarm" data-animate="fade">Swarm</a></li>
+        <li><a href="#capabilities" data-animate="fade">Capabilities</a></li>
+        <li><a href="#metrics" data-animate="fade">Metrics</a></li>
+        <li><a href="#pricing" data-animate="fade">Pricing</a></li>
+        <li><a href="#faq" data-animate="fade">FAQ</a></li>
+      </ul>
+    </nav>
+
+    <!-- Three.js Canvas -->
+    <canvas id="three-canvas"></canvas>
+
+    <!-- Hero Overlay -->
+    <div class="hero-content hero-overlay">
+      <h1 class="headline" data-blur-text="word-blur-reveal" data-parallax="0.5">
+        Are you ready to build production sites in seconds with AI‑driven swarm agents?
+      </h1>
+      <p class="subhead" data-animate="slide-up" data-parallax="0.3">
+        Zero Code. Zero Constraints. Pure WebGL 3D Motion & Next.js Full‑Stack Architecture.
+      </p>
+
+      <div class="prompt-bar" data-animate="fade" data-parallax="0.2">
+        <input type="text" placeholder="Describe your dream site…" class="glass-input" data-animate="fade" />
+        <button class="cta glass-button" data-magnet="quickto" data-hover="glow" data-micro="ripple">
+          Start Building
+        </button>
+      </div>
+
+      <button class="cta second glass-button" data-magnet="quickto" data-hover="glow" data-micro="ripple">
+        Learn More
+      </button>
+    </div>
+
+    <!-- Background Layers -->
+    <div id="bg-particles" class="bg-3d-particles" data-scroll-3d="rotate"></div>
+    <div class="film-grain" aria-hidden="true"></div>
+    <div class="vignette" aria-hidden="true"></div>
+  </header>
+
+  <main>
+    <!-- Swarm Showcase -->
+    <section id="swarm" data-scene="swarm-showcase" class="section glass-card" data-scroll-3d="tilt" data-reveal="clip">
+      <h2 class="section-title" data-animate="fade" data-parallax="0.4">Swarm Showcase</h2>
+      <p class="section-text" data-animate="slide-up">
+        19 autonomous AI agents orchestrate every facet of your site – from design to deployment.
+      </p>
+      <div class="tabs" data-animate="fade">
+        <button class="tab active" data-panel="panel-1">Agents</button>
+        <button class="tab" data-panel="panel-2">Logs</button>
+        <button class="tab" data-panel="panel-3">States</button>
+      </div>
+      <div class="tab-panels">
+        <div id="panel-1" class="panel active">
+          <ul class="agent-states" style="list-style:none; padding:0; display:grid; gap:8px;">
+            <li>🤖 <strong>PromptEngineer:</strong> Engineering prompt packs & brief specs</li>
+            <li>📐 <strong>Planner:</strong> Designing 6-section site blueprints</li>
+            <li>🎨 <strong>Designer:</strong> Generating Glassmorphic design tokens</li>
+            <li>💻 <strong>CoderUI:</strong> Production HTML/CSS/JS builder</li>
+          </ul>
+        </div>
+        <div id="panel-2" class="panel">
+          <pre class="terminal-log">[2026-07-29 12:00] Agent #01: Rendered component X
+[2026-07-29 12:01] Agent #02: Injected 3D WebGL particle scene
+[2026-07-29 12:02] Agent #03: Applied GSAP ScrollTrigger timeline</pre>
+        </div>
+        <div id="panel-3" class="panel">
+          <ul class="agent-states">
+            <li>Agent #01 – <span class="state running">Running</span></li>
+            <li>Agent #02 – <span class="state idle">Idle</span></li>
+            <li>Agent #03 – <span class="state running">Active</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Capabilities -->
+    <section id="capabilities" data-scene="capabilities" class="section glass-card" data-scroll-3d="float" data-reveal="slide-up">
+      <h2 class="section-title" data-animate="fade" data-parallax="0.3">Capabilities</h2>
+      <ul class="capabilities-list" data-animate="fade">
+        <li>GPGPU engine: 100k particles in real time</li>
+        <li>Instant deployment to Vercel/Netlify</li>
+        <li>Multimodal AI: text, image, code generation</li>
+        <li>Mobile‑first responsive design</li>
+      </ul>
+      <div class="window-3d" data-scroll-3d="tilt">
+        <div class="window-3d-titlebar">Demo Window</div>
+        <div class="window-3d-body">
+          <p>Real‑time preview of your site as you type.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Live Metrics -->
+    <section id="metrics" data-scene="live-metrics" class="section glass-card" data-scroll-3d="float" data-reveal="blur">
+      <h2 class="section-title" data-animate="fade" data-parallax="0.2">Live Metrics</h2>
+      <div class="stats-grid stats-cards" data-animate="fade">
+        <div class="stat-card">
+          <h3>Agents</h3>
+          <p class="count" data-micro="counter" data-target="19">0</p>
+        </div>
+        <div class="stat-card">
+          <h3>Particles</h3>
+          <p class="count" data-micro="counter" data-target="100000">0</p>
+        </div>
+        <div class="stat-card">
+          <h3>Preview Speed</h3>
+          <p class="count" data-micro="counter" data-target="400">ms</p>
+        </div>
+        <div class="stat-card">
+          <h3>Code Integrity</h3>
+          <p class="count" data-micro="counter" data-target="100">%</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Pricing -->
+    <section id="pricing" data-scene="pricing" class="section glass-card" data-scroll-3d="tilt" data-reveal="slide-up">
+      <h2 class="section-title" data-animate="fade" data-parallax="0.3">Pricing</h2>
+      <div class="pricing-toggle" data-animate="fade">
+        <label class="switch">
+          <input type="checkbox" id="tier-toggle">
+          <span class="slider"></span>
+        </label>
+        <span id="tier-label">Monthly Billing</span>
+      </div>
+      <div class="pricing-table" data-animate="fade">
+        <div class="tier-card free" id="tier-free">
+          <h3>Free</h3>
+          <p class="tier-price" style="font-size:1.8rem;font-weight:bold;margin:8px 0;">$0 / mo</p>
+          <ul>
+            <li>Limited Agents</li>
+            <li>Basic Deployment</li>
+          </ul>
+        </div>
+        <div class="tier-card studio" id="tier-studio">
+          <h3>Studio Pro</h3>
+          <p class="tier-price" style="font-size:1.8rem;font-weight:bold;margin:8px 0;color:var(--color-primary);">$29 / mo</p>
+          <ul>
+            <li>All 19 AI Agents</li>
+            <li>Advanced Analytics</li>
+          </ul>
+        </div>
+        <div class="tier-card enterprise" id="tier-enterprise">
+          <h3>Enterprise Swarm</h3>
+          <ul>
+            <li>Custom Integration</li>
+            <li>Dedicated Support</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ -->
+    <section id="faq" data-scene="faq" class="section glass-card" data-scroll-3d="float" data-reveal="clip">
+      <h2 class="section-title" data-animate="fade" data-parallax="0.2">FAQ</h2>
+      <div class="accordion" data-animate="fade">
+        <div class="accordion-item">
+          <button class="accordion-header" aria-expanded="false">What is an AI Swarm?</button>
+          <div class="accordion-panel" hidden>
+            <p>An AI Swarm is a coordinated group of autonomous agents that handle design, code, and deployment tasks in parallel.</p>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <button class="accordion-header" aria-expanded="false">How fast is the preview?</button>
+          <div class="accordion-panel" hidden>
+            <p>Under 400 ms on modern browsers, thanks to GPGPU particle rendering.</p>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <button class="accordion-header" aria-expanded="false">Is my code safe?</button>
+          <div class="accordion-panel" hidden>
+            <p>Yes, the platform ensures 100 % code integrity with immutable logs.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer data-scene="footer" class="footer" data-reveal="fade">
+    <div class="footer-content">
+      <p>© 2026 ZERO‑ENGINEER. All rights reserved.</p>
+      <p class="status" aria-live="polite">Status: <span id="status-indicator">🟢 Live</span></p>
+    </div>
+  </footer>
+</body>
+</html>
