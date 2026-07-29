@@ -19866,10 +19866,15 @@ window.DeployManager = DeployManager;
             });
         });
 
-        // Settings modal
-        document.getElementById('btn-settings')?.addEventListener('click', () => {
+        // Settings modal handlers
+        const openSettingsModal = () => {
             loadSavedSettings();
             toggleModal('settings-modal', true);
+        };
+        document.getElementById('btn-settings')?.addEventListener('click', openSettingsModal);
+        document.getElementById('welcome-settings-btn')?.addEventListener('click', openSettingsModal);
+        document.querySelectorAll('.btn-open-settings, [data-action="settings"]').forEach(btn => {
+            btn.addEventListener('click', openSettingsModal);
         });
         document.getElementById('settings-close')?.addEventListener('click', () => toggleModal('settings-modal', false));
         document.getElementById('btn-save-settings')?.addEventListener('click', saveSettings);
