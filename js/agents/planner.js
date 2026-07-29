@@ -494,6 +494,32 @@ Output the complete specification JSON now.`;
             spec.has3D = true;
         }
 
+        // Advanced 3D effect auto-detection from prompt
+        const advancedEffectRegistry = [
+            { id: 'gpgpu-particles', pattern: /gpgpu|100k|million.?particle|fbo|ping.?pong|massive.?particle|data.?texture/i },
+            { id: 'raymarched-sdf', pattern: /raymarch|sdf|signed.?distance|marching|volumetric.?render/i },
+            { id: 'audio-reactive', pattern: /audio.?react|music.?visual|sound.?react|beat.?react|frequency.?visual|spectrum|audio.?driven/i },
+            { id: 'full-postprocessing', pattern: /post.?process|effect.?composer|bloom.?chain|chromatic.?aberr|god.?ray|film.?grain/i },
+            { id: 'curl-noise-displacement', pattern: /curl.?noise|turbulence|flow.?field|vector.?field/i },
+            { id: 'rapier-physics', pattern: /rapier|cannon|physics.?sim|rigid.?body|collision.?detect/i },
+        ];
+
+        const detectedAdvanced = advancedEffectRegistry
+            .filter(r => r.pattern.test(promptLower))
+            .map(r => r.id);
+
+        // Merge with any effects from engineered brief
+        const briefEffects = engineeredBrief?.advancedEffects || spec.advancedEffects || [];
+        spec.advancedEffects = [...new Set([...briefEffects, ...detectedAdvanced])];
+
+        // Force has3D when any advanced 3D effect is requested
+        if (spec.advancedEffects.some(e => ['gpgpu-particles', 'raymarched-sdf', 'audio-reactive', 'curl-noise-displacement'].includes(e))) {
+            spec.has3D = true;
+            if (!spec.heroTreatment || spec.heroTreatment === 'photo-mask') {
+                spec.heroTreatment = 'webgl-scene';
+            }
+        }
+
         // Motion systems from brief or defaults
         spec.motionSystems = engineeredBrief?.motionSystems?.slice(0, 5)
             || spec.motionSystems
@@ -534,9 +560,9 @@ Output the complete specification JSON now.`;
         // Quality contract
         spec.qualityContract = this._getQualityContract(spec);
 
-        // Design philosophy & advanced effects
+        // Design philosophy (keep existing)
         spec.designPhilosophy = spec.designPhilosophy || engineeredBrief?.designPhilosophy || null;
-        spec.advancedEffects = engineeredBrief?.advancedEffects || spec.advancedEffects || [];
+        // advancedEffects already populated above via auto-detection
 
         // App architecture for fullstack
         if (spec.framework === 'fullstack-nextjs') {

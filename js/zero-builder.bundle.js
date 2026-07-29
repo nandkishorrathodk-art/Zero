@@ -3681,6 +3681,51 @@ class AgentFramework {
             if (advancedEffects.includes('smooth-loader') && !hasLoader) {
                 add('suggestion', 'advanced-effects', 'index.html', 'Smooth loader effect specified but no .page-loader element found.', 'Add a page loader with .page-loader class and entrance transition.');
             }
+
+            // ─── Advanced 3D Technique Verification ───
+            if (advancedEffects.includes('gpgpu-particles')) {
+                const hasGPGPU = /WebGLRenderTarget|FloatType|ping.?pong|data.?texture|positionTexture|velocityTexture/i.test(allCode);
+                if (!hasGPGPU) {
+                    add('warning', 'advanced-3d', 'three-scene.js', 'GPGPU particles requested but no WebGLRenderTarget / ping-pong FBO pattern found.', 'Implement GPGPU with two WebGLRenderTargets (FloatType) for position/velocity simulation.');
+                }
+            }
+
+            if (advancedEffects.includes('raymarched-sdf')) {
+                const hasRaymarch = /raymarch|sdSphere|sdBox|sdTorus|smin\s*\(|signed.?distance/i.test(allCode);
+                if (!hasRaymarch) {
+                    add('warning', 'advanced-3d', 'three-scene.js', 'Raymarching/SDF requested but no SDF functions or march loop found.', 'Implement raymarching with SDF primitives (sdSphere, sdBox) and smooth blending (smin).');
+                }
+            }
+
+            if (advancedEffects.includes('audio-reactive')) {
+                const hasAudio = /AudioContext|AnalyserNode|analyser|getByteFrequencyData|uBass|uMid|uHigh|uAudioBass/i.test(allCode);
+                if (!hasAudio) {
+                    add('warning', 'advanced-3d', 'three-scene.js', 'Audio-reactive effects requested but no Web Audio API setup found.', 'Implement AudioContext with AnalyserNode and pass frequency bands as shader uniforms.');
+                }
+            }
+
+            if (advancedEffects.includes('full-postprocessing')) {
+                const hasPostFX = /EffectComposer|UnrealBloomPass|RenderPass|ShaderPass|postprocessing/i.test(allCode);
+                if (!hasPostFX) {
+                    add('warning', 'advanced-3d', 'three-scene.js', 'Full post-processing requested but no EffectComposer pipeline found.', 'Set up EffectComposer with RenderPass + UnrealBloomPass + custom passes.');
+                }
+            }
+
+            if (advancedEffects.includes('curl-noise-displacement')) {
+                const hasCurl = /curl|curlNoise|curl_noise|turbulence|flowField/i.test(allCode);
+                if (!hasCurl) {
+                    add('suggestion', 'advanced-3d', 'three-scene.js', 'Curl noise displacement requested but no curl noise implementation found.', 'Add 3D curl noise from simplex derivatives for vertex displacement or particle forces.');
+                }
+            }
+
+            // Particle count guard: >50k without GPGPU pattern
+            const particleCountMatch = allCode.match(/(?:count|numParticles|particleCount|PARTICLE_COUNT)\s*=\s*(\d+)/i);
+            if (particleCountMatch) {
+                const count = parseInt(particleCountMatch[1], 10);
+                if (count > 50000 && !/WebGLRenderTarget|FloatType|ping.?pong/i.test(allCode)) {
+                    add('warning', 'performance', 'three-scene.js', `${count} particles requested without GPGPU pattern — will likely cause frame drops.`, 'Use GPGPU ping-pong FBO pattern for particle counts above 50,000.');
+                }
+            }
         }
 
         return { issues, critical: issues.some((issue) => issue.severity === 'critical') };
@@ -5929,6 +5974,32 @@ Output the complete specification JSON now.`;
             spec.has3D = true;
         }
 
+        // Advanced 3D effect auto-detection from prompt
+        const advancedEffectRegistry = [
+            { id: 'gpgpu-particles', pattern: /gpgpu|100k|million.?particle|fbo|ping.?pong|massive.?particle|data.?texture/i },
+            { id: 'raymarched-sdf', pattern: /raymarch|sdf|signed.?distance|marching|volumetric.?render/i },
+            { id: 'audio-reactive', pattern: /audio.?react|music.?visual|sound.?react|beat.?react|frequency.?visual|spectrum|audio.?driven/i },
+            { id: 'full-postprocessing', pattern: /post.?process|effect.?composer|bloom.?chain|chromatic.?aberr|god.?ray|film.?grain/i },
+            { id: 'curl-noise-displacement', pattern: /curl.?noise|turbulence|flow.?field|vector.?field/i },
+            { id: 'rapier-physics', pattern: /rapier|cannon|physics.?sim|rigid.?body|collision.?detect/i },
+        ];
+
+        const detectedAdvanced = advancedEffectRegistry
+            .filter(r => r.pattern.test(promptLower))
+            .map(r => r.id);
+
+        // Merge with any effects from engineered brief
+        const briefEffects = engineeredBrief?.advancedEffects || spec.advancedEffects || [];
+        spec.advancedEffects = [...new Set([...briefEffects, ...detectedAdvanced])];
+
+        // Force has3D when any advanced 3D effect is requested
+        if (spec.advancedEffects.some(e => ['gpgpu-particles', 'raymarched-sdf', 'audio-reactive', 'curl-noise-displacement'].includes(e))) {
+            spec.has3D = true;
+            if (!spec.heroTreatment || spec.heroTreatment === 'photo-mask') {
+                spec.heroTreatment = 'webgl-scene';
+            }
+        }
+
         // Motion systems from brief or defaults
         spec.motionSystems = engineeredBrief?.motionSystems?.slice(0, 5)
             || spec.motionSystems
@@ -5969,9 +6040,9 @@ Output the complete specification JSON now.`;
         // Quality contract
         spec.qualityContract = this._getQualityContract(spec);
 
-        // Design philosophy & advanced effects
+        // Design philosophy (keep existing)
         spec.designPhilosophy = spec.designPhilosophy || engineeredBrief?.designPhilosophy || null;
-        spec.advancedEffects = engineeredBrief?.advancedEffects || spec.advancedEffects || [];
+        // advancedEffects already populated above via auto-detection
 
         // App architecture for fullstack
         if (spec.framework === 'fullstack-nextjs') {
@@ -10201,7 +10272,7 @@ LEVEL 2 — Geometric Effects
 LEVEL 3 — Advanced Shaders (GLSL)
 
 * Custom vertex/fragment shaders
-* Noise-based distortion (simplex, perlin)
+* Noise-based distortion (simplex, perlin, curl)
 * Chromatic aberration
 * Glow / bloom effects
 * Liquid / fluid simulation
@@ -10216,14 +10287,64 @@ LEVEL 4 — Interactive 3D
 * Interactive product viewers
 * Terrain generation
 * Volumetric lighting
-* Ray marching effects
 
 LEVEL 5 — Post-Processing
 
 * UnrealBloomPass for glow
-* EffectComposer pipeline
-* Custom render passes
-* Depth of field
+* EffectComposer pipeline with multiple passes
+* Custom render passes (chromatic aberration, film grain, vignette)
+* Depth of field (BokehPass)
+* God rays (volumetric scattering)
+* Color grading / LUT passes
+
+LEVEL 6 — GPGPU Particles (100k+)
+
+* Use WebGLRenderTarget as data textures (position + velocity)
+* Ping-pong framebuffer pattern: read from texture A, write to texture B, swap
+* Simulation shader updates particle positions/velocities each frame
+* Render shader reads position texture and draws Points or InstancedMesh
+* Float32 RGBA textures (THREE.FloatType) for precision
+* Grid layout: particles = textureWidth * textureHeight
+* Template pattern:
+  1. Create two WebGLRenderTargets (posA, posB) with FloatType
+  2. Create simulation ShaderMaterial that reads posA, writes to posB
+  3. Render a full-screen quad with simulation material to posB
+  4. Swap posA ↔ posB
+  5. Render Points mesh reading position from posA
+* Forces: curl noise, attractors, mouse repulsion, gravity, turbulence
+* Always dispose targets and materials on cleanup
+
+LEVEL 7 — Raymarching / SDF Scenes
+
+* Full-screen quad with fragment-only raymarching (no geometry)
+* Signed Distance Functions: sphere, box, torus, cylinder, cone
+* Smooth blending: smin(a, b, k) for organic shapes
+* Domain repetition: mod(p, period) for infinite grids
+* Soft shadows via sphere-tracing with penumbra
+* Ambient occlusion from SDF step count
+* Camera ray from UV + inverse projection
+* Template pattern:
+  1. Full-screen PlaneGeometry covering viewport
+  2. Fragment shader: for each pixel, cast ray from camera
+  3. March along ray, evaluate SDF scene
+  4. On hit: compute normal via gradient, apply lighting
+  5. Compose: fog, glow, color grading
+* Keep max steps ≤ 128, max distance ≤ 100.0 for performance
+
+LEVEL 8 — Audio-Reactive
+
+* Web Audio API: AudioContext → AnalyserNode → getByteFrequencyData
+* Split frequency bands: bass (0-4), mid (5-15), high (16-31)
+* Normalize to 0.0-1.0 range
+* Pass as uniforms: uBass, uMid, uHigh (smoothed with lerp)
+* Drive: particle scale, vertex displacement, color intensity, bloom threshold
+* Template pattern:
+  1. navigator.mediaDevices.getUserMedia({ audio: true }) OR new Audio(url)
+  2. AudioContext → createAnalyser() → fftSize = 64
+  3. Each frame: getByteFrequencyData(dataArray)
+  4. bass = avg(0..4)/255, mid = avg(5..15)/255, high = avg(16..31)/255
+  5. Smooth: uBass += (bass - uBass) * 0.1
+  6. Pass to shader uniforms
 
 RULES
 
@@ -10239,18 +10360,22 @@ RULES
 10. Background must be transparent (alpha: true) so text can overlay.
 11. Use smooth easing for natural movement.
 12. Use THREE.Clock for delta-time based animation.
-13. Dispose resources properly.
-14. Add inline noise functions if needed.
+13. Dispose resources properly (geometries, materials, textures, render targets).
+14. Add inline noise functions if needed (simplex, curl, Perlin).
 
 PERFORMANCE GUIDELINES
 
-* Prefer Points for particles.
+* Prefer Points for particles under 10k.
+* Use GPGPU (FBO ping-pong) for particles over 10k.
 * Prefer InstancedMesh for repeated geometry.
 * Use Float32Array for buffer attributes.
 * Minimize draw calls.
 * Use Math.min(window.devicePixelRatio, 2) for pixel ratio.
 * Throttle resize handling.
 * Keep shader code compact and readable.
+* Raymarching: max 128 steps, max distance 100.0.
+* GPGPU textures: prefer power-of-2 dimensions (256×256 = 65k particles).
+* Always clean up: renderer.dispose(), geometry.dispose(), material.dispose(), renderTarget.dispose().
 `.trim();
     }
 
@@ -10275,6 +10400,17 @@ PERFORMANCE GUIDELINES
         const wantsScrub = motions.some((m) => /scroll-scrub|camera/i.test(String(m)));
         const isComplex = ['complex', 'ultra-complex'].includes(String(complexity));
 
+        // Advanced technique detection
+        const advEffects = Array.isArray(specification.advancedEffects) ? specification.advancedEffects : [];
+        const advBlob = blob + ' ' + advEffects.join(' ');
+
+        const needsGPGPU = /gpgpu|100k|million.?particle|fbo|ping.?pong|massive.?particle|data.?texture/i.test(advBlob);
+        const needsRaymarch = /raymarch|sdf|signed.?distance|marching|volumetric.?render/i.test(advBlob);
+        const needsAudio = /audio|music|sound|beat|reactive|frequency|spectrum|visuali[sz]/i.test(advBlob);
+        const needsPostFX = /bloom|chromatic|dof|depth.?of.?field|grain|god.?ray|vignette|effect.?composer|post.?process/i.test(advBlob);
+        const needsPhysics = /physics|rapier|cannon|gravity|collision|rigid.?body/i.test(advBlob);
+        const needsCurlNoise = /curl.?noise|turbulence|flow.?field|vector.?field/i.test(advBlob);
+
         const visualDirection = {
             siteType,
             mood,
@@ -10287,6 +10423,12 @@ PERFORMANCE GUIDELINES
             effects,
             motions,
             keywords: blob,
+            needsGPGPU,
+            needsRaymarch,
+            needsAudio,
+            needsPostFX,
+            needsPhysics,
+            needsCurlNoise,
         };
 
         return visualDirection;
@@ -10348,6 +10490,58 @@ ${hints.isComplex ? `
 * Subtle color grading over time is allowed
 * Use one strong focal point and supporting ambient motion
   ` : '- Keep the implementation lean and elegant'}
+${hints.needsGPGPU ? `
+GPGPU PARTICLE SYSTEM REQUIRED
+* Use two WebGLRenderTargets (FloatType, RGBAFormat) as position/velocity data textures
+* Ping-pong pattern: simulate into target B reading from A, then swap
+* Render a full-screen quad with simulation ShaderMaterial to update particles
+* Display particles using Points mesh reading from position texture
+* Use texture dimensions like 256×256 = 65,536 particles or 512×512 = 262,144
+* Add curl noise or attractor forces for organic motion
+* Mouse position should repel or attract nearby particles
+* MUST dispose all WebGLRenderTargets on cleanup
+` : ''}
+${hints.needsRaymarch ? `
+RAYMARCHING / SDF SCENE REQUIRED
+* Use a full-screen PlaneGeometry with a custom fragment shader
+* Cast ray per pixel: ro = cameraPosition, rd = normalize(target - ro)
+* Implement SDF primitives: sdSphere, sdBox, sdTorus, sdCylinder
+* Use smin(a, b, k) for smooth blending between shapes
+* March loop: max 128 steps, max distance 100.0
+* On hit: compute normal via central differences, apply Phong/PBR lighting
+* Add fog, glow, and subtle ambient occlusion
+* Background color from ray direction for sky gradient
+* Animate shapes with uTime for organic movement
+` : ''}
+${hints.needsAudio ? `
+AUDIO-REACTIVE SYSTEM REQUIRED
+* Set up AudioContext with AnalyserNode (fftSize = 64)
+* Accept audio source: getUserMedia OR new Audio(url)
+* Extract frequency bands each frame: bass(0-4), mid(5-15), high(16-31)
+* Normalize to 0.0-1.0, smooth with lerp (factor 0.1)
+* Pass as uniforms: material.uniforms.uBass, uMid, uHigh
+* Drive visual parameters: particle scale, displacement amplitude, bloom intensity
+* Provide graceful fallback if audio permission denied (use sine-wave simulation)
+` : ''}
+${hints.needsPostFX ? `
+FULL POST-PROCESSING CHAIN REQUIRED
+* Set up THREE.EffectComposer with WebGLRenderTarget
+* RenderPass as first pass
+* Add UnrealBloomPass (strength 0.8-1.5, radius 0.4, threshold 0.6)
+* Add custom chromatic aberration pass if needed
+* Add film grain pass (subtle, 0.03-0.08 intensity)
+* Add vignette pass (smoothstep from edges)
+* Use composer.render() instead of renderer.render()
+* Resize composer on window resize
+` : ''}
+${hints.needsCurlNoise ? `
+CURL NOISE / FLOW FIELD REQUIRED
+* Implement 3D curl noise from simplex noise derivatives
+* Use curl(x,y,z) = cross(dN/dy - dN/dz, dN/dz - dN/dx, dN/dx - dN/dy)
+* Apply as vertex displacement or particle force field
+* Animate noise offset with time for flowing motion
+* Scale noise frequency (0.5-2.0) and amplitude (0.1-0.5) based on mood
+` : ''}
 
 CRITICAL FORMAT
 
@@ -10471,11 +10665,38 @@ Write raw GLSL code wrapped in a React Three Fiber component.
 
 SPECIALTY
 
-* Mathematical distortion (Simplex/Perlin noise, Voronoi)
+* Mathematical distortion (Simplex/Perlin noise, Voronoi, curl noise)
 * Liquid and fluid simulations in fragment shaders
 * Custom glowing particle meshes using vertex shaders
 * Melting glass / chromatic aberration effects
 * Interactive shader fields with mouse trail distortions
+
+ADVANCED SPECIALTY
+
+* Raymarching / SDF scenes (signed distance fields)
+  - SDF primitives: sdSphere, sdBox, sdTorus, sdCylinder, sdCone
+  - Smooth blending: smin(a, b, k) for organic morphing
+  - Domain repetition, twisting, bending operators
+  - Soft shadows, ambient occlusion, fog
+  - Camera ray from UV coordinates
+  - Max 128 march steps, max distance 100.0
+
+* Audio-reactive shaders
+  - Uniforms: uAudioBass, uAudioMid, uAudioHigh (0.0-1.0)
+  - Drive displacement, color intensity, bloom, scale
+  - Parent component provides audio analysis via Web Audio API
+
+* Full post-processing chains
+  - EffectComposer with RenderPass base
+  - UnrealBloomPass, custom chromatic aberration
+  - Film grain, vignette, depth of field
+  - Custom ShaderPass for unique effects
+
+* Curl noise / vertex displacement
+  - 3D curl noise from simplex derivatives
+  - Vertex displacement in vertex shader
+  - Flow fields for particle motion
+  - Turbulence layering (multiple octaves)
 
 RULES
 
@@ -10487,6 +10708,9 @@ RULES
 6. Keep it highly optimized and avoid heavy branching in fragments.
 7. Output only code.
 8. Do not output JSON.
+9. For raymarching: use full-screen quad, max 128 steps, proper normal calculation.
+10. For audio: accept uAudioBass, uAudioMid, uAudioHigh as props/uniforms.
+11. For post-processing: use @react-three/postprocessing or manual EffectComposer.
 
 OUTPUT FORMAT
 **File: src/components/ShaderScene.tsx**
@@ -10515,6 +10739,10 @@ import { Canvas } from '@react-three/fiber'
         const needsParticles = /particle|bokeh|stars|firefly|mesh/.test(blob);
         const needsLiquid = /liquid|fluid|gel|glass|melt|distortion|refraction/.test(blob);
         const needsScroll = /scroll|scrub|camera|parallax/.test(blob);
+        const needsRaymarch = /raymarch|sdf|signed.?distance|marching|volumetric/.test(blob);
+        const needsAudio = /audio|music|sound|beat|frequency|spectrum|visuali[sz]/.test(blob);
+        const needsPostFX = /bloom|chromatic|dof|depth.?of.?field|grain|god.?ray|vignette|effect.?composer|post.?process/.test(blob);
+        const needsCurlNoise = /curl.?noise|turbulence|flow.?field|vector.?field/.test(blob);
 
         return {
             effects,
@@ -10525,6 +10753,10 @@ import { Canvas } from '@react-three/fiber'
             needsParticles,
             needsLiquid,
             needsScroll,
+            needsRaymarch,
+            needsAudio,
+            needsPostFX,
+            needsCurlNoise,
             primary: palette.primary || '#7C3AED',
             secondary: palette.secondary || '#0EA5E9',
             accent: palette.accent || '#FDE68A',
@@ -10583,6 +10815,35 @@ ${hints.needsLiquid ? '- Favor refraction, Fresnel, turbulence, soft normal pert
 ${hints.needsParticles ? '- Use Points or lightweight instancing only if needed, and keep counts modest.' : ''}
 ${hints.needsMouse ? '- Mouse input should influence distortion, velocity, or parallax in a subtle way.' : ''}
 ${hints.needsScroll ? '- Expose a progress uniform or prop if the scene should support scroll-linked animation.' : ''}
+${hints.needsRaymarch ? `
+RAYMARCHING / SDF REQUIRED
+- Use a full-screen mesh with raymarching in the fragment shader.
+- Implement SDF primitives (sdSphere, sdBox, sdTorus) with smin smooth blending.
+- March loop: max 128 steps, max dist 100.0.
+- Compute normals via central differences. Apply Phong/PBR lighting.
+- Add fog, glow, AO. Animate with uTime.
+` : ''}
+${hints.needsAudio ? `
+AUDIO-REACTIVE REQUIRED
+- Accept uniforms: uAudioBass, uAudioMid, uAudioHigh (0.0-1.0 normalized).
+- Use bass to drive displacement amplitude or particle scale.
+- Use mid for color mixing or glow intensity.
+- Use high for detail frequency or sparkle effects.
+- The parent component handles Web Audio API analysis.
+` : ''}
+${hints.needsPostFX ? `
+POST-PROCESSING REQUIRED
+- Use @react-three/postprocessing or manual EffectComposer.
+- Include: Bloom (strength 1.0, radius 0.4), optional ChromaticAberration, optional Noise/Grain.
+- Apply vignette effect.
+` : ''}
+${hints.needsCurlNoise ? `
+CURL NOISE REQUIRED
+- Implement 3D curl noise in the vertex shader for displacement.
+- Use simplex noise derivatives to compute curl vector.
+- Animate with uTime for flowing organic motion.
+- Layer 2-3 octaves for turbulence.
+` : ''}
 
 CRITICAL FORMAT
 

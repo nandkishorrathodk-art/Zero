@@ -1440,6 +1440,51 @@ class AgentFramework {
             if (advancedEffects.includes('smooth-loader') && !hasLoader) {
                 add('suggestion', 'advanced-effects', 'index.html', 'Smooth loader effect specified but no .page-loader element found.', 'Add a page loader with .page-loader class and entrance transition.');
             }
+
+            // ─── Advanced 3D Technique Verification ───
+            if (advancedEffects.includes('gpgpu-particles')) {
+                const hasGPGPU = /WebGLRenderTarget|FloatType|ping.?pong|data.?texture|positionTexture|velocityTexture/i.test(allCode);
+                if (!hasGPGPU) {
+                    add('warning', 'advanced-3d', 'three-scene.js', 'GPGPU particles requested but no WebGLRenderTarget / ping-pong FBO pattern found.', 'Implement GPGPU with two WebGLRenderTargets (FloatType) for position/velocity simulation.');
+                }
+            }
+
+            if (advancedEffects.includes('raymarched-sdf')) {
+                const hasRaymarch = /raymarch|sdSphere|sdBox|sdTorus|smin\s*\(|signed.?distance/i.test(allCode);
+                if (!hasRaymarch) {
+                    add('warning', 'advanced-3d', 'three-scene.js', 'Raymarching/SDF requested but no SDF functions or march loop found.', 'Implement raymarching with SDF primitives (sdSphere, sdBox) and smooth blending (smin).');
+                }
+            }
+
+            if (advancedEffects.includes('audio-reactive')) {
+                const hasAudio = /AudioContext|AnalyserNode|analyser|getByteFrequencyData|uBass|uMid|uHigh|uAudioBass/i.test(allCode);
+                if (!hasAudio) {
+                    add('warning', 'advanced-3d', 'three-scene.js', 'Audio-reactive effects requested but no Web Audio API setup found.', 'Implement AudioContext with AnalyserNode and pass frequency bands as shader uniforms.');
+                }
+            }
+
+            if (advancedEffects.includes('full-postprocessing')) {
+                const hasPostFX = /EffectComposer|UnrealBloomPass|RenderPass|ShaderPass|postprocessing/i.test(allCode);
+                if (!hasPostFX) {
+                    add('warning', 'advanced-3d', 'three-scene.js', 'Full post-processing requested but no EffectComposer pipeline found.', 'Set up EffectComposer with RenderPass + UnrealBloomPass + custom passes.');
+                }
+            }
+
+            if (advancedEffects.includes('curl-noise-displacement')) {
+                const hasCurl = /curl|curlNoise|curl_noise|turbulence|flowField/i.test(allCode);
+                if (!hasCurl) {
+                    add('suggestion', 'advanced-3d', 'three-scene.js', 'Curl noise displacement requested but no curl noise implementation found.', 'Add 3D curl noise from simplex derivatives for vertex displacement or particle forces.');
+                }
+            }
+
+            // Particle count guard: >50k without GPGPU pattern
+            const particleCountMatch = allCode.match(/(?:count|numParticles|particleCount|PARTICLE_COUNT)\s*=\s*(\d+)/i);
+            if (particleCountMatch) {
+                const count = parseInt(particleCountMatch[1], 10);
+                if (count > 50000 && !/WebGLRenderTarget|FloatType|ping.?pong/i.test(allCode)) {
+                    add('warning', 'performance', 'three-scene.js', `${count} particles requested without GPGPU pattern — will likely cause frame drops.`, 'Use GPGPU ping-pong FBO pattern for particle counts above 50,000.');
+                }
+            }
         }
 
         return { issues, critical: issues.some((issue) => issue.severity === 'critical') };

@@ -25,11 +25,38 @@ Write raw GLSL code wrapped in a React Three Fiber component.
 
 SPECIALTY
 
-* Mathematical distortion (Simplex/Perlin noise, Voronoi)
+* Mathematical distortion (Simplex/Perlin noise, Voronoi, curl noise)
 * Liquid and fluid simulations in fragment shaders
 * Custom glowing particle meshes using vertex shaders
 * Melting glass / chromatic aberration effects
 * Interactive shader fields with mouse trail distortions
+
+ADVANCED SPECIALTY
+
+* Raymarching / SDF scenes (signed distance fields)
+  - SDF primitives: sdSphere, sdBox, sdTorus, sdCylinder, sdCone
+  - Smooth blending: smin(a, b, k) for organic morphing
+  - Domain repetition, twisting, bending operators
+  - Soft shadows, ambient occlusion, fog
+  - Camera ray from UV coordinates
+  - Max 128 march steps, max distance 100.0
+
+* Audio-reactive shaders
+  - Uniforms: uAudioBass, uAudioMid, uAudioHigh (0.0-1.0)
+  - Drive displacement, color intensity, bloom, scale
+  - Parent component provides audio analysis via Web Audio API
+
+* Full post-processing chains
+  - EffectComposer with RenderPass base
+  - UnrealBloomPass, custom chromatic aberration
+  - Film grain, vignette, depth of field
+  - Custom ShaderPass for unique effects
+
+* Curl noise / vertex displacement
+  - 3D curl noise from simplex derivatives
+  - Vertex displacement in vertex shader
+  - Flow fields for particle motion
+  - Turbulence layering (multiple octaves)
 
 RULES
 
@@ -41,6 +68,9 @@ RULES
 6. Keep it highly optimized and avoid heavy branching in fragments.
 7. Output only code.
 8. Do not output JSON.
+9. For raymarching: use full-screen quad, max 128 steps, proper normal calculation.
+10. For audio: accept uAudioBass, uAudioMid, uAudioHigh as props/uniforms.
+11. For post-processing: use @react-three/postprocessing or manual EffectComposer.
 
 OUTPUT FORMAT
 **File: src/components/ShaderScene.tsx**
@@ -69,6 +99,10 @@ import { Canvas } from '@react-three/fiber'
         const needsParticles = /particle|bokeh|stars|firefly|mesh/.test(blob);
         const needsLiquid = /liquid|fluid|gel|glass|melt|distortion|refraction/.test(blob);
         const needsScroll = /scroll|scrub|camera|parallax/.test(blob);
+        const needsRaymarch = /raymarch|sdf|signed.?distance|marching|volumetric/.test(blob);
+        const needsAudio = /audio|music|sound|beat|frequency|spectrum|visuali[sz]/.test(blob);
+        const needsPostFX = /bloom|chromatic|dof|depth.?of.?field|grain|god.?ray|vignette|effect.?composer|post.?process/.test(blob);
+        const needsCurlNoise = /curl.?noise|turbulence|flow.?field|vector.?field/.test(blob);
 
         return {
             effects,
@@ -79,6 +113,10 @@ import { Canvas } from '@react-three/fiber'
             needsParticles,
             needsLiquid,
             needsScroll,
+            needsRaymarch,
+            needsAudio,
+            needsPostFX,
+            needsCurlNoise,
             primary: palette.primary || '#7C3AED',
             secondary: palette.secondary || '#0EA5E9',
             accent: palette.accent || '#FDE68A',
@@ -137,6 +175,35 @@ ${hints.needsLiquid ? '- Favor refraction, Fresnel, turbulence, soft normal pert
 ${hints.needsParticles ? '- Use Points or lightweight instancing only if needed, and keep counts modest.' : ''}
 ${hints.needsMouse ? '- Mouse input should influence distortion, velocity, or parallax in a subtle way.' : ''}
 ${hints.needsScroll ? '- Expose a progress uniform or prop if the scene should support scroll-linked animation.' : ''}
+${hints.needsRaymarch ? `
+RAYMARCHING / SDF REQUIRED
+- Use a full-screen mesh with raymarching in the fragment shader.
+- Implement SDF primitives (sdSphere, sdBox, sdTorus) with smin smooth blending.
+- March loop: max 128 steps, max dist 100.0.
+- Compute normals via central differences. Apply Phong/PBR lighting.
+- Add fog, glow, AO. Animate with uTime.
+` : ''}
+${hints.needsAudio ? `
+AUDIO-REACTIVE REQUIRED
+- Accept uniforms: uAudioBass, uAudioMid, uAudioHigh (0.0-1.0 normalized).
+- Use bass to drive displacement amplitude or particle scale.
+- Use mid for color mixing or glow intensity.
+- Use high for detail frequency or sparkle effects.
+- The parent component handles Web Audio API analysis.
+` : ''}
+${hints.needsPostFX ? `
+POST-PROCESSING REQUIRED
+- Use @react-three/postprocessing or manual EffectComposer.
+- Include: Bloom (strength 1.0, radius 0.4), optional ChromaticAberration, optional Noise/Grain.
+- Apply vignette effect.
+` : ''}
+${hints.needsCurlNoise ? `
+CURL NOISE REQUIRED
+- Implement 3D curl noise in the vertex shader for displacement.
+- Use simplex noise derivatives to compute curl vector.
+- Animate with uTime for flowing organic motion.
+- Layer 2-3 octaves for turbulence.
+` : ''}
 
 CRITICAL FORMAT
 
