@@ -603,8 +603,27 @@ class LLMProvider {
         return p ? p.models : [];
     }
 
+    _autoSelectActiveProvider() {
+        const currentKey = this.getApiKey(this.currentProvider);
+        const currentP = this.providers[this.currentProvider];
+        if (currentP && (currentP.noApiKey || this.currentProvider === 'custom' || currentKey)) {
+            return; // Active provider is ready!
+        }
+        // Find any provider with a valid key or noApiKey requirement
+        for (const [id, p] of Object.entries(this.providers)) {
+            const k = this.getApiKey(id);
+            if (p.noApiKey || (id === 'custom' && this.customBaseUrl) || k) {
+                this.currentProvider = id;
+                this.currentModel = p.models[0]?.id || 'custom';
+                this.saveSettings();
+                return;
+            }
+        }
+    }
+
     /* ===== CORE CHAT METHOD ===== */
     async chat(messages, options = {}) {
+        this._autoSelectActiveProvider();
         const provider = this.providers[this.currentProvider];
         const apiKey = this.apiKeys[this.currentProvider];
         const model = options.model || this.currentModel;
@@ -638,6 +657,7 @@ class LLMProvider {
 
     /* ===== STREAMING CHAT ===== */
     async stream(messages, options = {}, onChunk) {
+        this._autoSelectActiveProvider();
         const provider = this.providers[this.currentProvider];
         const apiKey = this.apiKeys[this.currentProvider];
         const model = options.model || this.currentModel;
@@ -19658,7 +19678,10 @@ window.DeployManager = DeployManager;
         });
 
         // Settings modal
-        document.getElementById('btn-settings')?.addEventListener('click', () => toggleModal('settings-modal', true));
+        document.getElementById('btn-settings')?.addEventListener('click', () => {
+            loadSavedSettings();
+            toggleModal('settings-modal', true);
+        });
         document.getElementById('settings-close')?.addEventListener('click', () => toggleModal('settings-modal', false));
         document.getElementById('btn-save-settings')?.addEventListener('click', saveSettings);
 
@@ -20670,7 +20693,8 @@ Format:
             opt.textContent = m.name;
             select.appendChild(opt);
         });
-        select.value = window.llmProvider.currentModel;
+        const hasCurrentModel = models.some(m => m.id === window.llmProvider.currentModel);
+        select.value = hasCurrentModel ? window.llmProvider.currentModel : (models[0] ? models[0].id : '');
     }
 
     /* ===== SETTINGS ===== */

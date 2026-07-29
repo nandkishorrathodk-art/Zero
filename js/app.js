@@ -318,7 +318,10 @@
         });
 
         // Settings modal
-        document.getElementById('btn-settings')?.addEventListener('click', () => toggleModal('settings-modal', true));
+        document.getElementById('btn-settings')?.addEventListener('click', () => {
+            loadSavedSettings();
+            toggleModal('settings-modal', true);
+        });
         document.getElementById('settings-close')?.addEventListener('click', () => toggleModal('settings-modal', false));
         document.getElementById('btn-save-settings')?.addEventListener('click', saveSettings);
 
@@ -1330,7 +1333,8 @@ Format:
             opt.textContent = m.name;
             select.appendChild(opt);
         });
-        select.value = window.llmProvider.currentModel;
+        const hasCurrentModel = models.some(m => m.id === window.llmProvider.currentModel);
+        select.value = hasCurrentModel ? window.llmProvider.currentModel : (models[0] ? models[0].id : '');
     }
 
     /* ===== SETTINGS ===== */
