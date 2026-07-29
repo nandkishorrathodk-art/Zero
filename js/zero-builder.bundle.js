@@ -805,31 +805,48 @@ class LLMProvider {
         const headers = { 'Content-Type': 'application/json' };
         if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
 
-        let response;
-        try {
-            response = await fetch(url, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify(body),
-            });
-        } catch (e) {
-            if (window.location.protocol === 'https:' && (url.includes('localhost') || url.includes('127.0.0.1'))) {
-                throw new Error(`Browser Security Blocked Local Connection: You are on HTTPS but trying to connect to local Ollama. Please open http://zero-ai.surge.sh (without the 's') or run Zero-Builder locally using 'node server.js'.`);
-            }
-            throw new Error(`Network Error: Failed to connect to ${url}. Please verify your Base URL (e.g. openrouter.ai instead of openrouter.io) and check your internet connection. (${e.message})`);
-        }
+        let retries = 0;
+        const maxRetries = 3;
 
-        if (!response.ok) {
-            const err = await response.text();
-            if (response.status === 401) {
-                throw new Error(`Authentication Error (401): Missing Authentication header. If your custom API requires an API key (e.g. OpenRouter, Together AI, Groq), please enter it in Settings → AI Provider → API Key.`);
+        while (retries <= maxRetries) {
+            let response;
+            try {
+                response = await fetch(url, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(body),
+                });
+            } catch (e) {
+                if (window.location.protocol === 'https:' && (url.includes('localhost') || url.includes('127.0.0.1'))) {
+                    throw new Error(`Browser Security Blocked Local Connection: You are on HTTPS but trying to connect to local Ollama. Please open http://zero-ai.surge.sh (without the 's') or run Zero-Builder locally using 'node server.js'.`);
+                }
+                throw new Error(`Network Error: Failed to connect to ${url}. Please verify your Base URL (e.g. openrouter.ai instead of openrouter.io) and check your internet connection. (${e.message})`);
             }
-            throw new Error(`API error (${response.status}): ${err}`);
-        }
 
-        const text = this._cleanOutputText(data.choices?.[0]?.message?.content || '');
-        this._trackTokens(data.usage?.total_tokens || text.length / 4);
-        return text;
+            if (response.status === 429 && retries < maxRetries) {
+                retries++;
+                const waitMs = retries * 3000;
+                console.warn(`[LLMProvider] Rate limit 429 hit on ${url}. Retrying in ${waitMs / 1000}s (attempt ${retries}/${maxRetries})...`);
+                await new Promise((r) => setTimeout(r, waitMs));
+                continue;
+            }
+
+            if (!response.ok) {
+                const err = await response.text();
+                if (response.status === 401) {
+                    throw new Error(`Authentication Error (401): Missing Authentication header. If your custom API requires an API key (e.g. OpenRouter, Together AI, Groq), please enter it in Settings → AI Provider → API Key.`);
+                }
+                if (response.status === 429) {
+                    throw new Error(`Rate limit exceeded (429) on OpenRouter/Provider. Please wait 10-15 seconds and try again, or switch to Google Gemini / Groq / OpenAI in Settings.`);
+                }
+                throw new Error(`API error (${response.status}): ${err}`);
+            }
+
+            const data = await response.json();
+            const text = this._cleanOutputText(data.choices?.[0]?.message?.content || '');
+            this._trackTokens(data.usage?.total_tokens || text.length / 4);
+            return text;
+        }
     }
 
     async _streamOpenAI(messages, model, apiKey, baseUrl, options, onChunk) {
