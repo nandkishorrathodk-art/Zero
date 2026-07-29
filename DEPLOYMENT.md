@@ -4,10 +4,10 @@ This guide explains how to manage, start, update, and teardown **Zero-Builder** 
 
 ---
 
-## 🌐 Live Domains
-- **Surge:** [zero-pro.surge.sh](https://zero-pro.surge.sh)
-- **Vercel:** [zero-qtnn.vercel.app](https://zero-qtnn.vercel.app)
-- **GitHub:** [github.com/nandkishorrathodk-art/Zero](https://github.com/nandkishorrathodk-art/Zero)
+## 🌐 Primary Live Deployment
+- **Vercel (Primary):** [zero-qtnn.vercel.app](https://zero-qtnn.vercel.app)
+- **GitHub Repo:** [github.com/nandkishorrathodk-art/Zero](https://github.com/nandkishorrathodk-art/Zero)
+- **Surge (Legacy):** [zero-pro.surge.sh](https://zero-pro.surge.sh)
 
 ---
 
