@@ -846,6 +846,9 @@ class LLMProvider {
         };
 
         const isLocal = url.includes('localhost') || url.includes('127.0.0.1') || url.includes('192.168.');
+        if (apiKey && (apiKey.includes('•') || apiKey.includes('●'))) {
+            throw new Error(`Invalid API Key Format: You entered bullet mask characters ("••••••••") instead of your real API key. Please clear the API Key box in Settings and paste your actual OpenRouter key (e.g. sk-or-v1-...).`);
+        }
         if (!apiKey && !isLocal) {
             throw new Error(`API key missing: ${url} requires an API key. Please open Settings (⚙️) → AI Provider and enter your API Key.`);
         }
