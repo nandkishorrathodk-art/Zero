@@ -24,7 +24,7 @@ class VisionAnalyzer {
 Synthesize a detailed web application prompt that instructs an AI developer to recreate this exact modern UI in React / HTML + Tailwind CSS.`;
 
                     // Generate structured description
-                    const result = await this.llmProvider.generateText([
+                    const result = await this.llmProvider.chat([
                         { role: 'user', content: analysisPrompt }
                     ]);
 

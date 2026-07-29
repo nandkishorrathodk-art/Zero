@@ -213,11 +213,11 @@ render() {
     const fileNames = Object.keys(this.files);
     if (fileNames.length === 0) {
         this.treeContainer.innerHTML = `
-            < div class="file-tree-empty" >
+            <div class="file-tree-empty">
                 <i data-lucide="folder-open" class="empty-icon"></i>
                 <p>No files yet</p>
                 <p class="empty-hint">Enter a prompt to generate a website</p>
-            </div > `;
+            </div> `;
         this._refreshIcons();
         return;
     }
@@ -242,15 +242,15 @@ render() {
         const data = this.files[name];
         const item = document.createElement('button');
         item.type = 'button';
-        item.className = `file - item ${ name === this.activeFile ? 'active' : '' } `;
+        item.className = `file-item ${name === this.activeFile ? 'active' : ''}`;
         item.dataset.file = name;
-        item.setAttribute('aria-label', `Open ${ name } `);
+        item.setAttribute('aria-label', `Open ${name}`);
 
         const icon = this._getIcon(name);
         const sizeStr = this._formatSize(data.size);
 
         item.innerHTML = `
-            < i data - lucide="${icon}" ></i >
+            <i data-lucide="${icon}"></i>
             <span class="file-name">${this._escapeHTML(name)}</span>
             <span class="file-size">${sizeStr}</span>
         `;
@@ -381,9 +381,9 @@ _getIcon(filename) {
 
 _formatSize(bytes) {
     const value = Number(bytes) || 0;
-    if (value < 1024) return `${ value } B`;
-    if (value < 1024 * 1024) return `${ (value / 1024).toFixed(1) } KB`;
-    return `${ (value / (1024 * 1024)).toFixed(1) } MB`;
+    if (value < 1024) return `${value} B`;
+    if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+    return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 _basename(path) {
@@ -415,17 +415,16 @@ _nextDuplicateName(originalPath, base, ext) {
     let counter = 2;
 
     while (counter < 1000) {
-        const candidateBase = `${ base } -copy${ counter > 2 ? `-${counter}` : '' } `;
+        const candidateBase = `${base}-copy${counter > 2 ? `-${counter}` : ''}`;
         const candidate = dir
-            ? `${ dir }/${candidateBase}${ext ? `.${ext}` : ''
-    }`
-            : `${ candidateBase }${ ext ? `.${ext}` : '' } `;
+            ? `${dir}/${candidateBase}${ext ? `.${ext}` : ''}`
+            : `${candidateBase}${ext ? `.${ext}` : ''}`;
 
         if (!this.files[candidate]) return candidate;
         counter++;
     }
 
-    return `${ base } -copy.${ ext || 'txt' } `;
+    return `${base}-copy.${ext || 'txt'}`;
 }
 
 _escapeHTML(value) {

@@ -89,33 +89,56 @@ class DeployManager {
         }
 
         try {
-            // Create a new site deploy via the Netlify API
-            // We need to create a zip and upload it
+            // Create a zip of all files
             const zip = new JSZip();
             for (const [filename, content] of Object.entries(files)) {
                 zip.file(filename, content);
             }
             const zipBlob = await zip.generateAsync({ type: 'blob' });
 
-            // Create a new site
-            const createResponse = await fetch('https://api.netlify.com/api/v1/sites', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${this.netlifyToken}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ name: siteName }),
-            });
+            // Reuse existing site if we have one saved
+            let siteId = localStorage.getItem('zb_netlify_site_id') || '';
+            let siteUrl = '';
 
-            if (!createResponse.ok) {
-                const err = await createResponse.text();
-                throw new Error(`Netlify site creation failed: ${err}`);
+            if (siteId) {
+                // Verify site still exists
+                const checkResp = await fetch(`https://api.netlify.com/api/v1/sites/${siteId}`, {
+                    headers: { 'Authorization': `Bearer ${this.netlifyToken}` },
+                });
+                if (!checkResp.ok) {
+                    // Site was deleted — clear and create new
+                    siteId = '';
+                    localStorage.removeItem('zb_netlify_site_id');
+                } else {
+                    const siteData = await checkResp.json();
+                    siteUrl = siteData.ssl_url || siteData.url || '';
+                }
             }
 
-            const site = await createResponse.json();
+            if (!siteId) {
+                // Create a new site
+                const createResponse = await fetch('https://api.netlify.com/api/v1/sites', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${this.netlifyToken}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ name: siteName }),
+                });
+
+                if (!createResponse.ok) {
+                    const err = await createResponse.text();
+                    throw new Error(`Netlify site creation failed: ${err}`);
+                }
+
+                const site = await createResponse.json();
+                siteId = site.id;
+                siteUrl = site.ssl_url || site.url || `https://${site.subdomain}.netlify.app`;
+                localStorage.setItem('zb_netlify_site_id', siteId);
+            }
 
             // Deploy files via zip upload
-            const deployResponse = await fetch(`https://api.netlify.com/api/v1/sites/${site.id}/deploys`, {
+            const deployResponse = await fetch(`https://api.netlify.com/api/v1/sites/${siteId}/deploys`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${this.netlifyToken}`,
@@ -132,8 +155,8 @@ class DeployManager {
             const deploy = await deployResponse.json();
             return {
                 success: true,
-                url: deploy.ssl_url || deploy.url || `https://${site.subdomain}.netlify.app`,
-                siteId: site.id,
+                url: deploy.ssl_url || deploy.url || siteUrl,
+                siteId: siteId,
                 deployId: deploy.id,
             };
         } catch (e) {

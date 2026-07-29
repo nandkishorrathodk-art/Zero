@@ -4142,17 +4142,17 @@ Make it modern, minimalist, and use a viewBox. Do not include markdown formattin
         for (const [id, asset] of Object.entries(assets)) {
             if ((asset.type === 'image' || asset.type === 'svg') && asset.url) {
                 // Replace placeholder references in all files
-                for (const [filename, content] of Object.entries(updated)) {
-                    if (typeof content !== 'string') continue;
+                for (const filename of Object.keys(updated)) {
+                    if (typeof updated[filename] !== 'string') continue;
 
                     // Replace {{media:id}} placeholders
-                    updated[filename] = content.replace(
+                    updated[filename] = updated[filename].replace(
                         new RegExp(`\\{\\{media:${id}\\}\\}`, 'g'),
                         asset.url
                     );
 
                     // Replace generic image placeholders
-                    updated[filename] = content.replace(
+                    updated[filename] = updated[filename].replace(
                         new RegExp(`PLACEHOLDER_IMAGE_${id.toUpperCase()}`, 'g'),
                         asset.url
                     );
@@ -4160,9 +4160,9 @@ Make it modern, minimalist, and use a viewBox. Do not include markdown formattin
             }
 
             if (asset.type === 'video' && asset.format === 'url' && asset.url) {
-                for (const [filename, content] of Object.entries(updated)) {
-                    if (typeof content !== 'string') continue;
-                    updated[filename] = content.replace(
+                for (const filename of Object.keys(updated)) {
+                    if (typeof updated[filename] !== 'string') continue;
+                    updated[filename] = updated[filename].replace(
                         new RegExp(`\\{\\{media:${id}\\}\\}`, 'g'),
                         asset.url
                     );
@@ -15608,11 +15608,11 @@ render() {
     const fileNames = Object.keys(this.files);
     if (fileNames.length === 0) {
         this.treeContainer.innerHTML = `
-            < div class="file-tree-empty" >
+            <div class="file-tree-empty">
                 <i data-lucide="folder-open" class="empty-icon"></i>
                 <p>No files yet</p>
                 <p class="empty-hint">Enter a prompt to generate a website</p>
-            </div > `;
+            </div> `;
         this._refreshIcons();
         return;
     }
@@ -15637,15 +15637,15 @@ render() {
         const data = this.files[name];
         const item = document.createElement('button');
         item.type = 'button';
-        item.className = `file - item ${ name === this.activeFile ? 'active' : '' } `;
+        item.className = `file-item ${name === this.activeFile ? 'active' : ''}`;
         item.dataset.file = name;
-        item.setAttribute('aria-label', `Open ${ name } `);
+        item.setAttribute('aria-label', `Open ${name}`);
 
         const icon = this._getIcon(name);
         const sizeStr = this._formatSize(data.size);
 
         item.innerHTML = `
-            < i data - lucide="${icon}" ></i >
+            <i data-lucide="${icon}"></i>
             <span class="file-name">${this._escapeHTML(name)}</span>
             <span class="file-size">${sizeStr}</span>
         `;
@@ -15776,9 +15776,9 @@ _getIcon(filename) {
 
 _formatSize(bytes) {
     const value = Number(bytes) || 0;
-    if (value < 1024) return `${ value } B`;
-    if (value < 1024 * 1024) return `${ (value / 1024).toFixed(1) } KB`;
-    return `${ (value / (1024 * 1024)).toFixed(1) } MB`;
+    if (value < 1024) return `${value} B`;
+    if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+    return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 _basename(path) {
@@ -15810,17 +15810,16 @@ _nextDuplicateName(originalPath, base, ext) {
     let counter = 2;
 
     while (counter < 1000) {
-        const candidateBase = `${ base } -copy${ counter > 2 ? `-${counter}` : '' } `;
+        const candidateBase = `${base}-copy${counter > 2 ? `-${counter}` : ''}`;
         const candidate = dir
-            ? `${ dir }/${candidateBase}${ext ? `.${ext}` : ''
-    }`
-            : `${ candidateBase }${ ext ? `.${ext}` : '' } `;
+            ? `${dir}/${candidateBase}${ext ? `.${ext}` : ''}`
+            : `${candidateBase}${ext ? `.${ext}` : ''}`;
 
         if (!this.files[candidate]) return candidate;
         counter++;
     }
 
-    return `${ base } -copy.${ ext || 'txt' } `;
+    return `${base}-copy.${ext || 'txt'}`;
 }
 
 _escapeHTML(value) {
@@ -17123,8 +17122,7 @@ class VisualInspector {
             const editInput = document.getElementById('zero-edit-text');
             const newText = editInput ? editInput.value : '';
             target.innerText = newText;
-            if (this.app && this.app.editor) {
-                // Update workspace editor files
+            if (this.app && typeof this.app.syncCurrentFrameToEditor === 'function') {
                 this.app.syncCurrentFrameToEditor();
             }
             this.closeToolbar();
@@ -17181,7 +17179,7 @@ class VisionAnalyzer {
 Synthesize a detailed web application prompt that instructs an AI developer to recreate this exact modern UI in React / HTML + Tailwind CSS.`;
 
                     // Generate structured description
-                    const result = await this.llmProvider.generateText([
+                    const result = await this.llmProvider.chat([
                         { role: 'user', content: analysisPrompt }
                     ]);
 
@@ -17297,33 +17295,56 @@ class DeployManager {
         }
 
         try {
-            // Create a new site deploy via the Netlify API
-            // We need to create a zip and upload it
+            // Create a zip of all files
             const zip = new JSZip();
             for (const [filename, content] of Object.entries(files)) {
                 zip.file(filename, content);
             }
             const zipBlob = await zip.generateAsync({ type: 'blob' });
 
-            // Create a new site
-            const createResponse = await fetch('https://api.netlify.com/api/v1/sites', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${this.netlifyToken}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ name: siteName }),
-            });
+            // Reuse existing site if we have one saved
+            let siteId = localStorage.getItem('zb_netlify_site_id') || '';
+            let siteUrl = '';
 
-            if (!createResponse.ok) {
-                const err = await createResponse.text();
-                throw new Error(`Netlify site creation failed: ${err}`);
+            if (siteId) {
+                // Verify site still exists
+                const checkResp = await fetch(`https://api.netlify.com/api/v1/sites/${siteId}`, {
+                    headers: { 'Authorization': `Bearer ${this.netlifyToken}` },
+                });
+                if (!checkResp.ok) {
+                    // Site was deleted — clear and create new
+                    siteId = '';
+                    localStorage.removeItem('zb_netlify_site_id');
+                } else {
+                    const siteData = await checkResp.json();
+                    siteUrl = siteData.ssl_url || siteData.url || '';
+                }
             }
 
-            const site = await createResponse.json();
+            if (!siteId) {
+                // Create a new site
+                const createResponse = await fetch('https://api.netlify.com/api/v1/sites', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${this.netlifyToken}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ name: siteName }),
+                });
+
+                if (!createResponse.ok) {
+                    const err = await createResponse.text();
+                    throw new Error(`Netlify site creation failed: ${err}`);
+                }
+
+                const site = await createResponse.json();
+                siteId = site.id;
+                siteUrl = site.ssl_url || site.url || `https://${site.subdomain}.netlify.app`;
+                localStorage.setItem('zb_netlify_site_id', siteId);
+            }
 
             // Deploy files via zip upload
-            const deployResponse = await fetch(`https://api.netlify.com/api/v1/sites/${site.id}/deploys`, {
+            const deployResponse = await fetch(`https://api.netlify.com/api/v1/sites/${siteId}/deploys`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${this.netlifyToken}`,
@@ -17340,8 +17361,8 @@ class DeployManager {
             const deploy = await deployResponse.json();
             return {
                 success: true,
-                url: deploy.ssl_url || deploy.url || `https://${site.subdomain}.netlify.app`,
-                siteId: site.id,
+                url: deploy.ssl_url || deploy.url || siteUrl,
+                siteId: siteId,
                 deployId: deploy.id,
             };
         } catch (e) {
@@ -17495,6 +17516,14 @@ window.DeployManager = DeployManager;
                     framework.setMediaGenerator(mediaGen);
                 }
                 if (sandbox) framework.setSandbox(sandbox);
+
+                // Expose framework globally for ReasoningWallHUD and other HUDs
+                window.agentFramework = framework;
+            }
+
+            // Bridge sandbox ↔ preview iframe for LiveBrowserAgent
+            if (sandbox && preview && preview.iframe) {
+                sandbox.iframe = preview.iframe;
             }
 
             // Capture global runtime errors and display them in the terminal
@@ -17641,12 +17670,15 @@ window.DeployManager = DeployManager;
             }
         });
 
-        // Suggestion Chips
+        // Suggestion Chips — use data-template for Motion Studio prompts
         document.querySelectorAll('.welcome-chip').forEach(chip => {
             chip.addEventListener('click', () => {
-                if (welcomePromptInput) {
-                    welcomePromptInput.value = chip.textContent;
-                    handleWelcomeGenerate();
+                const template = chip.dataset.template;
+                if (template) {
+                    applyTemplate(template);
+                } else if (welcomePromptInput) {
+                    welcomePromptInput.value = chip.textContent.trim();
+                    welcomePromptInput.focus();
                 }
             });
         });
@@ -17758,7 +17790,29 @@ window.DeployManager = DeployManager;
 
         // Visual Inspector
         const visualInspector = typeof VisualInspector !== 'undefined'
-            ? new VisualInspector(document.getElementById('preview-iframe'), { editor })
+            ? new VisualInspector(document.getElementById('preview-iframe'), {
+                editor,
+                syncCurrentFrameToEditor() {
+                    // Extract current iframe HTML and sync back to editor/filesystem
+                    try {
+                        const iframeDoc = document.getElementById('preview-iframe')?.contentDocument;
+                        if (!iframeDoc) return;
+                        const html = iframeDoc.documentElement.outerHTML;
+                        const fullHtml = '<!DOCTYPE html>\n<html>' + html.slice(html.indexOf('>') + 1);
+                        if (editor) {
+                            const files = editor.getFiles ? editor.getFiles() : (fileSystem ? fileSystem.getFilesMap() : {});
+                            files['index.html'] = fullHtml;
+                            editor.setFiles(files);
+                            if (fileSystem) fileSystem.setFiles(files);
+                            scheduleWorkspaceSave();
+                            showToast('success', 'Text saved to editor');
+                        }
+                    } catch (e) {
+                        console.warn('syncCurrentFrameToEditor failed:', e);
+                        showToast('warning', 'Could not sync — cross-origin frame');
+                    }
+                }
+            })
             : null;
         document.getElementById('btn-visual-inspector')?.addEventListener('click', () => {
             if (!visualInspector) {

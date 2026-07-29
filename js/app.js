@@ -83,6 +83,14 @@
                     framework.setMediaGenerator(mediaGen);
                 }
                 if (sandbox) framework.setSandbox(sandbox);
+
+                // Expose framework globally for ReasoningWallHUD and other HUDs
+                window.agentFramework = framework;
+            }
+
+            // Bridge sandbox ↔ preview iframe for LiveBrowserAgent
+            if (sandbox && preview && preview.iframe) {
+                sandbox.iframe = preview.iframe;
             }
 
             // Capture global runtime errors and display them in the terminal
@@ -229,12 +237,15 @@
             }
         });
 
-        // Suggestion Chips
+        // Suggestion Chips — use data-template for Motion Studio prompts
         document.querySelectorAll('.welcome-chip').forEach(chip => {
             chip.addEventListener('click', () => {
-                if (welcomePromptInput) {
-                    welcomePromptInput.value = chip.textContent;
-                    handleWelcomeGenerate();
+                const template = chip.dataset.template;
+                if (template) {
+                    applyTemplate(template);
+                } else if (welcomePromptInput) {
+                    welcomePromptInput.value = chip.textContent.trim();
+                    welcomePromptInput.focus();
                 }
             });
         });
@@ -346,7 +357,29 @@
 
         // Visual Inspector
         const visualInspector = typeof VisualInspector !== 'undefined'
-            ? new VisualInspector(document.getElementById('preview-iframe'), { editor })
+            ? new VisualInspector(document.getElementById('preview-iframe'), {
+                editor,
+                syncCurrentFrameToEditor() {
+                    // Extract current iframe HTML and sync back to editor/filesystem
+                    try {
+                        const iframeDoc = document.getElementById('preview-iframe')?.contentDocument;
+                        if (!iframeDoc) return;
+                        const html = iframeDoc.documentElement.outerHTML;
+                        const fullHtml = '<!DOCTYPE html>\n<html>' + html.slice(html.indexOf('>') + 1);
+                        if (editor) {
+                            const files = editor.getFiles ? editor.getFiles() : (fileSystem ? fileSystem.getFilesMap() : {});
+                            files['index.html'] = fullHtml;
+                            editor.setFiles(files);
+                            if (fileSystem) fileSystem.setFiles(files);
+                            scheduleWorkspaceSave();
+                            showToast('success', 'Text saved to editor');
+                        }
+                    } catch (e) {
+                        console.warn('syncCurrentFrameToEditor failed:', e);
+                        showToast('warning', 'Could not sync — cross-origin frame');
+                    }
+                }
+            })
             : null;
         document.getElementById('btn-visual-inspector')?.addEventListener('click', () => {
             if (!visualInspector) {

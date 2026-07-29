@@ -160,8 +160,7 @@ class VisualInspector {
             const editInput = document.getElementById('zero-edit-text');
             const newText = editInput ? editInput.value : '';
             target.innerText = newText;
-            if (this.app && this.app.editor) {
-                // Update workspace editor files
+            if (this.app && typeof this.app.syncCurrentFrameToEditor === 'function') {
                 this.app.syncCurrentFrameToEditor();
             }
             this.closeToolbar();

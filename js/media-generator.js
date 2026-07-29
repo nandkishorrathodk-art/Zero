@@ -330,17 +330,17 @@ Make it modern, minimalist, and use a viewBox. Do not include markdown formattin
         for (const [id, asset] of Object.entries(assets)) {
             if ((asset.type === 'image' || asset.type === 'svg') && asset.url) {
                 // Replace placeholder references in all files
-                for (const [filename, content] of Object.entries(updated)) {
-                    if (typeof content !== 'string') continue;
+                for (const filename of Object.keys(updated)) {
+                    if (typeof updated[filename] !== 'string') continue;
 
                     // Replace {{media:id}} placeholders
-                    updated[filename] = content.replace(
+                    updated[filename] = updated[filename].replace(
                         new RegExp(`\\{\\{media:${id}\\}\\}`, 'g'),
                         asset.url
                     );
 
                     // Replace generic image placeholders
-                    updated[filename] = content.replace(
+                    updated[filename] = updated[filename].replace(
                         new RegExp(`PLACEHOLDER_IMAGE_${id.toUpperCase()}`, 'g'),
                         asset.url
                     );
@@ -348,9 +348,9 @@ Make it modern, minimalist, and use a viewBox. Do not include markdown formattin
             }
 
             if (asset.type === 'video' && asset.format === 'url' && asset.url) {
-                for (const [filename, content] of Object.entries(updated)) {
-                    if (typeof content !== 'string') continue;
-                    updated[filename] = content.replace(
+                for (const filename of Object.keys(updated)) {
+                    if (typeof updated[filename] !== 'string') continue;
+                    updated[filename] = updated[filename].replace(
                         new RegExp(`\\{\\{media:${id}\\}\\}`, 'g'),
                         asset.url
                     );

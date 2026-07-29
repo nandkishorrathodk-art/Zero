@@ -1,45 +1,56 @@
 # Zero-Builder Deployment & Hosting Guide
 
-This guide explains how to manage, start, update, and teardown the **Zero-Builder** website hosted on Surge.sh or running locally.
+This guide explains how to manage, start, update, and teardown **Zero-Builder** hosted on Surge.sh, Vercel, or locally.
 
 ---
 
-## 🌐 Live Domain Information
-- **Domain:** [zero-ai.surge.sh](http://zero-ai.surge.sh)
+## 🌐 Live Domains
+- **Surge:** [zero-pro.surge.sh](https://zero-pro.surge.sh)
+- **Vercel:** [zero-qtnn.vercel.app](https://zero-qtnn.vercel.app)
+- **GitHub:** [github.com/nandkishorrathodk-art/Zero](https://github.com/nandkishorrathodk-art/Zero)
 
 ---
 
 ## 🚀 Commands Cheat Sheet
 
-### 1. Update / Re-Deploy Website (Start & Sync)
-Publish the latest local code changes to the live internet domain:
+### 1. Build Bundle
+Compile all JS source files into `js/zero-builder.bundle.js`:
+```bash
+node build-bundle.js
+```
+
+### 2. Deploy to Surge
+Publish the latest local code changes:
 ```bash
 npx surge . zero-pro.surge.sh
 ```
 
-### 2. Stop / Delete Website (Teardown)
-Take down the live website so it's no longer accessible online (returns 404):
+### 3. Deploy to Vercel
+Push to GitHub — Vercel auto-deploys from `main` branch:
+```bash
+git add -A && git commit -m "update" && git push origin main
+```
+
+### 4. Teardown Surge Site
 ```bash
 npx surge teardown zero-pro.surge.sh
 ```
 
-### 3. List All Live Surge Domains
-View all domains currently published under your account:
+### 5. List All Live Surge Domains
 ```bash
 npx surge list
 ```
 
-### 4. Run Locally (Offline / Development)
-Start the local server for testing on your computer:
+### 6. Run Locally (Development)
 ```bash
 node server.js
 ```
-- Local URL: [http://localhost:3001](http://localhost:3001)
-- Stop local server: Press `Ctrl + C` in the terminal.
+- Local URL: [http://localhost:4173](http://localhost:4173)
+- Stop: Press `Ctrl + C`
 
 ---
 
-## 💡 Troubleshooting Updates (Browser Caching)
-If you deploy new changes but still see the old version in your browser:
-1. **Hard Refresh:** Press `Ctrl + F5` or `Ctrl + Shift + R`.
-2. **Incognito Mode:** Open a new Private / Incognito window (`Ctrl + Shift + N`) and visit `http://zero-ai.surge.sh`.
+## 💡 Troubleshooting (Browser Caching)
+If deployed changes don't appear:
+1. **Hard Refresh:** `Ctrl + F5` or `Ctrl + Shift + R`
+2. **Incognito:** `Ctrl + Shift + N` → visit the domain
