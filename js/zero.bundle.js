@@ -2102,7 +2102,12 @@ class LiveBrowserAgent {
 
             return null;
         } catch (e) {
-            this.log('error', `LiveBrowserAgent failed: ${e.message}`);
+            const isCrossOrigin = /cross-origin|permission denied|securityerror/i.test(e.message || '');
+            if (isCrossOrigin) {
+                this.log('info', 'LiveBrowserAgent skipped: Preview iframe is hosted cross-origin.');
+            } else {
+                this.log('error', `LiveBrowserAgent failed: ${e.message}`);
+            }
             return null;
         } finally {
             this._cleanupSniffer();
@@ -2133,7 +2138,9 @@ class LiveBrowserAgent {
     _getDocument() {
         try {
             const win = this._getWindow();
-            return this.sandbox?.iframe?.contentDocument || win?.document || null;
+            const doc = this.sandbox?.iframe?.contentDocument || win?.document || null;
+            if (doc) void doc.body; // Probe property to catch cross-origin security errors
+            return doc;
         } catch {
             return null;
         }
