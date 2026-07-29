@@ -645,16 +645,19 @@ class LLMProvider {
                 clearTimeout(timeoutId);
             }
 
-            if (retryStatuses.includes(response.status) && retries < maxRetries) {
-                retries++;
-                const waitMs = retries * 2000;
-                console.warn(`[LLMProvider] Retryable status ${response.status} hit on ${url}. Retrying in ${waitMs / 1000}s (attempt ${retries}/${maxRetries})...`);
-                await new Promise((r) => setTimeout(r, waitMs));
-                continue;
-            }
-
             if (!response.ok) {
                 const errText = await response.text();
+                const isNonRetryableRateLimit = (response.status === 429 || response.status === 402) &&
+                    (errText.includes('free-models-per-day') || errText.includes('credits') || errText.includes('quota') || errText.includes('payment'));
+
+                if (retryStatuses.includes(response.status) && retries < maxRetries && !isNonRetryableRateLimit) {
+                    retries++;
+                    const waitMs = retries * 2000;
+                    console.warn(`[LLMProvider] Retryable status ${response.status} hit on ${url}. Retrying in ${waitMs / 1000}s (attempt ${retries}/${maxRetries})...`);
+                    await new Promise((r) => setTimeout(r, waitMs));
+                    continue;
+                }
+
                 if ((response.status === 404 || response.status === 400) && retries < maxRetries) {
                     const slugMatch = errText.match(/use this slug instead:\s*([a-zA-Z0-9_\-\.\/:]+)/i);
                     let suggestedModel = slugMatch ? slugMatch[1].trim() : null;

@@ -783,6 +783,19 @@ Format:
         await executeGeneration(prompt);
     }
 
+    function handleStopGeneration() {
+        if (!isGenerating) return;
+        if (framework) {
+            try { framework.cancel(); } catch (e) { console.warn('Cancel failed:', e); }
+        }
+        isGenerating = false;
+        updateGenerateButton(false);
+        const progressBarContainer = document.getElementById('ws-agent-progress');
+        if (progressBarContainer) progressBarContainer.style.display = 'none';
+        showToast('info', 'Generation stopped');
+        addChatMessage('system', '⏹️ Generation stopped by user.', true);
+    }
+
     async function executeGeneration(prompt) {
         if (!framework) {
             showToast('error', 'Agent framework failed to load. Refresh the page.');
@@ -790,16 +803,7 @@ Format:
         }
 
         if (isGenerating) {
-            // Prevent accidental double-click / Enter cancellation (require at least 4.5s delay)
-            if (Date.now() - generationStartTime < 4500) {
-                showToast('info', 'Generation in progress... Please wait for completion.');
-                return;
-            }
-
-            framework.cancel();
-            isGenerating = false;
-            updateGenerateButton(false);
-            showToast('info', 'Generation cancelled');
+            handleStopGeneration();
             return;
         }
 
@@ -880,13 +884,18 @@ Format:
     async function handleChatSend() {
         const chatInput = document.getElementById('chat-input');
         const prompt = chatInput?.value?.trim();
-        if (!prompt) return;
-
-        chatInput.value = '';
-        addChatMessage('user', prompt);
 
         // IF GENERATION IS CURRENTLY IN PROGRESS:
         if (isGenerating) {
+            if (!prompt) {
+                // Red Stop button clicked without typing text -> Stop generation immediately!
+                handleStopGeneration();
+                return;
+            }
+
+            chatInput.value = '';
+            addChatMessage('user', prompt);
+
             if (framework) {
                 framework.memory = framework.memory || {};
                 framework.memory.midFlightNotes = framework.memory.midFlightNotes || [];
@@ -903,8 +912,12 @@ Format:
                 addChatMessage('ai', "Got it! Saved your instructions for the active build. 🚀");
             }
             showToast('info', 'Note added to active build!');
-            return; // DO NOT CANCEL GENERATION!
+            return;
         }
+
+        if (!prompt) return;
+        chatInput.value = '';
+        addChatMessage('user', prompt);
 
         // IF NO GENERATION IS RUNNING:
         const currentFiles = editor ? editor.getAllFiles() : {};

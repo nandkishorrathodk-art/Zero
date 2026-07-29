@@ -150,13 +150,17 @@ class BaseAgent {
         const stripNoise = (str) =>
             String(str || '')
                 .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+                .replace(/<think>[\s\S]*?<\/think>/gi, '')
                 .replace(/```json/gi, '')
                 .replace(/```/g, '')
                 .replace(/\/\*[\s\S]*?\*\//g, '')
                 .replace(/,\s*([\}\]])/g, '$1')
                 .trim();
 
-        const cleanText = text.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
+        const cleanText = text
+            .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+            .replace(/<think>[\s\S]*?<\/think>/gi, '')
+            .trim();
 
         try { return JSON.parse(cleanText); } catch { /* noop */ }
         try { return JSON.parse(stripNoise(cleanText)); } catch { /* noop */ }
@@ -165,9 +169,14 @@ class BaseAgent {
         try { return JSON.parse(jsonBlock); } catch { /* noop */ }
         try { return JSON.parse(stripNoise(jsonBlock)); } catch { /* noop */ }
 
-        const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-            try { return JSON.parse(stripNoise(jsonMatch[0])); } catch { /* noop */ }
+        const objectMatch = cleanText.match(/\{[\s\S]*\}/);
+        if (objectMatch) {
+            try { return JSON.parse(stripNoise(objectMatch[0])); } catch { /* noop */ }
+        }
+
+        const arrayMatch = cleanText.match(/\[[\s\S]*\]/);
+        if (arrayMatch) {
+            try { return JSON.parse(stripNoise(arrayMatch[0])); } catch { /* noop */ }
         }
 
         throw new Error('Failed to parse JSON from LLM response');
@@ -291,6 +300,24 @@ class AgentFramework {
         this._listeners = {};
         this.abortController = null;
         this._generationLock = false;
+        this.isCancelled = false;
+    }
+
+    cancel() {
+        this.isCancelled = true;
+        this._generationLock = false;
+        if (this.abortController) {
+            try { this.abortController.abort(); } catch { }
+        }
+        this._transition(this.states.IDLE);
+        this.emit('error', { message: 'Generation cancelled by user.' });
+        this.emit('log', { type: 'warning', message: 'Generation cancelled by user.' });
+    }
+
+    _checkAbort() {
+        if (this.isCancelled || this.abortController?.signal?.aborted) {
+            throw new Error('ABORTED');
+        }
     }
 
     _createEmptyMemory() {

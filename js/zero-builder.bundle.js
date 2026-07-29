@@ -1061,16 +1061,19 @@ class LLMProvider {
                 clearTimeout(timeoutId);
             }
 
-            if (retryStatuses.includes(response.status) && retries < maxRetries) {
-                retries++;
-                const waitMs = retries * 2000;
-                console.warn(`[LLMProvider] Retryable status ${response.status} hit on ${url}. Retrying in ${waitMs / 1000}s (attempt ${retries}/${maxRetries})...`);
-                await new Promise((r) => setTimeout(r, waitMs));
-                continue;
-            }
-
             if (!response.ok) {
                 const errText = await response.text();
+                const isNonRetryableRateLimit = (response.status === 429 || response.status === 402) &&
+                    (errText.includes('free-models-per-day') || errText.includes('credits') || errText.includes('quota') || errText.includes('payment'));
+
+                if (retryStatuses.includes(response.status) && retries < maxRetries && !isNonRetryableRateLimit) {
+                    retries++;
+                    const waitMs = retries * 2000;
+                    console.warn(`[LLMProvider] Retryable status ${response.status} hit on ${url}. Retrying in ${waitMs / 1000}s (attempt ${retries}/${maxRetries})...`);
+                    await new Promise((r) => setTimeout(r, waitMs));
+                    continue;
+                }
+
                 if ((response.status === 404 || response.status === 400) && retries < maxRetries) {
                     const slugMatch = errText.match(/use this slug instead:\s*([a-zA-Z0-9_\-\.\/:]+)/i);
                     let suggestedModel = slugMatch ? slugMatch[1].trim() : null;
@@ -2120,11 +2123,20 @@ class LiveBrowserAgent {
        ============================================================ */
 
     _getWindow() {
-        return this.sandbox?.iframe?.contentWindow || null;
+        try {
+            return this.sandbox?.iframe?.contentWindow || null;
+        } catch {
+            return null;
+        }
     }
 
     _getDocument() {
-        return this.sandbox?.iframe?.contentDocument || this._getWindow()?.document || null;
+        try {
+            const win = this._getWindow();
+            return this.sandbox?.iframe?.contentDocument || win?.document || null;
+        } catch {
+            return null;
+        }
     }
 
     /* ============================================================
@@ -2134,12 +2146,13 @@ class LiveBrowserAgent {
     _injectErrorSniffer(win) {
         if (!win) return;
 
-        // Clean up any prior hooks before adding fresh ones.
-        this._cleanupSniffer();
+        try {
+            // Clean up any prior hooks before adding fresh ones.
+            this._cleanupSniffer();
 
-        const prevOnError = win.onerror;
-        const prevConsoleError = win.console?.error;
-        const prevUnhandledRejection = win.onunhandledrejection;
+            const prevOnError = win.onerror;
+            const prevConsoleError = win.console?.error;
+            const prevUnhandledRejection = win.onunhandledrejection;
 
         const pushError = (type, message, meta = {}) => {
             this.errors.push({
@@ -2196,6 +2209,10 @@ class LiveBrowserAgent {
                 // ignore cleanup errors
             }
         };
+        } catch {
+            // Accessing cross-origin window properties threw a SecurityError
+            this._snifferCleanup = null;
+        }
     }
 
     _cleanupSniffer() {
@@ -2636,13 +2653,17 @@ class BaseAgent {
         const stripNoise = (str) =>
             String(str || '')
                 .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+                .replace(/<think>[\s\S]*?<\/think>/gi, '')
                 .replace(/```json/gi, '')
                 .replace(/```/g, '')
                 .replace(/\/\*[\s\S]*?\*\//g, '')
                 .replace(/,\s*([\}\]])/g, '$1')
                 .trim();
 
-        const cleanText = text.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
+        const cleanText = text
+            .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+            .replace(/<think>[\s\S]*?<\/think>/gi, '')
+            .trim();
 
         try { return JSON.parse(cleanText); } catch { /* noop */ }
         try { return JSON.parse(stripNoise(cleanText)); } catch { /* noop */ }
@@ -2651,9 +2672,14 @@ class BaseAgent {
         try { return JSON.parse(jsonBlock); } catch { /* noop */ }
         try { return JSON.parse(stripNoise(jsonBlock)); } catch { /* noop */ }
 
-        const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-            try { return JSON.parse(stripNoise(jsonMatch[0])); } catch { /* noop */ }
+        const objectMatch = cleanText.match(/\{[\s\S]*\}/);
+        if (objectMatch) {
+            try { return JSON.parse(stripNoise(objectMatch[0])); } catch { /* noop */ }
+        }
+
+        const arrayMatch = cleanText.match(/\[[\s\S]*\]/);
+        if (arrayMatch) {
+            try { return JSON.parse(stripNoise(arrayMatch[0])); } catch { /* noop */ }
         }
 
         throw new Error('Failed to parse JSON from LLM response');
@@ -2777,6 +2803,24 @@ class AgentFramework {
         this._listeners = {};
         this.abortController = null;
         this._generationLock = false;
+        this.isCancelled = false;
+    }
+
+    cancel() {
+        this.isCancelled = true;
+        this._generationLock = false;
+        if (this.abortController) {
+            try { this.abortController.abort(); } catch { }
+        }
+        this._transition(this.states.IDLE);
+        this.emit('error', { message: 'Generation cancelled by user.' });
+        this.emit('log', { type: 'warning', message: 'Generation cancelled by user.' });
+    }
+
+    _checkAbort() {
+        if (this.isCancelled || this.abortController?.signal?.aborted) {
+            throw new Error('ABORTED');
+        }
     }
 
     _createEmptyMemory() {
@@ -20332,6 +20376,19 @@ Format:
         await executeGeneration(prompt);
     }
 
+    function handleStopGeneration() {
+        if (!isGenerating) return;
+        if (framework) {
+            try { framework.cancel(); } catch (e) { console.warn('Cancel failed:', e); }
+        }
+        isGenerating = false;
+        updateGenerateButton(false);
+        const progressBarContainer = document.getElementById('ws-agent-progress');
+        if (progressBarContainer) progressBarContainer.style.display = 'none';
+        showToast('info', 'Generation stopped');
+        addChatMessage('system', '⏹️ Generation stopped by user.', true);
+    }
+
     async function executeGeneration(prompt) {
         if (!framework) {
             showToast('error', 'Agent framework failed to load. Refresh the page.');
@@ -20339,16 +20396,7 @@ Format:
         }
 
         if (isGenerating) {
-            // Prevent accidental double-click / Enter cancellation (require at least 4.5s delay)
-            if (Date.now() - generationStartTime < 4500) {
-                showToast('info', 'Generation in progress... Please wait for completion.');
-                return;
-            }
-
-            framework.cancel();
-            isGenerating = false;
-            updateGenerateButton(false);
-            showToast('info', 'Generation cancelled');
+            handleStopGeneration();
             return;
         }
 
@@ -20429,13 +20477,18 @@ Format:
     async function handleChatSend() {
         const chatInput = document.getElementById('chat-input');
         const prompt = chatInput?.value?.trim();
-        if (!prompt) return;
-
-        chatInput.value = '';
-        addChatMessage('user', prompt);
 
         // IF GENERATION IS CURRENTLY IN PROGRESS:
         if (isGenerating) {
+            if (!prompt) {
+                // Red Stop button clicked without typing text -> Stop generation immediately!
+                handleStopGeneration();
+                return;
+            }
+
+            chatInput.value = '';
+            addChatMessage('user', prompt);
+
             if (framework) {
                 framework.memory = framework.memory || {};
                 framework.memory.midFlightNotes = framework.memory.midFlightNotes || [];
@@ -20452,8 +20505,12 @@ Format:
                 addChatMessage('ai', "Got it! Saved your instructions for the active build. 🚀");
             }
             showToast('info', 'Note added to active build!');
-            return; // DO NOT CANCEL GENERATION!
+            return;
         }
+
+        if (!prompt) return;
+        chatInput.value = '';
+        addChatMessage('user', prompt);
 
         // IF NO GENERATION IS RUNNING:
         const currentFiles = editor ? editor.getAllFiles() : {};

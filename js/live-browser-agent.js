@@ -108,11 +108,20 @@ class LiveBrowserAgent {
        ============================================================ */
 
     _getWindow() {
-        return this.sandbox?.iframe?.contentWindow || null;
+        try {
+            return this.sandbox?.iframe?.contentWindow || null;
+        } catch {
+            return null;
+        }
     }
 
     _getDocument() {
-        return this.sandbox?.iframe?.contentDocument || this._getWindow()?.document || null;
+        try {
+            const win = this._getWindow();
+            return this.sandbox?.iframe?.contentDocument || win?.document || null;
+        } catch {
+            return null;
+        }
     }
 
     /* ============================================================
@@ -122,12 +131,13 @@ class LiveBrowserAgent {
     _injectErrorSniffer(win) {
         if (!win) return;
 
-        // Clean up any prior hooks before adding fresh ones.
-        this._cleanupSniffer();
+        try {
+            // Clean up any prior hooks before adding fresh ones.
+            this._cleanupSniffer();
 
-        const prevOnError = win.onerror;
-        const prevConsoleError = win.console?.error;
-        const prevUnhandledRejection = win.onunhandledrejection;
+            const prevOnError = win.onerror;
+            const prevConsoleError = win.console?.error;
+            const prevUnhandledRejection = win.onunhandledrejection;
 
         const pushError = (type, message, meta = {}) => {
             this.errors.push({
@@ -184,6 +194,10 @@ class LiveBrowserAgent {
                 // ignore cleanup errors
             }
         };
+        } catch {
+            // Accessing cross-origin window properties threw a SecurityError
+            this._snifferCleanup = null;
+        }
     }
 
     _cleanupSniffer() {
