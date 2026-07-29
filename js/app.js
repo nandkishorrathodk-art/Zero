@@ -137,17 +137,35 @@
         } catch (err) {
             console.error('Initialization error in ZERO-BUILDER:', err);
         } finally {
-            // Guaranteed: Hide loading screen after delay no matter what
+            // Guaranteed: Hide loading screen and restore correct view (Welcome vs Workspace)
             setTimeout(() => {
                 const loadingScreen = document.getElementById('loading-screen');
+                const welcomeScreen = document.getElementById('welcome-screen');
                 const app = document.getElementById('app');
+                const activeView = localStorage.getItem('zb_active_view');
+                const saved = JSON.parse(localStorage.getItem(WORKSPACE_KEY) || 'null');
+                const hasSavedData = saved && (saved.prompt || (saved.files && Object.keys(saved.files).length > 0));
+
+                if (activeView === 'workspace' || hasSavedData) {
+                    if (welcomeScreen) {
+                        welcomeScreen.style.display = 'none';
+                        welcomeScreen.classList.add('hidden');
+                    }
+                    if (app) app.classList.remove('hidden');
+                } else {
+                    if (welcomeScreen) {
+                        welcomeScreen.style.display = 'flex';
+                        welcomeScreen.classList.remove('hidden');
+                    }
+                }
+
                 if (app) app.classList.remove('hidden');
                 if (loadingScreen) {
                     loadingScreen.classList.add('fade-out');
                     setTimeout(() => loadingScreen.remove(), 600);
                 }
                 if (editor) editor.refresh();
-            }, 800);
+            }, 500);
         }
     }
 
@@ -177,13 +195,14 @@
                 preview.render(files);
                 preview.runInteractionAudit?.();
             }
-            scheduleWorkspaceSave();
+            persistWorkspace();
         });
 
         framework.on('livePreview', ({ files, partial }) => {
             if (editor) editor.setFiles(files);
             if (fileSystem) fileSystem.setFiles(files);
             if (preview) preview.render(files);
+            persistWorkspace();
         });
 
         framework.on('complete', (files) => {
@@ -1594,17 +1613,20 @@ Format:
     }
 
     function persistWorkspace() {
-        if (!editor) return;
         try {
+            const editorFiles = editor ? (editor.getAllFiles ? editor.getAllFiles() : {}) : {};
+            const fsFiles = fileSystem ? (fileSystem.getFilesMap ? fileSystem.getFilesMap() : (fileSystem.files || {})) : {};
+            const combinedFiles = { ...fsFiles, ...editorFiles };
+
             const payload = {
                 id: workspaceProjectId,
                 name: getProjectName(),
-                prompt: document.getElementById('prompt-input')?.value || '',
+                prompt: document.getElementById('prompt-input')?.value || document.getElementById('welcome-prompt-input')?.value || '',
                 requirements: Array.from(selectedRequirements),
                 quality: buildQuality,
                 artDirection: artDirectionPreset,
                 framework: framework?.frameworkOverride || 'vanilla',
-                files: editor.getAllFiles(),
+                files: combinedFiles,
                 updatedAt: Date.now(),
             };
             localStorage.setItem(WORKSPACE_KEY, JSON.stringify(payload));
@@ -1663,11 +1685,14 @@ Format:
         }
     }
 
-    // Protect active generation from accidental F5 refresh
+    // Protect active generation & save state before unload
     window.addEventListener('beforeunload', (e) => {
+        try {
+            persistWorkspace();
+        } catch(err) { /* noop */ }
         if (isGenerating) {
             e.preventDefault();
-            e.returnValue = 'ZERO-BUILDER is currently generating your website. Are you sure you want to refresh?';
+            e.returnValue = 'Generation is currently in progress. Refreshing will pause the active build stream.';
             return e.returnValue;
         }
     });
