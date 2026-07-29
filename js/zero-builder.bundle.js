@@ -835,6 +835,11 @@ class LLMProvider {
             max_tokens: options.maxTokens || 32768,
         };
 
+        const isLocal = url.includes('localhost') || url.includes('127.0.0.1') || url.includes('192.168.');
+        if (!apiKey && !isLocal) {
+            throw new Error(`API key missing: ${url} requires an API key. Please open Settings (⚙️) → AI Provider and enter your API Key.`);
+        }
+
         const headers = { 'Content-Type': 'application/json' };
         if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
 
@@ -898,6 +903,11 @@ class LLMProvider {
             max_tokens: options.maxTokens || 32768,
             stream: true,
         };
+
+        const isLocal = url.includes('localhost') || url.includes('127.0.0.1') || url.includes('192.168.');
+        if (!apiKey && !isLocal) {
+            throw new Error(`API key missing: ${url} requires an API key. Please open Settings (⚙️) → AI Provider and enter your API Key.`);
+        }
 
         const headers = { 'Content-Type': 'application/json' };
         if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
