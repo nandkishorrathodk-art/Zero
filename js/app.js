@@ -1113,9 +1113,10 @@ Format:
 
     /* ===== EXPORT ===== */
     async function handleExport() {
-        const files = editor?.getAllFiles() || {};
-        if (Object.keys(files).length === 0) {
-            showToast('warning', 'No files to export. Generate a website first.');
+        const files = editor?.getAllFiles() || framework?.memory?.generatedFiles || {};
+        const validFileNames = Object.keys(files || {}).filter(k => isNaN(Number(k)) && typeof files[k] === 'string');
+        if (validFileNames.length === 0) {
+            showToast('warning', 'No valid code files generated yet. Complete a build or retry generation first.');
             return;
         }
         if (!deploy) {

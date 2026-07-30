@@ -19606,11 +19606,11 @@ class DeployManager {
         
         for (const [filename, content] of Object.entries(files || {})) {
             const cleanPath = String(filename || '').replace(/^[/\\]+/, '');
-            if (!cleanPath) continue;
+            if (!cleanPath || !isNaN(Number(cleanPath))) continue; // Skip numeric character index keys
             if (typeof content === 'string' && /^data:[^;]+;base64,/i.test(content)) {
                 const base64Data = content.replace(/^data:[^;]+;base64,/i, '');
                 zip.file(cleanPath, base64Data, { base64: true });
-            } else {
+            } else if (typeof content === 'string') {
                 zip.file(cleanPath, content);
             }
         }
@@ -20909,9 +20909,10 @@ Format:
 
     /* ===== EXPORT ===== */
     async function handleExport() {
-        const files = editor?.getAllFiles() || {};
-        if (Object.keys(files).length === 0) {
-            showToast('warning', 'No files to export. Generate a website first.');
+        const files = editor?.getAllFiles() || framework?.memory?.generatedFiles || {};
+        const validFileNames = Object.keys(files || {}).filter(k => isNaN(Number(k)) && typeof files[k] === 'string');
+        if (validFileNames.length === 0) {
+            showToast('warning', 'No valid code files generated yet. Complete a build or retry generation first.');
             return;
         }
         if (!deploy) {

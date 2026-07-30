@@ -37,11 +37,11 @@ class DeployManager {
         
         for (const [filename, content] of Object.entries(files || {})) {
             const cleanPath = String(filename || '').replace(/^[/\\]+/, '');
-            if (!cleanPath) continue;
+            if (!cleanPath || !isNaN(Number(cleanPath))) continue; // Skip numeric character index keys
             if (typeof content === 'string' && /^data:[^;]+;base64,/i.test(content)) {
                 const base64Data = content.replace(/^data:[^;]+;base64,/i, '');
                 zip.file(cleanPath, base64Data, { base64: true });
-            } else {
+            } else if (typeof content === 'string') {
                 zip.file(cleanPath, content);
             }
         }
