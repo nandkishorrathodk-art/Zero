@@ -427,7 +427,7 @@ class LLMProvider {
                 name: 'Google Gemini',
                 baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
                 models: [
-                    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Fast & Free)' },
+                    { id: 'gemini-1.5-flash', name: 'Gemini 2.5 Flash (Fast & Free)' },
                     { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro (Best Quality)' },
                     { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash' },
                 ],
@@ -512,7 +512,7 @@ class LLMProvider {
         };
 
         this.currentProvider = 'gemini';
-        this.currentModel = 'gemini-2.5-flash';
+        this.currentModel = 'gemini-1.5-flash';
         this.apiKeys = {};
         this.customBaseUrl = '';
         this.customModelName = '';
@@ -530,7 +530,7 @@ class LLMProvider {
             if (saved) {
                 const s = JSON.parse(saved);
                 this.currentProvider = localStorage.getItem('zb_current_provider') || s.currentProvider || 'gemini';
-                this.currentModel = localStorage.getItem('zb_current_model') || s.currentModel || 'gemini-2.5-flash';
+                this.currentModel = localStorage.getItem('zb_current_model') || s.currentModel || 'gemini-1.5-flash';
                 this.apiKeys = s.apiKeys || {};
                 this.customBaseUrl = s.customBaseUrl || '';
                 this.customModelName = s.customModelName || '';
@@ -541,7 +541,7 @@ class LLMProvider {
                     if (this.customModelName.includes('content-safety') || this.customModelName.includes('nemotron')) {
                         this.customModelName = '';
                         this.currentProvider = 'gemini';
-                        this.currentModel = 'gemini-2.5-flash';
+                        this.currentModel = 'gemini-1.5-flash';
                     } else if (this.customModelName === 'meta-llama/llama-3.3-70b-instruct:free') {
                         this.customModelName = 'meta-llama/llama-3.3-70b-instruct';
                     }
@@ -563,7 +563,7 @@ class LLMProvider {
         // Auto-heal: If provider is set to custom without a custom URL, switch to Gemini if Gemini key exists
         if (this.currentProvider === 'custom' && !this.customBaseUrl && this.apiKeys['gemini']) {
             this.currentProvider = 'gemini';
-            this.currentModel = 'gemini-2.5-flash';
+            this.currentModel = 'gemini-1.5-flash';
         }
 
         console.log('[LLMProvider] Initialized. Current Provider:', this.currentProvider, 'Gemini Key Present:', !!this.getApiKey('gemini'), 'Total Keys:', Object.keys(this.apiKeys));
@@ -1032,9 +1032,9 @@ class LLMProvider {
                     if (geminiKey) {
                         console.warn(`[LLMProvider] Provider '${this.currentProvider}' hit rate/token limit (${response.status}). Auto-failing over to Google Gemini 2.5 Flash...`);
                         this.currentProvider = 'gemini';
-                        this.currentModel = 'gemini-2.5-flash';
+                        this.currentModel = 'gemini-1.5-flash';
                         this.saveSettings();
-                        return this._chatGemini(messages, 'gemini-2.5-flash', geminiKey, options);
+                        return this._chatGemini(messages, 'gemini-1.5-flash', geminiKey, options);
                     }
                 }
 
@@ -1164,9 +1164,9 @@ class LLMProvider {
                     if (geminiKey) {
                         console.warn(`[LLMProvider] Provider '${this.currentProvider}' hit rate/token limit (${response.status}). Auto-failing over to Google Gemini 2.5 Flash...`);
                         this.currentProvider = 'gemini';
-                        this.currentModel = 'gemini-2.5-flash';
+                        this.currentModel = 'gemini-1.5-flash';
                         this.saveSettings();
-                        return this._streamGemini(messages, 'gemini-2.5-flash', geminiKey, options, onChunk);
+                        return this._streamGemini(messages, 'gemini-1.5-flash', geminiKey, options, onChunk);
                     }
                 }
 
