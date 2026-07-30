@@ -1001,7 +1001,7 @@ class LLMProvider {
         while (retries <= maxRetries) {
             let response;
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 120000);
+            const timeoutId = setTimeout(() => controller.abort(), 180000);
             try {
                 response = await fetch(url, {
                     method: 'POST',
@@ -1011,7 +1011,7 @@ class LLMProvider {
                 });
             } catch (e) {
                 if (e.name === 'AbortError') {
-                    throw new Error(`Network Timeout (120s): Request to ${url} timed out. Please check your network connection or try again.`);
+                    throw new Error(`Network Timeout (180s): Request to ${url} timed out. Please check your network connection or try again.`);
                 }
                 if (window.location.protocol === 'https:' && (url.includes('localhost') || url.includes('127.0.0.1'))) {
                     throw new Error(`Browser Security Blocked Local Connection: You are on HTTPS but trying to connect to local Ollama. Please open http://zero-ai.surge.sh (without the 's') or run Zero-Builder locally using 'node server.js'.`);
@@ -1133,7 +1133,7 @@ class LLMProvider {
         while (retries <= maxRetries) {
             let response;
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 120000);
+            const timeoutId = setTimeout(() => controller.abort(), 180000);
             try {
                 response = await fetch(url, {
                     method: 'POST',
@@ -1143,7 +1143,7 @@ class LLMProvider {
                 });
             } catch (e) {
                 if (e.name === 'AbortError') {
-                    throw new Error(`Network Timeout (120s): Request to ${url} timed out. Please check your network connection or try again.`);
+                    throw new Error(`Network Timeout (180s): Request to ${url} timed out. Please check your network connection or try again.`);
                 }
                 if (window.location.protocol === 'https:' && (url.includes('localhost') || url.includes('127.0.0.1'))) {
                     throw new Error(`Browser Security Blocked Local Connection: You are on HTTPS but trying to connect to local Ollama. Please open http://zero-ai.surge.sh (without the 's') or run Zero-Builder locally using 'node server.js'.`);
@@ -10123,6 +10123,8 @@ RULES
 8. Avoid generic borders; prefer border-white/10 or subtle gradients.
 9. If auth or dashboard flows are implied, include the supporting routes and guard structure.
 10. Return only files you changed.
+11. CRITICAL: If you import a local component (e.g., import Magnet from './magnet'), you MUST provide the source code for that component in your output. Do not leave missing files.
+12. CRITICAL: Do not reference local placeholder images or textures (like /images/... or /textures/...) since you cannot generate binary files. Instead, use absolute URLs (e.g., https://images.unsplash.com/...) or CSS gradients/data URIs.
 
 OUTPUT FORMAT
 **File: package.json**
@@ -16794,28 +16796,28 @@ try {
             return names.split(',').map(n => {
                 const [orig, alias] = n.split(/\s+as\s+/).map(s => s.trim());
                 const local = alias || orig;
-                return `const ${local} = typeof ${orig} !== 'undefined' ? ${orig} : function(){return null;};`;
+                return `var ${local} = typeof ${orig} !== 'undefined' ? ${orig} : function(){return null;};`;
             }).filter(Boolean).join('\n');
         });
         // GSAP
-        src = src.replace(/import\s+(\w+)\s+from\s*['"]gsap(?:\/dist\/gsap)?['"]\s*;?/g, 'const $1 = window.gsap;');
+        src = src.replace(/import\s+(\w+)\s+from\s*['"]gsap(?:\/dist\/gsap)?['"]\s*;?/g, 'var $1 = window.gsap;');
         src = src.replace(/import\s*\{\s*([^}]+)\s*\}\s*from\s*['"]gsap(?:\/[^'"]*)?['"]\s*;?/g, (m, names) => {
             return names.split(',').map(n => {
                 const [orig, alias] = n.split(/\s+as\s+/).map(s => s.trim());
                 const local = alias || orig;
-                if (orig === 'gsap' || orig === 'default') return `const ${local} = window.gsap;`;
-                return `const ${local} = window.gsap?.${orig} || window.${orig};`;
+                if (orig === 'gsap' || orig === 'default') return `var ${local} = window.gsap;`;
+                return `var ${local} = window.gsap?.${orig} || window.${orig};`;
             }).filter(Boolean).join('\n');
         });
         // Lenis
-        src = src.replace(/import\s+(\w+)\s+from\s*['"][^'"]*lenis[^'"]*['"]\s*;?/g, 'const $1 = window.Lenis;');
+        src = src.replace(/import\s+(\w+)\s+from\s*['"][^'"]*lenis[^'"]*['"]\s*;?/g, 'var $1 = window.Lenis;');
         // framer-motion → mock
         src = src.replace(/import\s*\{\s*([^}]+)\s*\}\s*from\s*['"]framer-motion['"]\s*;?/g, (m, names) => {
             return names.split(',').map(n => {
                 const name = n.split(/\s+as\s+/).map(s => s.trim()).pop();
-                if (/^motion$/.test(name)) return `const motion = new Proxy({}, { get: (_, tag) => (props) => React.createElement(tag, props) });`;
-                if (/^AnimatePresence$/.test(name)) return `const AnimatePresence = ({children}) => React.createElement(React.Fragment, null, children);`;
-                return `const ${name} = typeof ${name} !== 'undefined' ? ${name} : function(){return null;};`;
+                if (/^motion$/.test(name)) return `var motion = typeof motion !== 'undefined' ? motion : new Proxy({}, { get: (_, tag) => (props) => React.createElement(tag, props) });`;
+                if (/^AnimatePresence$/.test(name)) return `var AnimatePresence = typeof AnimatePresence !== 'undefined' ? AnimatePresence : ({children}) => React.createElement(React.Fragment, null, children);`;
+                return `var ${name} = typeof ${name} !== 'undefined' ? ${name} : function(){return null;};`;
             }).filter(Boolean).join('\n');
         });
         // lucide-react → map to Icon helper
@@ -16823,7 +16825,7 @@ try {
             return names.split(',').map(n => {
                 const name = n.split(/\s+as\s+/).map(s => s.trim()).pop();
                 const iconName = name.replace(/([A-Z])/g, '-$1').toLowerCase().replace(/^-/, '');
-                return `const ${name} = (props) => React.createElement('i', Object.assign({ 'data-lucide': '${iconName}' }, props));`;
+                return `var ${name} = typeof ${name} !== 'undefined' ? ${name} : (props) => React.createElement('i', Object.assign({ 'data-lucide': '${iconName}' }, props));`;
             }).filter(Boolean).join('\n');
         });
 
