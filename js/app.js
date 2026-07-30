@@ -1033,17 +1033,29 @@ Format:
                 return;
             }
 
-            // If no website exists yet, handle initial generation
+            // If no website exists yet, handle initial generation or resume failed build
             if (!hasFiles) {
-                const questions = await fetchClarificationQuestions(prompt);
-                if (questions && questions.length > 0) {
-                    renderQuestionnaire(questions, prompt);
-                    return;
+                const isRetry = /^(continue|retry|try again|resume|go ahead|proceed|phir se|phir se try karo)$/i.test(prompt);
+                const lastUserPrompt = framework?.memory?.userPrompt;
+
+                let targetPrompt = prompt;
+                if (isRetry && lastUserPrompt) {
+                    targetPrompt = lastUserPrompt;
+                    addChatMessage('system', `🔄 Resuming site generation for: "${escapeHtml(lastUserPrompt.slice(0, 75))}..."`, true);
                 }
+
+                if (!isRetry) {
+                    const questions = await fetchClarificationQuestions(targetPrompt);
+                    if (questions && questions.length > 0) {
+                        renderQuestionnaire(questions, targetPrompt);
+                        return;
+                    }
+                }
+
                 // executeGeneration manages its own isGenerating flag
                 isGenerating = false;
                 updateGenerateButton(false);
-                await executeGeneration(prompt);
+                await executeGeneration(targetPrompt);
                 return;
             }
 

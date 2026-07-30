@@ -944,7 +944,7 @@ class LLMProvider {
         }
         allMessages.push(...conversation);
 
-        const maxLimits = { gemini: 32768, openai: 16384, groq: 8192, mistral: 8192, anthropic: 8192, custom: 16384 };
+        const maxLimits = { gemini: 32768, openai: 16384, groq: 4096, mistral: 8192, anthropic: 8192, custom: 16384 };
         const maxTokens = Math.min(options.maxTokens || 4096, maxLimits[this.currentProvider] || 8192);
 
         const body = {
@@ -1004,10 +1004,10 @@ class LLMProvider {
             if (!response.ok) {
                 const errText = await response.text();
 
-                if ((response.status === 429 || response.status === 402) && url.includes('openrouter.ai')) {
+                if ((response.status === 429 || response.status === 402 || response.status === 413) && (url.includes('openrouter.ai') || url.includes('groq.com') || this.currentProvider === 'groq' || this.currentProvider === 'custom')) {
                     const geminiKey = this.getApiKey('gemini');
                     if (geminiKey) {
-                        console.warn(`[LLMProvider] OpenRouter rate limit hit (${response.status}). Auto-failing over to Google Gemini 2.5 Flash...`);
+                        console.warn(`[LLMProvider] Provider '${this.currentProvider}' hit rate/token limit (${response.status}). Auto-failing over to Google Gemini 2.5 Flash...`);
                         this.currentProvider = 'gemini';
                         this.currentModel = 'gemini-2.5-flash';
                         this.saveSettings();
@@ -1122,10 +1122,10 @@ class LLMProvider {
             if (!response.ok) {
                 const errText = await response.text();
 
-                if ((response.status === 429 || response.status === 402) && url.includes('openrouter.ai')) {
+                if ((response.status === 429 || response.status === 402 || response.status === 413) && (url.includes('openrouter.ai') || url.includes('groq.com') || this.currentProvider === 'groq' || this.currentProvider === 'custom')) {
                     const geminiKey = this.getApiKey('gemini');
                     if (geminiKey) {
-                        console.warn(`[LLMProvider] OpenRouter rate limit hit (${response.status}). Auto-failing over to Google Gemini 2.5 Flash...`);
+                        console.warn(`[LLMProvider] Provider '${this.currentProvider}' hit rate/token limit (${response.status}). Auto-failing over to Google Gemini 2.5 Flash...`);
                         this.currentProvider = 'gemini';
                         this.currentModel = 'gemini-2.5-flash';
                         this.saveSettings();
@@ -20829,17 +20829,29 @@ Format:
                 return;
             }
 
-            // If no website exists yet, handle initial generation
+            // If no website exists yet, handle initial generation or resume failed build
             if (!hasFiles) {
-                const questions = await fetchClarificationQuestions(prompt);
-                if (questions && questions.length > 0) {
-                    renderQuestionnaire(questions, prompt);
-                    return;
+                const isRetry = /^(continue|retry|try again|resume|go ahead|proceed|phir se|phir se try karo)$/i.test(prompt);
+                const lastUserPrompt = framework?.memory?.userPrompt;
+
+                let targetPrompt = prompt;
+                if (isRetry && lastUserPrompt) {
+                    targetPrompt = lastUserPrompt;
+                    addChatMessage('system', `🔄 Resuming site generation for: "${escapeHtml(lastUserPrompt.slice(0, 75))}..."`, true);
                 }
+
+                if (!isRetry) {
+                    const questions = await fetchClarificationQuestions(targetPrompt);
+                    if (questions && questions.length > 0) {
+                        renderQuestionnaire(questions, targetPrompt);
+                        return;
+                    }
+                }
+
                 // executeGeneration manages its own isGenerating flag
                 isGenerating = false;
                 updateGenerateButton(false);
-                await executeGeneration(prompt);
+                await executeGeneration(targetPrompt);
                 return;
             }
 

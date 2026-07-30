@@ -528,7 +528,7 @@ class LLMProvider {
         }
         allMessages.push(...conversation);
 
-        const maxLimits = { gemini: 32768, openai: 16384, groq: 8192, mistral: 8192, anthropic: 8192, custom: 16384 };
+        const maxLimits = { gemini: 32768, openai: 16384, groq: 4096, mistral: 8192, anthropic: 8192, custom: 16384 };
         const maxTokens = Math.min(options.maxTokens || 4096, maxLimits[this.currentProvider] || 8192);
 
         const body = {
@@ -588,10 +588,10 @@ class LLMProvider {
             if (!response.ok) {
                 const errText = await response.text();
 
-                if ((response.status === 429 || response.status === 402) && url.includes('openrouter.ai')) {
+                if ((response.status === 429 || response.status === 402 || response.status === 413) && (url.includes('openrouter.ai') || url.includes('groq.com') || this.currentProvider === 'groq' || this.currentProvider === 'custom')) {
                     const geminiKey = this.getApiKey('gemini');
                     if (geminiKey) {
-                        console.warn(`[LLMProvider] OpenRouter rate limit hit (${response.status}). Auto-failing over to Google Gemini 2.5 Flash...`);
+                        console.warn(`[LLMProvider] Provider '${this.currentProvider}' hit rate/token limit (${response.status}). Auto-failing over to Google Gemini 2.5 Flash...`);
                         this.currentProvider = 'gemini';
                         this.currentModel = 'gemini-2.5-flash';
                         this.saveSettings();
@@ -706,10 +706,10 @@ class LLMProvider {
             if (!response.ok) {
                 const errText = await response.text();
 
-                if ((response.status === 429 || response.status === 402) && url.includes('openrouter.ai')) {
+                if ((response.status === 429 || response.status === 402 || response.status === 413) && (url.includes('openrouter.ai') || url.includes('groq.com') || this.currentProvider === 'groq' || this.currentProvider === 'custom')) {
                     const geminiKey = this.getApiKey('gemini');
                     if (geminiKey) {
-                        console.warn(`[LLMProvider] OpenRouter rate limit hit (${response.status}). Auto-failing over to Google Gemini 2.5 Flash...`);
+                        console.warn(`[LLMProvider] Provider '${this.currentProvider}' hit rate/token limit (${response.status}). Auto-failing over to Google Gemini 2.5 Flash...`);
                         this.currentProvider = 'gemini';
                         this.currentModel = 'gemini-2.5-flash';
                         this.saveSettings();
