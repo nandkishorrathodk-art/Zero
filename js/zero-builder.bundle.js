@@ -987,9 +987,11 @@ class LLMProvider {
 
         const headers = {
             'Content-Type': 'application/json',
-            'HTTP-Referer': typeof window !== 'undefined' ? window.location.origin : 'http://localhost:4173',
-            'X-Title': 'Zero-Engineer',
         };
+        if (url.includes('openrouter.ai')) {
+            headers['HTTP-Referer'] = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:4173';
+            headers['X-Title'] = 'Zero-Engineer';
+        }
         if (apiKey) headers['Authorization'] = `Bearer ${apiKey.trim()}`;
 
         let retries = 0;
@@ -1117,9 +1119,11 @@ class LLMProvider {
 
         const headers = {
             'Content-Type': 'application/json',
-            'HTTP-Referer': typeof window !== 'undefined' ? window.location.origin : 'http://localhost:4173',
-            'X-Title': 'Zero-Engineer',
         };
+        if (url.includes('openrouter.ai')) {
+            headers['HTTP-Referer'] = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:4173';
+            headers['X-Title'] = 'Zero-Engineer';
+        }
         if (apiKey) headers['Authorization'] = `Bearer ${apiKey.trim()}`;
 
         let retries = 0;
