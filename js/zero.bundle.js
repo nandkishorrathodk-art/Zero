@@ -767,27 +767,44 @@ class LLMProvider {
             body.systemInstruction = { parts: [{ text: systemPrompt }] };
         }
 
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-        });
+        let retries = 0;
+        const maxRetries = 3;
 
-        if (!response.ok) {
-            const err = await response.text();
-            throw new Error(`Gemini API error (${response.status}): ${err}`);
-        }
+        while (retries <= maxRetries) {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
 
-        const data = await response.json();
-        // Gemini may return multiple parts; join them. Also surface blocked responses.
-        const parts = data.candidates?.[0]?.content?.parts || [];
-        const text = this._cleanOutputText(parts.map((p) => p.text || '').join('') || '');
-        if (!text && data.promptFeedback?.blockReason) {
-            throw new Error(`Gemini blocked the request: ${data.promptFeedback.blockReason}`);
+            if (response.status === 429 && retries < maxRetries) {
+                retries++;
+                const errText = await response.text();
+                let waitMs = 12000; // default 12s backoff for Gemini free tier
+                const delayMatch = errText.match(/retryDelay"?:\s*"(\d+)s/i) || errText.match(/retry in (\d+(?:\.\d+)?)s/i);
+                if (delayMatch) {
+                    waitMs = Math.max(2000, Math.ceil(parseFloat(delayMatch[1]) * 1000) + 1000);
+                }
+                console.warn(`[LLMProvider] Gemini 429 Rate Limit hit. Waiting ${waitMs / 1000}s before retry (${retries}/${maxRetries})...`);
+                await new Promise((r) => setTimeout(r, waitMs));
+                continue;
+            }
+
+            if (!response.ok) {
+                const err = await response.text();
+                throw new Error(this._parseErrorMessage(response.status, err));
+            }
+
+            const data = await response.json();
+            const parts = data.candidates?.[0]?.content?.parts || [];
+            const text = this._cleanOutputText(parts.map((p) => p.text || '').join('') || '');
+            if (!text && data.promptFeedback?.blockReason) {
+                throw new Error(`Gemini blocked the request: ${data.promptFeedback.blockReason}`);
+            }
+            
+            this._trackTokens(text.length / 4);
+            return text;
         }
-        
-        this._trackTokens(text.length / 4); // rough estimate
-        return text;
     }
 
     async _streamGemini(messages, model, apiKey, options, onChunk) {
