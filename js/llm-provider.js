@@ -585,7 +585,7 @@ class LLMProvider {
         while (retries <= maxRetries) {
             let response;
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 120000);
+            const timeoutId = setTimeout(() => controller.abort(), 180000);
             try {
                 response = await fetch(url, {
                     method: 'POST',
@@ -595,7 +595,7 @@ class LLMProvider {
                 });
             } catch (e) {
                 if (e.name === 'AbortError') {
-                    throw new Error(`Network Timeout (120s): Request to ${url} timed out. Please check your network connection or try again.`);
+                    throw new Error(`Network Timeout (180s): Request to ${url} timed out. Please check your network connection or try again.`);
                 }
                 if (window.location.protocol === 'https:' && (url.includes('localhost') || url.includes('127.0.0.1'))) {
                     throw new Error(`Browser Security Blocked Local Connection: You are on HTTPS but trying to connect to local Ollama. Please open http://zero-ai.surge.sh (without the 's') or run Zero-Builder locally using 'node server.js'.`);
@@ -717,7 +717,7 @@ class LLMProvider {
         while (retries <= maxRetries) {
             let response;
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 120000);
+            const timeoutId = setTimeout(() => controller.abort(), 180000);
             try {
                 response = await fetch(url, {
                     method: 'POST',
@@ -727,7 +727,7 @@ class LLMProvider {
                 });
             } catch (e) {
                 if (e.name === 'AbortError') {
-                    throw new Error(`Network Timeout (120s): Request to ${url} timed out. Please check your network connection or try again.`);
+                    throw new Error(`Network Timeout (180s): Request to ${url} timed out. Please check your network connection or try again.`);
                 }
                 if (window.location.protocol === 'https:' && (url.includes('localhost') || url.includes('127.0.0.1'))) {
                     throw new Error(`Browser Security Blocked Local Connection: You are on HTTPS but trying to connect to local Ollama. Please open http://zero-ai.surge.sh (without the 's') or run Zero-Builder locally using 'node server.js'.`);
