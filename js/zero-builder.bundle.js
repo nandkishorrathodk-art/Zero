@@ -2528,6 +2528,9 @@ class BaseAgent {
     }
 
     async callLLM(userMessage, systemPrompt, options = {}) {
+        if (this.framework?.isCancelled || this.framework?.abortController?.signal?.aborted) {
+            throw new Error('ABORTED');
+        }
         if (!this.llm || typeof this.llm.chat !== 'function') {
             throw new Error(`LLM provider is not available for ${this.name}`);
         }
@@ -2539,12 +2542,16 @@ class BaseAgent {
 
         // Preferred modern path: system + user messages.
         try {
-            return await this.llm.chat(messages, options);
+            return await this.llm.chat(messages, { signal: this.framework?.abortController?.signal, ...options });
         } catch (primaryError) {
+            if (this.framework?.isCancelled || primaryError?.message === 'ABORTED') {
+                throw new Error('ABORTED');
+            }
             // Compatibility fallback for older providers that expect systemPrompt in options.
             try {
                 return await this.llm.chat([{ role: 'user', content: userMessage || '' }], {
                     systemPrompt: systemPrompt || '',
+                    signal: this.framework?.abortController?.signal,
                     ...options,
                 });
             } catch (fallbackError) {
@@ -2555,6 +2562,9 @@ class BaseAgent {
     }
 
     async streamLLM(userMessage, systemPrompt, onChunk, options = {}) {
+        if (this.framework?.isCancelled || this.framework?.abortController?.signal?.aborted) {
+            throw new Error('ABORTED');
+        }
         if (!this.llm || typeof this.llm.stream !== 'function') {
             throw new Error(`Streaming LLM provider is not available for ${this.name}`);
         }
@@ -20518,9 +20528,16 @@ Format:
         try {
             // Pass art direction as generate() options so it survives the memory reset
             if (framework) framework.aiMode = buildQuality;
-            await framework.generate(buildGenerationBrief(prompt), {
+            const res = await framework.generate(buildGenerationBrief(prompt), {
                 artDirection: artDirectionPreset,
             });
+
+            if (framework?.isCancelled || res === null) {
+                // Was stopped/cancelled by user
+                isGenerating = false;
+                updateGenerateButton(false);
+                return;
+            }
 
             // Add success message in chat instead of replacing
             addChatMessage('system', '✅ Generation complete! Check the preview.', true);
@@ -20528,6 +20545,11 @@ Format:
             console.error('Generation error:', e);
             isGenerating = false;
             updateGenerateButton(false);
+
+            if (e?.message === 'ABORTED' || framework?.isCancelled) {
+                return;
+            }
+
             const msg = e?.message || String(e);
 
             // Add error message instead of replacing
@@ -20642,11 +20664,18 @@ Format:
             if (!framework) throw new Error('Agent framework is not available');
 
             // Apply actual code changes if files already exist
-            await framework.refine(prompt);
+            const refRes = await framework.refine(prompt);
+
+            if (framework?.isCancelled || refRes === null) {
+                return;
+            }
 
             // Add final completion message
             addChatMessage('system', '✅ Changes applied! Check the preview.', true);
         } catch (e) {
+            if (e?.message === 'ABORTED' || framework?.isCancelled) {
+                return;
+            }
             addChatMessage('system', `❌ Error: ${e.message}`, true);
             showToast('error', `Chat failed: ${e.message}`);
         } finally {

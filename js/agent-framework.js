@@ -18,6 +18,9 @@ class BaseAgent {
     }
 
     async callLLM(userMessage, systemPrompt, options = {}) {
+        if (this.framework?.isCancelled || this.framework?.abortController?.signal?.aborted) {
+            throw new Error('ABORTED');
+        }
         if (!this.llm || typeof this.llm.chat !== 'function') {
             throw new Error(`LLM provider is not available for ${this.name}`);
         }
@@ -29,12 +32,16 @@ class BaseAgent {
 
         // Preferred modern path: system + user messages.
         try {
-            return await this.llm.chat(messages, options);
+            return await this.llm.chat(messages, { signal: this.framework?.abortController?.signal, ...options });
         } catch (primaryError) {
+            if (this.framework?.isCancelled || primaryError?.message === 'ABORTED') {
+                throw new Error('ABORTED');
+            }
             // Compatibility fallback for older providers that expect systemPrompt in options.
             try {
                 return await this.llm.chat([{ role: 'user', content: userMessage || '' }], {
                     systemPrompt: systemPrompt || '',
+                    signal: this.framework?.abortController?.signal,
                     ...options,
                 });
             } catch (fallbackError) {
@@ -45,6 +52,9 @@ class BaseAgent {
     }
 
     async streamLLM(userMessage, systemPrompt, onChunk, options = {}) {
+        if (this.framework?.isCancelled || this.framework?.abortController?.signal?.aborted) {
+            throw new Error('ABORTED');
+        }
         if (!this.llm || typeof this.llm.stream !== 'function') {
             throw new Error(`Streaming LLM provider is not available for ${this.name}`);
         }

@@ -908,9 +908,16 @@ Format:
         try {
             // Pass art direction as generate() options so it survives the memory reset
             if (framework) framework.aiMode = buildQuality;
-            await framework.generate(buildGenerationBrief(prompt), {
+            const res = await framework.generate(buildGenerationBrief(prompt), {
                 artDirection: artDirectionPreset,
             });
+
+            if (framework?.isCancelled || res === null) {
+                // Was stopped/cancelled by user
+                isGenerating = false;
+                updateGenerateButton(false);
+                return;
+            }
 
             // Add success message in chat instead of replacing
             addChatMessage('system', '✅ Generation complete! Check the preview.', true);
@@ -918,6 +925,11 @@ Format:
             console.error('Generation error:', e);
             isGenerating = false;
             updateGenerateButton(false);
+
+            if (e?.message === 'ABORTED' || framework?.isCancelled) {
+                return;
+            }
+
             const msg = e?.message || String(e);
 
             // Add error message instead of replacing
@@ -1032,11 +1044,18 @@ Format:
             if (!framework) throw new Error('Agent framework is not available');
 
             // Apply actual code changes if files already exist
-            await framework.refine(prompt);
+            const refRes = await framework.refine(prompt);
+
+            if (framework?.isCancelled || refRes === null) {
+                return;
+            }
 
             // Add final completion message
             addChatMessage('system', '✅ Changes applied! Check the preview.', true);
         } catch (e) {
+            if (e?.message === 'ABORTED' || framework?.isCancelled) {
+                return;
+            }
             addChatMessage('system', `❌ Error: ${e.message}`, true);
             showToast('error', `Chat failed: ${e.message}`);
         } finally {
