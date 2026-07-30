@@ -614,8 +614,17 @@ class LLMProvider {
 
                 if (retryStatuses.includes(response.status) && retries < maxRetries) {
                     retries++;
-                    const waitMs = retries * 2000;
-                    console.warn(`[LLMProvider] Retryable status ${response.status} hit on ${url}. Retrying in ${waitMs / 1000}s (attempt ${retries}/${maxRetries})...`);
+                    let waitMs = retries * 2000;
+                    const retrySecMatch = errText.match(/try again in ([0-9\.]+)s/i);
+                    if (retrySecMatch && retrySecMatch[1]) {
+                        const sec = parseFloat(retrySecMatch[1]);
+                        if (!isNaN(sec) && sec > 0 && sec <= 35) {
+                            waitMs = Math.ceil(sec * 1000) + 500;
+                            console.info(`[LLMProvider] Groq rate limit active. Waiting exact ${sec}s before retry ${retries}/${maxRetries}...`);
+                        }
+                    } else {
+                        console.warn(`[LLMProvider] Retryable status ${response.status} hit on ${url}. Retrying in ${waitMs / 1000}s (attempt ${retries}/${maxRetries})...`);
+                    }
                     await new Promise((r) => setTimeout(r, waitMs));
                     continue;
                 }
@@ -738,8 +747,17 @@ class LLMProvider {
 
                 if (retryStatuses.includes(response.status) && retries < maxRetries && !isNonRetryableRateLimit) {
                     retries++;
-                    const waitMs = retries * 2000;
-                    console.warn(`[LLMProvider] Retryable status ${response.status} hit on ${url}. Retrying in ${waitMs / 1000}s (attempt ${retries}/${maxRetries})...`);
+                    let waitMs = retries * 2000;
+                    const retrySecMatch = errText.match(/try again in ([0-9\.]+)s/i);
+                    if (retrySecMatch && retrySecMatch[1]) {
+                        const sec = parseFloat(retrySecMatch[1]);
+                        if (!isNaN(sec) && sec > 0 && sec <= 35) {
+                            waitMs = Math.ceil(sec * 1000) + 500;
+                            console.info(`[LLMProvider] Groq rate limit active. Waiting exact ${sec}s before streaming retry ${retries}/${maxRetries}...`);
+                        }
+                    } else {
+                        console.warn(`[LLMProvider] Retryable status ${response.status} hit on ${url}. Retrying in ${waitMs / 1000}s (attempt ${retries}/${maxRetries})...`);
+                    }
                     await new Promise((r) => setTimeout(r, waitMs));
                     continue;
                 }
