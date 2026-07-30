@@ -566,16 +566,27 @@ class LLMProvider {
                 clearTimeout(timeoutId);
             }
 
-            if (retryStatuses.includes(response.status) && retries < maxRetries) {
-                retries++;
-                const waitMs = retries * 2000;
-                console.warn(`[LLMProvider] Retryable status ${response.status} hit on ${url}. Retrying in ${waitMs / 1000}s (attempt ${retries}/${maxRetries})...`);
-                await new Promise((r) => setTimeout(r, waitMs));
-                continue;
-            }
-
             if (!response.ok) {
                 const errText = await response.text();
+
+                if ((response.status === 429 || response.status === 402) && url.includes('openrouter.ai')) {
+                    const geminiKey = this.getApiKey('gemini');
+                    if (geminiKey) {
+                        console.warn(`[LLMProvider] OpenRouter rate limit hit (${response.status}). Auto-failing over to Google Gemini 2.5 Flash...`);
+                        this.currentProvider = 'gemini';
+                        this.currentModel = 'gemini-2.5-flash';
+                        this.saveSettings();
+                        return this._chatGemini(messages, 'gemini-2.5-flash', geminiKey, options);
+                    }
+                }
+
+                if (retryStatuses.includes(response.status) && retries < maxRetries) {
+                    retries++;
+                    const waitMs = retries * 2000;
+                    console.warn(`[LLMProvider] Retryable status ${response.status} hit on ${url}. Retrying in ${waitMs / 1000}s (attempt ${retries}/${maxRetries})...`);
+                    await new Promise((r) => setTimeout(r, waitMs));
+                    continue;
+                }
                 if ((response.status === 404 || response.status === 400) && retries < maxRetries) {
                     const slugMatch = errText.match(/use this slug instead:\s*([a-zA-Z0-9_\-\.\/:]+)/i);
                     let suggestedModel = slugMatch ? slugMatch[1].trim() : null;
@@ -670,6 +681,18 @@ class LLMProvider {
 
             if (!response.ok) {
                 const errText = await response.text();
+
+                if ((response.status === 429 || response.status === 402) && url.includes('openrouter.ai')) {
+                    const geminiKey = this.getApiKey('gemini');
+                    if (geminiKey) {
+                        console.warn(`[LLMProvider] OpenRouter rate limit hit (${response.status}). Auto-failing over to Google Gemini 2.5 Flash...`);
+                        this.currentProvider = 'gemini';
+                        this.currentModel = 'gemini-2.5-flash';
+                        this.saveSettings();
+                        return this._streamGemini(messages, 'gemini-2.5-flash', geminiKey, options, onChunk);
+                    }
+                }
+
                 const isNonRetryableRateLimit = (response.status === 429 || response.status === 402) &&
                     (errText.includes('free-models-per-day') || errText.includes('credits') || errText.includes('quota') || errText.includes('payment'));
 
