@@ -20135,6 +20135,7 @@ window.DeployManager = DeployManager;
         // Chat panel
         document.getElementById('chat-send')?.addEventListener('click', handleChatSend);
         document.getElementById('btn-stop-generation')?.addEventListener('click', handleStopGeneration);
+        document.getElementById('btn-new-chat')?.addEventListener('click', handleNewChat);
         document.getElementById('chat-input')?.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -20411,6 +20412,51 @@ Format:
         if (progressBarContainer) progressBarContainer.style.display = 'none';
         showToast('info', 'Generation stopped');
         addChatMessage('system', '⏹️ Generation stopped by user.', true);
+    }
+
+    function handleNewChat() {
+        const files = editor?.getAllFiles() || {};
+        if (Object.keys(files).length > 0) {
+            createSnapshot('Before starting new chat');
+        }
+
+        // 1. Clear chat message bubbles
+        const chatMessages = document.getElementById('chat-messages');
+        if (chatMessages) chatMessages.innerHTML = '';
+
+        // 2. Clear input fields
+        const chatInput = document.getElementById('chat-input');
+        if (chatInput) chatInput.value = '';
+        const welcomeInput = document.getElementById('welcome-prompt-input');
+        if (welcomeInput) welcomeInput.value = '';
+
+        // 3. Clear current files, editor, and preview
+        if (editor) editor.setFiles({});
+        if (fileSystem) fileSystem.setFiles({});
+        if (preview) preview.render({});
+
+        // 4. Reset framework memory and status
+        if (framework) {
+            framework.memory = { generatedFiles: {} };
+            framework.isCancelled = false;
+        }
+
+        // 5. Reset project name
+        const projectNameInput = document.getElementById('project-name');
+        if (projectNameInput) projectNameInput.value = 'Untitled project';
+
+        // 6. Clear saved workspace key so fresh start is clean
+        localStorage.removeItem(WORKSPACE_KEY);
+
+        // 7. Show Welcome Screen
+        localStorage.setItem('zb_active_view', 'welcome');
+        const welcomeScreen = document.getElementById('welcome-screen');
+        if (welcomeScreen) {
+            welcomeScreen.style.display = 'flex';
+            welcomeScreen.classList.remove('hidden');
+        }
+        renderRecentProjects();
+        showToast('success', 'New chat started! Ready for your next project.');
     }
 
     async function executeGeneration(prompt) {
