@@ -250,13 +250,13 @@ try {
 <body>
     <div id="root"></div>
     <script>
-        // Quiet noisy CDN warnings
-        ['warn', 'info'].forEach(method => {
+        // Quiet noisy CDN & devtools warnings
+        ['warn', 'info', 'error'].forEach(method => {
             const orig = console[method];
             if (!orig) return;
             console[method] = function (...args) {
                 const msg = args.map(a => (typeof a === 'string' ? a : (a?.message || ''))).join(' ');
-                if (/tailwindcss|Babel|production|PostCSS|cdn\\.tailwindcss|deprecated with r150|removed with r160/i.test(msg)) return;
+                if (/tailwindcss|Babel|production|PostCSS|cdn\\.tailwindcss|deprecated with r150|removed with r160|Source map|OrbitControls|studio-freight/i.test(msg)) return;
                 orig.apply(console, args);
             };
         });
@@ -549,6 +549,16 @@ try {
         this._inlineAssets(doc, files);
         this._patchCssUrls(doc, files);
         this._demoteModuleScripts(doc);
+
+        // Sanitize broken/deprecated CDN scripts in parsed HTML
+        doc.querySelectorAll('script[src]').forEach(script => {
+            const src = script.getAttribute('src') || '';
+            if (src.includes('@studio-freight/lenis')) {
+                script.setAttribute('src', 'https://unpkg.com/lenis@1.1.14/dist/lenis.min.js');
+            } else if (src.includes('OrbitControls.js')) {
+                script.remove();
+            }
+        });
 
         if (!doc.querySelector('script[src*="tailwindcss"]')) {
             const s = doc.createElement('script');
