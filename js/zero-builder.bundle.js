@@ -617,15 +617,23 @@ class LLMProvider {
     getApiKey(providerId) {
         const id = providerId || this.currentProvider;
         let key = (this.apiKeys && this.apiKeys[id]) || localStorage.getItem(`zb_key_${id}`) || '';
-        if ((!key || !key.trim())) {
-            // Fallback: If requested provider key is blank, check if user saved a key for any other provider
-            const providersToTry = ['gemini', 'openai', 'groq', 'deepseek', 'anthropic', 'custom'];
-            for (const p of providersToTry) {
-                const altKey = (this.apiKeys && this.apiKeys[p]) || localStorage.getItem(`zb_key_${p}`);
-                if (altKey && altKey.trim()) return altKey.trim();
-            }
+        if (key && key.trim()) {
+            const k = key.trim();
+            // Prevent key cross-contamination between different providers
+            if (id === 'gemini' && (k.startsWith('gsk_') || k.startsWith('sk-ant-') || k.startsWith('sk-or-'))) return '';
+            if (id === 'groq' && (k.startsWith('AIzaSy') || k.startsWith('sk-ant-'))) return '';
+            if (id === 'openai' && k.startsWith('AIzaSy')) return '';
+            return k;
         }
-        return key ? key.trim() : '';
+        // Strict fallback: Only return keys matching the target provider format
+        if (id === 'gemini') {
+            const cand = (this.apiKeys && this.apiKeys.gemini) || localStorage.getItem('zb_key_gemini');
+            if (cand && cand.trim().startsWith('AIzaSy')) return cand.trim();
+        } else if (id === 'groq') {
+            const cand = (this.apiKeys && this.apiKeys.groq) || localStorage.getItem('zb_key_groq');
+            if (cand && cand.trim().startsWith('gsk_')) return cand.trim();
+        }
+        return '';
     }
 
     getProviderInfo() {
