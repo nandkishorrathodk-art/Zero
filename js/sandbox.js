@@ -100,7 +100,7 @@ class SandboxManager {
         const rawAppCode = `
 const { useState, useEffect, useRef, useMemo, useCallback, useContext, createContext, Fragment } = React;
 
-// ---- Next.js mock helpers ----
+// ---- Next.js & Prisma mock helpers ----
 const useRouter = () => ({
     push: (url) => console.log('[mock] router.push', url),
     replace: (url) => console.log('[mock] router.replace', url),
@@ -117,6 +117,17 @@ const Link = ({ href = '#', children, ...props }) =>
     React.createElement('a', { href, ...props }, children);
 const Image = ({ src, alt = '', width, height, ...props }) =>
     React.createElement('img', { src, alt, width, height, ...props });
+
+// ---- Prisma DB mock for browser preview ----
+const prismaMockHandler = {
+    get: (target, prop) => {
+        if (typeof target[prop] !== 'undefined') return target[prop];
+        return new Proxy({}, {
+            get: (_, method) => () => Promise.resolve([])
+        });
+    }
+};
+const prisma = new Proxy({}, prismaMockHandler);
 
 // ---- Lucide helper ----
 const Icon = ({ name, className = 'w-5 h-5', ...props }) =>
@@ -410,13 +421,15 @@ try {
             // remove "use client" / "use server"
             .replace(/["']use client["'];?/g, '')
             .replace(/["']use server["'];?/g, '')
-            // default export → plain function / class
+            // default export → plain function / class (including async functions)
+            .replace(/export\s+default\s+async\s+function\s+([A-Za-z0-9_]+)/g, 'async function $1')
+            .replace(/export\s+default\s+async\s+function\s*(?=\()/g, 'async function DefaultApp')
             .replace(/export\s+default\s+function\s+([A-Za-z0-9_]+)/g, 'function $1')
             .replace(/export\s+default\s+function\s*(?=\()/g, 'function DefaultApp')
             .replace(/export\s+default\s+class\s+([A-Za-z0-9_]+)/g, 'class $1')
             .replace(/export\s+default\s+([A-Za-z0-9_]+);?/g, 'var App = typeof $1 !== "undefined" ? $1 : App;')
             // named exports
-            .replace(/export\s+(const|let|var|function|class|type|interface|enum)\s+/g, '$1 ')
+            .replace(/export\s+(const|let|var|async\s+function|function|class|type|interface|enum)\s+/g, '$1 ')
             // Next.js metadata
             .replace(/export\s+const\s+metadata[\s\S]*?=[\s\S]*?;/g, '')
             .replace(/export\s+const\s+generateMetadata[\s\S]*?=[\s\S]*?;/g, '')
