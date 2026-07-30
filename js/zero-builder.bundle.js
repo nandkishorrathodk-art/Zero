@@ -1001,7 +1001,7 @@ class LLMProvider {
         while (retries <= maxRetries) {
             let response;
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 180000);
+            const timeoutId = setTimeout(() => controller.abort(), 120000);
             try {
                 response = await fetch(url, {
                     method: 'POST',
@@ -1011,7 +1011,7 @@ class LLMProvider {
                 });
             } catch (e) {
                 if (e.name === 'AbortError') {
-                    throw new Error(`Network Timeout (180s): Request to ${url} timed out. Please check your network connection or try again.`);
+                    throw new Error(`Network Timeout (120s): Request to ${url} timed out. Please check your network connection or try again.`);
                 }
                 if (window.location.protocol === 'https:' && (url.includes('localhost') || url.includes('127.0.0.1'))) {
                     throw new Error(`Browser Security Blocked Local Connection: You are on HTTPS but trying to connect to local Ollama. Please open http://zero-ai.surge.sh (without the 's') or run Zero-Builder locally using 'node server.js'.`);
@@ -1133,7 +1133,7 @@ class LLMProvider {
         while (retries <= maxRetries) {
             let response;
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 180000);
+            const timeoutId = setTimeout(() => controller.abort(), 120000);
             try {
                 response = await fetch(url, {
                     method: 'POST',
@@ -1143,7 +1143,7 @@ class LLMProvider {
                 });
             } catch (e) {
                 if (e.name === 'AbortError') {
-                    throw new Error(`Network Timeout (180s): Request to ${url} timed out. Please check your network connection or try again.`);
+                    throw new Error(`Network Timeout (120s): Request to ${url} timed out. Please check your network connection or try again.`);
                 }
                 if (window.location.protocol === 'https:' && (url.includes('localhost') || url.includes('127.0.0.1'))) {
                     throw new Error(`Browser Security Blocked Local Connection: You are on HTTPS but trying to connect to local Ollama. Please open http://zero-ai.surge.sh (without the 's') or run Zero-Builder locally using 'node server.js'.`);
@@ -10123,8 +10123,6 @@ RULES
 8. Avoid generic borders; prefer border-white/10 or subtle gradients.
 9. If auth or dashboard flows are implied, include the supporting routes and guard structure.
 10. Return only files you changed.
-11. CRITICAL: If you import a local component (e.g., import Magnet from './magnet'), you MUST provide the source code for that component in your output. Do not leave missing files.
-12. CRITICAL: Do not reference local placeholder images or textures (like /images/... or /textures/...) since you cannot generate binary files. Instead, use absolute URLs (e.g., https://images.unsplash.com/...) or CSS gradients/data URIs.
 
 OUTPUT FORMAT
 **File: package.json**
@@ -20899,7 +20897,7 @@ Format:
                     { role: 'user', content: prompt }
                 ], { systemPrompt, maxTokens: 100, temperature: 0.7 });
                 addChatMessage('ai', reply);
-            } catch(e) {
+            } catch (e) {
                 addChatMessage('ai', "Got it! Saved your instructions for the active build. 🚀");
             }
             showToast('info', 'Note added to active build!');
@@ -21755,7 +21753,7 @@ Format:
     window.addEventListener('beforeunload', (e) => {
         try {
             persistWorkspace();
-        } catch(err) { /* noop */ }
+        } catch (err) { /* noop */ }
         if (isGenerating) {
             e.preventDefault();
             e.returnValue = 'Generation is currently in progress. Refreshing will pause the active build stream.';

@@ -1018,7 +1018,7 @@ Format:
                     { role: 'user', content: prompt }
                 ], { systemPrompt, maxTokens: 100, temperature: 0.7 });
                 addChatMessage('ai', reply);
-            } catch(e) {
+            } catch (e) {
                 addChatMessage('ai', "Got it! Saved your instructions for the active build. 🚀");
             }
             showToast('info', 'Note added to active build!');
@@ -1874,7 +1874,7 @@ Format:
     window.addEventListener('beforeunload', (e) => {
         try {
             persistWorkspace();
-        } catch(err) { /* noop */ }
+        } catch (err) { /* noop */ }
         if (isGenerating) {
             e.preventDefault();
             e.returnValue = 'Generation is currently in progress. Refreshing will pause the active build stream.';
