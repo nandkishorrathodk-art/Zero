@@ -699,12 +699,41 @@ Format:
                 });
             });
 
-            document.getElementById('btn-q-skip').onclick = () => advanceStep([]);
-            document.getElementById('btn-q-next').onclick = () => {
+            // Scoped event handlers & delegation for robust click handling
+            const skipBtn = card.querySelector('#btn-q-skip, .btn-q-skip');
+            const nextBtn = card.querySelector('#btn-q-next, .btn-q-next');
+
+            if (skipBtn) {
+                skipBtn.onclick = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    advanceStep([]);
+                };
+            }
+            if (nextBtn) {
+                nextBtn.onclick = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const selected = Array.from(card.querySelectorAll('input:checked')).map(el => el.value);
+                    advanceStep(selected);
+                };
+            }
+        }
+
+        // Direct container delegation safety net
+        card.onclick = (e) => {
+            const target = e.target?.closest ? e.target.closest('#btn-q-next, .btn-q-next, #btn-q-skip, .btn-q-skip') : null;
+            if (!target) return;
+            e.preventDefault();
+            e.stopPropagation();
+
+            if (target.classList.contains('btn-q-skip') || target.id === 'btn-q-skip') {
+                advanceStep([]);
+            } else if (target.classList.contains('btn-q-next') || target.id === 'btn-q-next') {
                 const selected = Array.from(card.querySelectorAll('input:checked')).map(el => el.value);
                 advanceStep(selected);
-            };
-        }
+            }
+        };
 
         function advanceStep(selectedValues) {
             const q = questions[currentStep];
