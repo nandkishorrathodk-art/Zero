@@ -64,14 +64,21 @@ class SandboxManager {
         let jsxCode = '';
 
         // Collect & sanitize every component file
+        let extraCss = '';
         Object.keys(files).forEach(filename => {
             if (
-                (filename.endsWith('.jsx') || filename.endsWith('.tsx') || filename.endsWith('.js')) &&
+                (filename.endsWith('.jsx') || filename.endsWith('.tsx') || filename.endsWith('.js') || filename.endsWith('.css')) &&
                 !filename.includes('vite.config') &&
                 !filename.includes('tailwind.config') &&
                 !filename.includes('next.config')
             ) {
                 let code = String(files[filename] || '');
+
+                // Filter out CSS files or files containing @tailwind directives from JS JSX compilation
+                if (filename.endsWith('.css') || /@tailwind\b|^\s*@(import|config|layer|apply|utilities|components|base)/m.test(code)) {
+                    extraCss += `\n/* ===== CSS from ${filename} ===== */\n${code}\n`;
+                    return;
+                }
 
                 // Next.js layout → valid React tree
                 if (filename.includes('layout.')) {
@@ -95,7 +102,7 @@ class SandboxManager {
             if (match) mainComponentName = match[1];
         }
 
-        const customCss = files['src/index.css'] || files['src/App.css'] || files['styles.css'] || files['app/globals.css'] || '';
+        const customCss = (files['src/index.css'] || files['src/App.css'] || files['styles.css'] || files['app/globals.css'] || '') + extraCss;
 
         const rawAppCode = `
 const { useState, useEffect, useRef, useMemo, useCallback, useContext, createContext, Fragment } = React;
