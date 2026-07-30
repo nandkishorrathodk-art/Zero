@@ -820,35 +820,41 @@ Format:
             createSnapshot('Before starting new chat');
         }
 
-        // 1. Clear chat message bubbles
+        // 1. Clear in-memory chat history
+        chatHistory = [];
+
+        // 2. Clear chat message bubbles
         const chatMessages = document.getElementById('chat-messages');
         if (chatMessages) chatMessages.innerHTML = '';
 
-        // 2. Clear input fields
+        // 3. Clear input fields
         const chatInput = document.getElementById('chat-input');
         if (chatInput) chatInput.value = '';
         const welcomeInput = document.getElementById('welcome-prompt-input');
         if (welcomeInput) welcomeInput.value = '';
 
-        // 3. Clear current files, editor, and preview
+        // 4. Clear current files, editor, and preview
         if (editor) editor.setFiles({});
         if (fileSystem) fileSystem.setFiles({});
         if (preview) preview.render({});
 
-        // 4. Reset framework memory and status
+        // 5. Reset framework memory and status
         if (framework) {
             framework.memory = { generatedFiles: {} };
             framework.isCancelled = false;
         }
 
-        // 5. Reset project name
+        // 6. Reset project name
         const projectNameInput = document.getElementById('project-name');
         if (projectNameInput) projectNameInput.value = 'Untitled project';
 
-        // 6. Clear saved workspace key so fresh start is clean
+        // 7. Generate a new project ID for the fresh workspace
+        workspaceProjectId = createProjectId();
+
+        // 8. Clear saved workspace key so fresh start is clean
         localStorage.removeItem(WORKSPACE_KEY);
 
-        // 7. Show Welcome Screen
+        // 9. Show Welcome Screen
         localStorage.setItem('zb_active_view', 'welcome');
         const welcomeScreen = document.getElementById('welcome-screen');
         if (welcomeScreen) {
@@ -1743,6 +1749,7 @@ Format:
                 artDirection: artDirectionPreset,
                 framework: framework?.frameworkOverride || 'vanilla',
                 files: combinedFiles,
+                chatHistory: chatHistory.slice(-100), // persist last 100 chat messages
                 updatedAt: Date.now(),
             };
             localStorage.setItem(WORKSPACE_KEY, JSON.stringify(payload));
@@ -1780,6 +1787,26 @@ Format:
                 editor?.setFiles(saved.files);
                 fileSystem?.setFiles(saved.files);
                 preview?.render(saved.files);
+            }
+
+            // Restore chat history from saved workspace
+            if (Array.isArray(saved.chatHistory) && saved.chatHistory.length > 0) {
+                chatHistory = saved.chatHistory;
+                const chatContainer = document.getElementById('chat-messages');
+                if (chatContainer) {
+                    chatContainer.innerHTML = ''; // clear any default content
+                    for (const msg of chatHistory) {
+                        const div = document.createElement('div');
+                        div.className = `ws-chat-msg ${msg.role}`;
+                        if (msg.role === 'system' && msg.isHtml) {
+                            div.innerHTML = msg.text;
+                        } else {
+                            div.innerHTML = `<div class="ws-msg-bubble">${escapeHtml(msg.text)}</div>`;
+                        }
+                        chatContainer.appendChild(div);
+                    }
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                }
             }
 
             // Auto-restore workspace view on F5 page refresh
@@ -2099,6 +2126,14 @@ Format:
 
         container.appendChild(div);
         container.scrollTop = container.scrollHeight;
+
+        // Persist chat message to in-memory history (skip transient 'Thinking...' placeholders)
+        if (text !== 'Thinking...') {
+            chatHistory.push({ role, text, isHtml });
+            // Keep history bounded to prevent localStorage bloat
+            if (chatHistory.length > 200) chatHistory.splice(0, chatHistory.length - 200);
+            scheduleWorkspaceSave();
+        }
         return div;
     }
 

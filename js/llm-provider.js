@@ -144,6 +144,12 @@ class LLMProvider {
             }
         });
 
+        // Auto-heal: If provider is set to custom without a custom URL, switch to Gemini if Gemini key exists
+        if (this.currentProvider === 'custom' && !this.customBaseUrl && this.apiKeys['gemini']) {
+            this.currentProvider = 'gemini';
+            this.currentModel = 'gemini-2.5-flash';
+        }
+
         console.log('[LLMProvider] Initialized. Current Provider:', this.currentProvider, 'Gemini Key Present:', !!this.getApiKey('gemini'), 'Total Keys:', Object.keys(this.apiKeys));
     }
 
