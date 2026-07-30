@@ -432,10 +432,17 @@ REQUIREMENTS:
 
 Output the complete specification JSON now.`;
 
-        const response = await this.callLLM(message, this.systemPrompt, {
-            temperature: 0.5,
-            maxTokens: 32768,
-        });
+        let response = '';
+        try {
+            response = await this.callLLM(message, this.systemPrompt, {
+                temperature: 0.5,
+                maxTokens: 32768,
+                json: true
+            });
+        } catch (error) {
+            this.log('warning', `Planner LLM call failed: ${error.message}`);
+            return this._getDefaultSpec(userPrompt, frameworkOverride, engineeredBrief);
+        }
 
         try {
             let spec = this.parseJSON(response);
@@ -443,8 +450,30 @@ Output the complete specification JSON now.`;
             this.log('success', `Spec: ${spec.siteType} [${spec.framework}/${spec.complexity}] — ${spec.sections.length} sections with blueprints`);
             return spec;
         } catch (e) {
-            this.log('warning', `Parse failed, using intelligent default: ${e.message}`);
-            return this._getDefaultSpec(userPrompt, frameworkOverride, engineeredBrief);
+            this.log('warning', `Parse failed, attempting smart fallback extraction: ${e.message}`);
+            
+            // Phase 2: Smart fallback - extract partial JSON fields from string
+            let partialSpec = this._getDefaultSpec(userPrompt, frameworkOverride, engineeredBrief);
+            
+            try {
+                const siteTypeMatch = response.match(/"siteType"\s*:\s*"([^"]+)"/i);
+                if (siteTypeMatch) partialSpec.siteType = siteTypeMatch[1];
+                
+                const frameworkMatch = response.match(/"framework"\s*:\s*"([^"]+)"/i);
+                if (frameworkMatch) partialSpec.framework = frameworkMatch[1];
+                
+                const complexityMatch = response.match(/"complexity"\s*:\s*"([^"]+)"/i);
+                if (complexityMatch) partialSpec.complexity = complexityMatch[1];
+                
+                // Keep the default sections/blueprints since complex nested objects are hard to regex safely,
+                // but we salvaged the core configuration.
+                partialSpec = this._normalizeSpec(partialSpec, userPrompt, frameworkOverride, engineeredBrief);
+                this.log('success', `Recovered planner spec via smart fallback: ${partialSpec.siteType}`);
+                return partialSpec;
+            } catch (mergeError) {
+                this.log('warning', `Smart fallback failed, using defaults: ${mergeError.message}`);
+                return this._getDefaultSpec(userPrompt, frameworkOverride, engineeredBrief);
+            }
         }
     }
 

@@ -415,6 +415,7 @@ Generate a premium prompt pack now.`;
             response = await this.callLLM(message, this.systemPrompt, {
                 temperature: this.config.temperature,
                 maxTokens: this.config.maxTokens,
+                json: true
             });
         } catch (error) {
             this.log('warning', `Prompt engineering LLM call failed: ${error.message}`);
@@ -427,8 +428,31 @@ Generate a premium prompt pack now.`;
             this.log('success', `Prompt pack ready: ${normalized.shortTitle} / ${normalized.siteArchetype}`);
             return normalized;
         } catch (error) {
-            this.log('warning', `Parse failed, using intelligent fallback brief: ${error.message}`);
-            return fallback;
+            this.log('warning', `Parse failed, attempting smart fallback extraction: ${error.message}`);
+            
+            // Phase 2: Smart fallback - extract partial JSON fields from string
+            let partialMerge = { ...fallback };
+            
+            try {
+                const titleMatch = response.match(/"shortTitle"\s*:\s*"([^"]+)"/i);
+                if (titleMatch) partialMerge.shortTitle = titleMatch[1];
+                
+                const archetypeMatch = response.match(/"siteArchetype"\s*:\s*"([^"]+)"/i);
+                if (archetypeMatch) partialMerge.siteArchetype = archetypeMatch[1];
+                
+                const heroMatch = response.match(/"heroTreatment"\s*:\s*"([^"]+)"/i);
+                if (heroMatch) partialMerge.heroTreatment = heroMatch[1];
+                
+                const qualityMatch = response.match(/"qualityBar"\s*:\s*"([^"]+)"/i);
+                if (qualityMatch) partialMerge.qualityBar = qualityMatch[1];
+                
+                const normalized = this._normalize(partialMerge, cleanedPrompt, options);
+                this.log('success', `Recovered prompt pack via smart fallback: ${normalized.shortTitle}`);
+                return normalized;
+            } catch (mergeError) {
+                this.log('warning', `Smart fallback failed, using defaults: ${mergeError.message}`);
+                return fallback;
+            }
         }
     }
 

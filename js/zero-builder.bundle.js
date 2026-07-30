@@ -760,13 +760,20 @@ class LLMProvider {
         const contents = this._convertToGeminiFormat(messages);
         const systemPrompt = this._extractSystemPrompt(messages, options);
         
+        const generationConfig = {
+            temperature: options.temperature || 0.7,
+            maxOutputTokens: options.maxTokens || 32768,
+            topP: options.topP || 0.95,
+        };
+
+        // JSON mode: force Gemini to return valid JSON
+        if (options.json) {
+            generationConfig.responseMimeType = 'application/json';
+        }
+
         const body = {
             contents,
-            generationConfig: {
-                temperature: options.temperature || 0.7,
-                maxOutputTokens: options.maxTokens || 32768,
-                topP: options.topP || 0.95,
-            },
+            generationConfig,
         };
 
         if (systemPrompt) {
@@ -818,12 +825,19 @@ class LLMProvider {
         
         const contents = this._convertToGeminiFormat(messages);
         const systemPrompt = this._extractSystemPrompt(messages, options);
+        const streamGenerationConfig = {
+            temperature: options.temperature || 0.7,
+            maxOutputTokens: options.maxTokens || 32768,
+        };
+
+        // JSON mode for streaming
+        if (options.json) {
+            streamGenerationConfig.responseMimeType = 'application/json';
+        }
+
         const body = {
             contents,
-            generationConfig: {
-                temperature: options.temperature || 0.7,
-                maxOutputTokens: options.maxTokens || 32768,
-            },
+            generationConfig: streamGenerationConfig,
         };
 
         if (systemPrompt) {
@@ -940,6 +954,11 @@ class LLMProvider {
             max_tokens: maxTokens,
         };
 
+        // JSON mode: force structured JSON output from OpenAI / compatible providers
+        if (options.json) {
+            body.response_format = { type: 'json_object' };
+        }
+
         const isLocal = url.includes('localhost') || url.includes('127.0.0.1') || url.includes('192.168.');
         if (apiKey && (apiKey.includes('•') || apiKey.includes('●'))) {
             throw new Error(`Invalid API Key Format: You entered bullet mask characters ("••••••••") instead of your real API key. Please clear the API Key box in Settings and paste your actual key (e.g. sk-or-v1-...).`);
@@ -1052,6 +1071,11 @@ class LLMProvider {
             max_tokens: maxTokens,
             stream: true,
         };
+
+        // JSON mode for streaming
+        if (options.json) {
+            body.response_format = { type: 'json_object' };
+        }
 
         const isLocal = url.includes('localhost') || url.includes('127.0.0.1') || url.includes('192.168.');
         if (apiKey && (apiKey.includes('•') || apiKey.includes('●'))) {
@@ -1191,7 +1215,14 @@ class LLMProvider {
             messages: conversation,
         };
 
-        if (systemPrompt) {
+        // JSON mode for Anthropic: append instruction to system and prefill assistant
+        if (options.json) {
+            const jsonSuffix = '\n\nYou MUST respond with valid JSON only. No markdown fences, no commentary, no explanation. Output raw JSON.';
+            body.system = (systemPrompt ? systemPrompt + jsonSuffix : jsonSuffix.trim());
+            // Anthropic prefill technique: start assistant turn with '{'
+            conversation.push({ role: 'assistant', content: '{' });
+            body.messages = conversation;
+        } else if (systemPrompt) {
             body.system = systemPrompt;
         }
 
@@ -1234,7 +1265,13 @@ class LLMProvider {
             messages: conversation,
         };
 
-        if (systemPrompt) {
+        // JSON mode for Anthropic streaming
+        if (options.json) {
+            const jsonSuffix = '\n\nYou MUST respond with valid JSON only. No markdown fences, no commentary, no explanation. Output raw JSON.';
+            body.system = (systemPrompt ? systemPrompt + jsonSuffix : jsonSuffix.trim());
+            conversation.push({ role: 'assistant', content: '{' });
+            body.messages = conversation;
+        } else if (systemPrompt) {
             body.system = systemPrompt;
         }
 
@@ -2713,39 +2750,79 @@ class BaseAgent {
     parseJSON(text) {
         if (!text || typeof text !== 'string') throw new Error('Empty response for JSON parsing');
 
-        const stripNoise = (str) =>
+        // Strip BOM, zero-width spaces, and other invisible Unicode garbage
+        const sanitize = (str) =>
             String(str || '')
+                .replace(/^\uFEFF/, '')
+                .replace(/[\u200B\u200C\u200D\uFEFF\u00A0]/g, '')
+                .trim();
+
+        const stripNoise = (str) =>
+            sanitize(str)
                 .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
                 .replace(/<think>[\s\S]*?<\/think>/gi, '')
                 .replace(/```json/gi, '')
                 .replace(/```/g, '')
                 .replace(/\/\*[\s\S]*?\*\//g, '')
+                .replace(/\/\/[^\n]*/g, '') // strip single-line JS comments
                 .replace(/,\s*([\}\]])/g, '$1')
                 .trim();
 
-        const cleanText = text
+        let cleanText = sanitize(text)
             .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
             .replace(/<think>[\s\S]*?<\/think>/gi, '')
             .trim();
 
+        // Handle Anthropic prefill: response may start without '{' since we prefilled it
+        if (cleanText.length > 0 && cleanText[0] !== '{' && cleanText[0] !== '[') {
+            // Check if prepending '{' makes it valid JSON
+            const prefilled = '{' + cleanText;
+            try { return JSON.parse(prefilled); } catch { /* noop */ }
+            try { return JSON.parse(stripNoise(prefilled)); } catch { /* noop */ }
+        }
+
+        // Direct parse attempts
         try { return JSON.parse(cleanText); } catch { /* noop */ }
         try { return JSON.parse(stripNoise(cleanText)); } catch { /* noop */ }
 
+        // Try extracting from code block
         const jsonBlock = this.extractCode(cleanText, 'json');
         try { return JSON.parse(jsonBlock); } catch { /* noop */ }
         try { return JSON.parse(stripNoise(jsonBlock)); } catch { /* noop */ }
 
+        // Try extracting first complete JSON object
         const objectMatch = cleanText.match(/\{[\s\S]*\}/);
         if (objectMatch) {
             try { return JSON.parse(stripNoise(objectMatch[0])); } catch { /* noop */ }
         }
 
+        // Try extracting first complete JSON array
         const arrayMatch = cleanText.match(/\[[\s\S]*\]/);
         if (arrayMatch) {
             try { return JSON.parse(stripNoise(arrayMatch[0])); } catch { /* noop */ }
         }
 
+        // Handle double-encoded JSON strings (LLM returned a JSON string containing escaped JSON)
+        try {
+            const outer = JSON.parse(cleanText);
+            if (typeof outer === 'string') {
+                return JSON.parse(outer);
+            }
+        } catch { /* noop */ }
+
         throw new Error('Failed to parse JSON from LLM response');
+    }
+
+    /**
+     * Convenience method: calls LLM with JSON mode enabled, auto-parses the response.
+     * Falls back to standard parseJSON if the provider returns text anyway.
+     */
+    async callLLMForJSON(userMessage, systemPrompt, options = {}) {
+        const response = await this.callLLM(userMessage, systemPrompt, {
+            ...options,
+            json: true,
+        });
+        return this.parseJSON(response);
     }
 
     extractFiles(text) {
@@ -5039,6 +5116,7 @@ Generate a premium prompt pack now.`;
             response = await this.callLLM(message, this.systemPrompt, {
                 temperature: this.config.temperature,
                 maxTokens: this.config.maxTokens,
+                json: true
             });
         } catch (error) {
             this.log('warning', `Prompt engineering LLM call failed: ${error.message}`);
@@ -5051,8 +5129,31 @@ Generate a premium prompt pack now.`;
             this.log('success', `Prompt pack ready: ${normalized.shortTitle} / ${normalized.siteArchetype}`);
             return normalized;
         } catch (error) {
-            this.log('warning', `Parse failed, using intelligent fallback brief: ${error.message}`);
-            return fallback;
+            this.log('warning', `Parse failed, attempting smart fallback extraction: ${error.message}`);
+            
+            // Phase 2: Smart fallback - extract partial JSON fields from string
+            let partialMerge = { ...fallback };
+            
+            try {
+                const titleMatch = response.match(/"shortTitle"\s*:\s*"([^"]+)"/i);
+                if (titleMatch) partialMerge.shortTitle = titleMatch[1];
+                
+                const archetypeMatch = response.match(/"siteArchetype"\s*:\s*"([^"]+)"/i);
+                if (archetypeMatch) partialMerge.siteArchetype = archetypeMatch[1];
+                
+                const heroMatch = response.match(/"heroTreatment"\s*:\s*"([^"]+)"/i);
+                if (heroMatch) partialMerge.heroTreatment = heroMatch[1];
+                
+                const qualityMatch = response.match(/"qualityBar"\s*:\s*"([^"]+)"/i);
+                if (qualityMatch) partialMerge.qualityBar = qualityMatch[1];
+                
+                const normalized = this._normalize(partialMerge, cleanedPrompt, options);
+                this.log('success', `Recovered prompt pack via smart fallback: ${normalized.shortTitle}`);
+                return normalized;
+            } catch (mergeError) {
+                this.log('warning', `Smart fallback failed, using defaults: ${mergeError.message}`);
+                return fallback;
+            }
         }
     }
 
@@ -6306,10 +6407,17 @@ REQUIREMENTS:
 
 Output the complete specification JSON now.`;
 
-        const response = await this.callLLM(message, this.systemPrompt, {
-            temperature: 0.5,
-            maxTokens: 32768,
-        });
+        let response = '';
+        try {
+            response = await this.callLLM(message, this.systemPrompt, {
+                temperature: 0.5,
+                maxTokens: 32768,
+                json: true
+            });
+        } catch (error) {
+            this.log('warning', `Planner LLM call failed: ${error.message}`);
+            return this._getDefaultSpec(userPrompt, frameworkOverride, engineeredBrief);
+        }
 
         try {
             let spec = this.parseJSON(response);
@@ -6317,8 +6425,30 @@ Output the complete specification JSON now.`;
             this.log('success', `Spec: ${spec.siteType} [${spec.framework}/${spec.complexity}] — ${spec.sections.length} sections with blueprints`);
             return spec;
         } catch (e) {
-            this.log('warning', `Parse failed, using intelligent default: ${e.message}`);
-            return this._getDefaultSpec(userPrompt, frameworkOverride, engineeredBrief);
+            this.log('warning', `Parse failed, attempting smart fallback extraction: ${e.message}`);
+            
+            // Phase 2: Smart fallback - extract partial JSON fields from string
+            let partialSpec = this._getDefaultSpec(userPrompt, frameworkOverride, engineeredBrief);
+            
+            try {
+                const siteTypeMatch = response.match(/"siteType"\s*:\s*"([^"]+)"/i);
+                if (siteTypeMatch) partialSpec.siteType = siteTypeMatch[1];
+                
+                const frameworkMatch = response.match(/"framework"\s*:\s*"([^"]+)"/i);
+                if (frameworkMatch) partialSpec.framework = frameworkMatch[1];
+                
+                const complexityMatch = response.match(/"complexity"\s*:\s*"([^"]+)"/i);
+                if (complexityMatch) partialSpec.complexity = complexityMatch[1];
+                
+                // Keep the default sections/blueprints since complex nested objects are hard to regex safely,
+                // but we salvaged the core configuration.
+                partialSpec = this._normalizeSpec(partialSpec, userPrompt, frameworkOverride, engineeredBrief);
+                this.log('success', `Recovered planner spec via smart fallback: ${partialSpec.siteType}`);
+                return partialSpec;
+            } catch (mergeError) {
+                this.log('warning', `Smart fallback failed, using defaults: ${mergeError.message}`);
+                return this._getDefaultSpec(userPrompt, frameworkOverride, engineeredBrief);
+            }
         }
     }
 

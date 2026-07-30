@@ -157,39 +157,79 @@ class BaseAgent {
     parseJSON(text) {
         if (!text || typeof text !== 'string') throw new Error('Empty response for JSON parsing');
 
-        const stripNoise = (str) =>
+        // Strip BOM, zero-width spaces, and other invisible Unicode garbage
+        const sanitize = (str) =>
             String(str || '')
+                .replace(/^\uFEFF/, '')
+                .replace(/[\u200B\u200C\u200D\uFEFF\u00A0]/g, '')
+                .trim();
+
+        const stripNoise = (str) =>
+            sanitize(str)
                 .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
                 .replace(/<think>[\s\S]*?<\/think>/gi, '')
                 .replace(/```json/gi, '')
                 .replace(/```/g, '')
                 .replace(/\/\*[\s\S]*?\*\//g, '')
+                .replace(/\/\/[^\n]*/g, '') // strip single-line JS comments
                 .replace(/,\s*([\}\]])/g, '$1')
                 .trim();
 
-        const cleanText = text
+        let cleanText = sanitize(text)
             .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
             .replace(/<think>[\s\S]*?<\/think>/gi, '')
             .trim();
 
+        // Handle Anthropic prefill: response may start without '{' since we prefilled it
+        if (cleanText.length > 0 && cleanText[0] !== '{' && cleanText[0] !== '[') {
+            // Check if prepending '{' makes it valid JSON
+            const prefilled = '{' + cleanText;
+            try { return JSON.parse(prefilled); } catch { /* noop */ }
+            try { return JSON.parse(stripNoise(prefilled)); } catch { /* noop */ }
+        }
+
+        // Direct parse attempts
         try { return JSON.parse(cleanText); } catch { /* noop */ }
         try { return JSON.parse(stripNoise(cleanText)); } catch { /* noop */ }
 
+        // Try extracting from code block
         const jsonBlock = this.extractCode(cleanText, 'json');
         try { return JSON.parse(jsonBlock); } catch { /* noop */ }
         try { return JSON.parse(stripNoise(jsonBlock)); } catch { /* noop */ }
 
+        // Try extracting first complete JSON object
         const objectMatch = cleanText.match(/\{[\s\S]*\}/);
         if (objectMatch) {
             try { return JSON.parse(stripNoise(objectMatch[0])); } catch { /* noop */ }
         }
 
+        // Try extracting first complete JSON array
         const arrayMatch = cleanText.match(/\[[\s\S]*\]/);
         if (arrayMatch) {
             try { return JSON.parse(stripNoise(arrayMatch[0])); } catch { /* noop */ }
         }
 
+        // Handle double-encoded JSON strings (LLM returned a JSON string containing escaped JSON)
+        try {
+            const outer = JSON.parse(cleanText);
+            if (typeof outer === 'string') {
+                return JSON.parse(outer);
+            }
+        } catch { /* noop */ }
+
         throw new Error('Failed to parse JSON from LLM response');
+    }
+
+    /**
+     * Convenience method: calls LLM with JSON mode enabled, auto-parses the response.
+     * Falls back to standard parseJSON if the provider returns text anyway.
+     */
+    async callLLMForJSON(userMessage, systemPrompt, options = {}) {
+        const response = await this.callLLM(userMessage, systemPrompt, {
+            ...options,
+            json: true,
+        });
+        return this.parseJSON(response);
     }
 
     extractFiles(text) {

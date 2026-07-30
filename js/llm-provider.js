@@ -344,13 +344,20 @@ class LLMProvider {
         const contents = this._convertToGeminiFormat(messages);
         const systemPrompt = this._extractSystemPrompt(messages, options);
         
+        const generationConfig = {
+            temperature: options.temperature || 0.7,
+            maxOutputTokens: options.maxTokens || 32768,
+            topP: options.topP || 0.95,
+        };
+
+        // JSON mode: force Gemini to return valid JSON
+        if (options.json) {
+            generationConfig.responseMimeType = 'application/json';
+        }
+
         const body = {
             contents,
-            generationConfig: {
-                temperature: options.temperature || 0.7,
-                maxOutputTokens: options.maxTokens || 32768,
-                topP: options.topP || 0.95,
-            },
+            generationConfig,
         };
 
         if (systemPrompt) {
@@ -402,12 +409,19 @@ class LLMProvider {
         
         const contents = this._convertToGeminiFormat(messages);
         const systemPrompt = this._extractSystemPrompt(messages, options);
+        const streamGenerationConfig = {
+            temperature: options.temperature || 0.7,
+            maxOutputTokens: options.maxTokens || 32768,
+        };
+
+        // JSON mode for streaming
+        if (options.json) {
+            streamGenerationConfig.responseMimeType = 'application/json';
+        }
+
         const body = {
             contents,
-            generationConfig: {
-                temperature: options.temperature || 0.7,
-                maxOutputTokens: options.maxTokens || 32768,
-            },
+            generationConfig: streamGenerationConfig,
         };
 
         if (systemPrompt) {
@@ -524,6 +538,11 @@ class LLMProvider {
             max_tokens: maxTokens,
         };
 
+        // JSON mode: force structured JSON output from OpenAI / compatible providers
+        if (options.json) {
+            body.response_format = { type: 'json_object' };
+        }
+
         const isLocal = url.includes('localhost') || url.includes('127.0.0.1') || url.includes('192.168.');
         if (apiKey && (apiKey.includes('•') || apiKey.includes('●'))) {
             throw new Error(`Invalid API Key Format: You entered bullet mask characters ("••••••••") instead of your real API key. Please clear the API Key box in Settings and paste your actual key (e.g. sk-or-v1-...).`);
@@ -636,6 +655,11 @@ class LLMProvider {
             max_tokens: maxTokens,
             stream: true,
         };
+
+        // JSON mode for streaming
+        if (options.json) {
+            body.response_format = { type: 'json_object' };
+        }
 
         const isLocal = url.includes('localhost') || url.includes('127.0.0.1') || url.includes('192.168.');
         if (apiKey && (apiKey.includes('•') || apiKey.includes('●'))) {
@@ -775,7 +799,14 @@ class LLMProvider {
             messages: conversation,
         };
 
-        if (systemPrompt) {
+        // JSON mode for Anthropic: append instruction to system and prefill assistant
+        if (options.json) {
+            const jsonSuffix = '\n\nYou MUST respond with valid JSON only. No markdown fences, no commentary, no explanation. Output raw JSON.';
+            body.system = (systemPrompt ? systemPrompt + jsonSuffix : jsonSuffix.trim());
+            // Anthropic prefill technique: start assistant turn with '{'
+            conversation.push({ role: 'assistant', content: '{' });
+            body.messages = conversation;
+        } else if (systemPrompt) {
             body.system = systemPrompt;
         }
 
@@ -818,7 +849,13 @@ class LLMProvider {
             messages: conversation,
         };
 
-        if (systemPrompt) {
+        // JSON mode for Anthropic streaming
+        if (options.json) {
+            const jsonSuffix = '\n\nYou MUST respond with valid JSON only. No markdown fences, no commentary, no explanation. Output raw JSON.';
+            body.system = (systemPrompt ? systemPrompt + jsonSuffix : jsonSuffix.trim());
+            conversation.push({ role: 'assistant', content: '{' });
+            body.messages = conversation;
+        } else if (systemPrompt) {
             body.system = systemPrompt;
         }
 
