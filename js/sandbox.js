@@ -134,7 +134,7 @@ const prismaMockHandler = {
         });
     }
 };
-const prisma = new Proxy({}, prismaMockHandler);
+var prisma = window.prisma || new Proxy({}, prismaMockHandler);
 
 // ---- Lucide helper ----
 const Icon = ({ name, className = 'w-5 h-5', ...props }) =>
@@ -425,9 +425,11 @@ try {
         src = this._stripEsmSyntax(src);
 
         return src
-            // remove "use client" / "use server"
+            // remove "use client" / "use server" and duplicate prisma declarations
             .replace(/["']use client["'];?/g, '')
             .replace(/["']use server["'];?/g, '')
+            .replace(/(?:const|let|var)\s+prisma\s*=\s*(?:global\.)?prisma\s*\|\|\s*new\s+PrismaClient\(\)\s*;?/g, '/* zero-preview: prisma instance */')
+            .replace(/(?:const|let|var)\s+prisma\s*=\s*new\s+PrismaClient\(\)\s*;?/g, '/* zero-preview: prisma instance */')
             // default export → plain function / class (including async functions)
             .replace(/export\s+default\s+async\s+function\s+([A-Za-z0-9_]+)/g, 'async function $1')
             .replace(/export\s+default\s+async\s+function\s*(?=\()/g, 'async function DefaultApp')

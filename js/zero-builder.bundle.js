@@ -617,9 +617,9 @@ class LLMProvider {
     getApiKey(providerId) {
         const id = providerId || this.currentProvider;
         let key = (this.apiKeys && this.apiKeys[id]) || localStorage.getItem(`zb_key_${id}`) || '';
-        if ((!key || !key.trim()) && id === 'custom') {
-            // Fallback: If custom key is blank, check if user saved a key for any other provider
-            const providersToTry = ['gemini', 'openai', 'groq', 'deepseek', 'anthropic'];
+        if ((!key || !key.trim())) {
+            // Fallback: If requested provider key is blank, check if user saved a key for any other provider
+            const providersToTry = ['gemini', 'openai', 'groq', 'deepseek', 'anthropic', 'custom'];
             for (const p of providersToTry) {
                 const altKey = (this.apiKeys && this.apiKeys[p]) || localStorage.getItem(`zb_key_${p}`);
                 if (altKey && altKey.trim()) return altKey.trim();
@@ -959,6 +959,16 @@ class LLMProvider {
             body.response_format = { type: 'json_object' };
         }
 
+        // Truncate long message history for Groq to stay under 12,000 TPM limit
+        if ((this.currentProvider === 'groq' || url.includes('groq.com')) && JSON.stringify(body).length > 22000) {
+            body.messages = body.messages.map(m => {
+                if (typeof m.content === 'string' && m.content.length > 7000) {
+                    return { ...m, content: m.content.slice(0, 7000) + '\n...[context trimmed for model TPM limit]...' };
+                }
+                return m;
+            });
+        }
+
         const isLocal = url.includes('localhost') || url.includes('127.0.0.1') || url.includes('192.168.');
         if (apiKey && (apiKey.includes('•') || apiKey.includes('●'))) {
             throw new Error(`Invalid API Key Format: You entered bullet mask characters ("••••••••") instead of your real API key. Please clear the API Key box in Settings and paste your actual key (e.g. sk-or-v1-...).`);
@@ -1004,7 +1014,10 @@ class LLMProvider {
             if (!response.ok) {
                 const errText = await response.text();
 
-                if ((response.status === 429 || response.status === 402 || response.status === 413) && (url.includes('openrouter.ai') || url.includes('groq.com') || this.currentProvider === 'groq' || this.currentProvider === 'custom')) {
+                const isTokenOrRateLimit = response.status === 429 || response.status === 402 || response.status === 413 ||
+                    /Request too large|TPM|Tokens per minute|Rate limit reached|free-models-per-day|quota/i.test(errText);
+
+                if (isTokenOrRateLimit && (url.includes('openrouter.ai') || url.includes('groq.com') || this.currentProvider === 'groq' || this.currentProvider === 'custom')) {
                     const geminiKey = this.getApiKey('gemini');
                     if (geminiKey) {
                         console.warn(`[LLMProvider] Provider '${this.currentProvider}' hit rate/token limit (${response.status}). Auto-failing over to Google Gemini 2.5 Flash...`);
@@ -1122,7 +1135,10 @@ class LLMProvider {
             if (!response.ok) {
                 const errText = await response.text();
 
-                if ((response.status === 429 || response.status === 402 || response.status === 413) && (url.includes('openrouter.ai') || url.includes('groq.com') || this.currentProvider === 'groq' || this.currentProvider === 'custom')) {
+                const isTokenOrRateLimit = response.status === 429 || response.status === 402 || response.status === 413 ||
+                    /Request too large|TPM|Tokens per minute|Rate limit reached|free-models-per-day|quota/i.test(errText);
+
+                if (isTokenOrRateLimit && (url.includes('openrouter.ai') || url.includes('groq.com') || this.currentProvider === 'groq' || this.currentProvider === 'custom')) {
                     const geminiKey = this.getApiKey('gemini');
                     if (geminiKey) {
                         console.warn(`[LLMProvider] Provider '${this.currentProvider}' hit rate/token limit (${response.status}). Auto-failing over to Google Gemini 2.5 Flash...`);
@@ -1324,7 +1340,22 @@ class LLMProvider {
         return fullText;
     }
 
-    /* ===== CLEANING OUTPUT (Reasoning / Think Tags) ===== */
+    /* ===== CLEANING OUTPUT & ERROR PARSING ===== */
+    _parseErrorMessage(status, rawText) {
+        const text = String(rawText || '');
+        if (/Tokens per day|TPD|Limit 100000|rate limit reached for model/i.test(text)) {
+            return `Groq Account Daily Limit Reached (100,000 TPD). Groq has blocked requests for 44 minutes. Please open Settings (⚙️) → AI Provider, select "Google Gemini", and enter your free Gemini API Key from https://aistudio.google.com/app/apikey.`;
+        }
+        if (/Tokens per minute|TPM|Limit 12000/i.test(text)) {
+            return `Groq Per-Minute Token Limit Hit (12,000 TPM). Please wait 30 seconds or switch to Google Gemini in Settings (⚙️).`;
+        }
+        try {
+            const json = JSON.parse(text);
+            if (json.error?.message) return `API Error (${status}): ${json.error.message}`;
+        } catch { }
+        return `API Error (${status}): ${text.slice(0, 250)}`;
+    }
+
     _cleanOutputText(text) {
         let output = String(text || '');
         // Strip <think>...</think> reasoning blocks from DeepSeek R1 / Reasoning LLMs
@@ -16479,7 +16510,7 @@ const prismaMockHandler = {
         });
     }
 };
-const prisma = new Proxy({}, prismaMockHandler);
+var prisma = window.prisma || new Proxy({}, prismaMockHandler);
 
 // ---- Lucide helper ----
 const Icon = ({ name, className = 'w-5 h-5', ...props }) =>
@@ -16770,9 +16801,11 @@ try {
         src = this._stripEsmSyntax(src);
 
         return src
-            // remove "use client" / "use server"
+            // remove "use client" / "use server" and duplicate prisma declarations
             .replace(/["']use client["'];?/g, '')
             .replace(/["']use server["'];?/g, '')
+            .replace(/(?:const|let|var)\s+prisma\s*=\s*(?:global\.)?prisma\s*\|\|\s*new\s+PrismaClient\(\)\s*;?/g, '/* zero-preview: prisma instance */')
+            .replace(/(?:const|let|var)\s+prisma\s*=\s*new\s+PrismaClient\(\)\s*;?/g, '/* zero-preview: prisma instance */')
             // default export → plain function / class (including async functions)
             .replace(/export\s+default\s+async\s+function\s+([A-Za-z0-9_]+)/g, 'async function $1')
             .replace(/export\s+default\s+async\s+function\s*(?=\()/g, 'async function DefaultApp')
