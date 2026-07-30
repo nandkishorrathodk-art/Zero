@@ -20084,6 +20084,18 @@ window.DeployManager = DeployManager;
                 showToast('info', 'Project versions cleared');
             }
         });
+        // Back to Home logo button
+        document.getElementById('ws-back-home')?.addEventListener('click', () => {
+            localStorage.setItem('zb_active_view', 'welcome');
+            const welcomeScreen = document.getElementById('welcome-screen');
+            if (welcomeScreen) {
+                welcomeScreen.style.display = 'flex';
+                welcomeScreen.classList.remove('hidden');
+            }
+            renderRecentProjects();
+            showToast('info', 'Returned to Home screen');
+        });
+
         document.getElementById('project-name')?.addEventListener('input', scheduleWorkspaceSave);
         document.querySelectorAll('.build-chip').forEach(chip => {
             chip.addEventListener('click', () => {
