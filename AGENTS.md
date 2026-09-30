@@ -57,6 +57,29 @@ Safety invariants — preserve these:
 - `AgentFramework.executeTask(prompt, { repoUrl?, workspace?, files? })` — general entry
   point: optional repo clone + context, then the coordinator swarm.
 
+## LLM provider (`js/llm-provider.js`)
+
+- Default provider/model: `gemini` / `gemini-3.8-flash`. Google shuts Gemini
+  endpoints down on a schedule, so **verify model IDs against
+  https://ai.google.dev/gemini-api/docs/models before changing them** — a dead
+  default makes every generation fail.
+- `retiredModels` + `resolveModel()` migrate a saved dead model to a live one on
+  load. Add an entry there when an endpoint is retired instead of only editing
+  the list.
+- `js/media-generator.js` generates images through the active provider. Gemini
+  uses `gemini-2.5-flash-image` (`_generateWithGemini`); without a provider path
+  it silently degrades to gradient placeholders.
+
+## LLM output parsing (`js/agent-framework.js`)
+
+Two invariants that are easy to regress:
+
+- `extractFiles()` normalises CRLF before matching. Without it a `\r\n` response
+  matches no file block and the raw markdown becomes the file body.
+- `parseJSON()`'s noise stripping uses a string-aware scanner for line comments.
+  A blanket line-comment regex truncates `"https://..."` values and fails the
+  whole parse whenever the fallback path is taken.
+
 ## Testing
 
 There is no test runner in-repo. Verify behaviour by exercising the real engine
