@@ -9,6 +9,10 @@ dist/
 build/
 *.log
 
+# Local toolchain — Blender is a ~1.3GB download, fetched not vendored.
+# Re-install with: see tools/README (Blender 4.2 LTS linux-x64).
+tools/blender-*/
+
 # Environment files
 .env
 .env.*

@@ -1046,7 +1046,15 @@ Generate a premium prompt pack now.`;
                 'fake metrics',
                 'floating orbs',
                 'template icons',
+                'every section centred with equal weight',
+                'more than three type sizes in one viewport',
+                'raw px font sizes instead of the fluid scale',
             ],
+            assetSources: {
+                free: 'Poly Haven (CC0, CORS-open) — HDRIs, PBR texture sets, and real models, all hotlinkable at 1k.',
+                blender: 'Blender 4.2 is installed headless — build geometry, bake lighting to a lightmap, export Draco .glb.',
+                rule: 'Use these instead of placeholder URLs. Never invent asset links.',
+            },
             qualityBar: 'premium-studio-handoff',
             responsiveBreakpoints: {
                 mobile: '375px',

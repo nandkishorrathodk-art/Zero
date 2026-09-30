@@ -100,8 +100,57 @@ silently degrades the output. Invariants:
   using another philosophy's classes) and motion-craft (missing timeline, ease
   monoculture, unstaggered groups).
 
+## Design system (`js/design-system.js`)
+
+Awwwards-grade output needs a *system*, not per-section improvisation. This
+module computes it deterministically and emits it as CSS custom properties:
+
+- `typeScale()` is a modular ratio, fluid between 360px and 1240px. Two ratios
+  (1.2 → 1.25) so headings stay controlled on mobile and get drama on desktop.
+- `opticalRules()` is the part that actually sells it: tracking tightens and
+  leading compresses as size grows, and measure narrows. Display type with
+  body-copy tracking is the single clearest tell of amateur typography.
+- `spaceScale()` and `grid()` give every gap and column a token, so sections
+  cannot invent their own rhythm.
+- `toCSS()` emits tokens plus `.type-N` role classes; `toPromptBlock()` states
+  the values and the layout principles as hard constraints.
+- `coder-ui.js` calls `_ensureDesignTokens()` at assembly time. If the model
+  dropped the tokens the page would reference undefined vars and silently fall
+  back to invented sizes, so they are prepended when absent.
+
+## Free assets and Blender (`js/asset-sources.js`, `js/blender-bridge.js`, `js/asset-pipeline.js`)
+
+- `asset-sources.js` resolves Poly Haven (CC0, CORS `*`) HDRIs, PBR texture
+  sets and models at 1k. Never invent asset URLs — resolve them here.
+- `blender-bridge.js` generates a self-contained bpy script and the argv to run
+  it. It never shells out itself; the execution engine runs it so the binary
+  allow-list and timeouts still apply. Details that bit us:
+  - `subdivisions` is an `ico_sphere` *operator* argument, not a mesh attribute.
+  - `torus` takes `major_radius`/`minor_radius`; `cylinder`/`cone` take
+    `radius1`/`depth`. A generic `radius` is rejected by Blender.
+  - `_names` must be defined before the bake/export block, or a `bake: false`
+    run fails at the summary print even though the .glb was written.
+  - Draco is chosen from the real triangle count (`draco: 'auto'`). On a
+    low-poly scene it *increases* file size (15KB vs 9KB for 80 tris), so
+    defaulting it on is a pessimisation.
+- `asset-pipeline.js` parses the GLB header + JSON chunk directly (no 3D
+  engine) to report triangles, Draco/KTX2, and budget overruns as concrete
+  fixes. It exists because a referenced-but-missing or 40MB asset otherwise
+  dies at runtime as a blank canvas.
+
+Blender is not vendored: `tools/blender-*/` is gitignored (~1.3GB). See
+`tools/README.md` for install and the `probe_*.py` verification scripts.
+
 ## Testing
 
-There is no test runner in-repo. Verify behaviour by exercising the real engine
-(e.g. scaffold a workspace with a deliberate bug, run `verify()`, confirm the failure is
-detected and a fix makes it pass). Rebuild bundles before considering a change done.
+`npm test` runs `scripts/test-preview-esm.js` and `scripts/test-pipeline.js`
+(the latter covers the library registry, motion vocabulary, safety gate,
+design system, asset sources, asset pipeline, and Blender script generation).
+For anything that only exists at runtime, exercise the real engine and verify
+in real Chromium headless (`--headless=new --use-gl=swiftshader
+--enable-unsafe-swiftshader --dump-dom`) — a green unit test does not prove a
+WebGL scene renders. Rebuild bundles before considering a change done.
+
+Note: the Draco decoder hangs under `--virtual-time-budget` in headless
+Chromium. Verify Draco path handling with a non-Draco .glb, or drop the virtual
+time budget and poll instead.

@@ -188,6 +188,9 @@ PERFORMANCE GUIDELINES
         const needsBakedLighting = /baked|lightmap|ambient.?occlusion|blender|cinema.?4d|c4d/i.test(advBlob);
         const needsCameraCurve = /camera.?curve|catmull|dolly|flythrough|camera.?path/i.test(advBlob);
         const needsDragGrid = /infinite.?grid|drag.?grid|endless.?canvas|world.?page|raycast/i.test(advBlob);
+        // Free asset sources and headless Blender are always worth offering;
+        // the coder agent decides whether the brief actually needs them.
+        const wantsFreeAssets = /lighting|hdri|environment|pbr|photoreal|realistic|texture|material|model|product|furniture|interior/i.test(advBlob);
 
         // Budget is computed from the same registry the HTML pass uses, so the
         // scene prompt and the page prompt cannot disagree about what is loaded.
@@ -217,6 +220,7 @@ PERFORMANCE GUIDELINES
             needsBakedLighting,
             needsCameraCurve,
             needsDragGrid,
+            wantsFreeAssets,
             performanceRules,
         };
 
@@ -364,6 +368,35 @@ INFINITE DRAG GRID REQUIRED
 * Use raycasting for hover/selection, throttled to pointer events (not every frame)
 * Momentum/inertia on release with exponential decay
 * Support touch and pointer capture; never hijack native scroll on the page itself
+` : ''}
+${hints.wantsFreeAssets ? `
+FREE CC0 ASSETS — USE THESE EXACT URLS, DO NOT INVENT ANY
+* Poly Haven is CC0 and CORS-open, so the browser can load it directly.
+* Environment HDRI (1k is plenty for lighting):
+  https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_03_1k.hdr
+* Load with RGBELoader, run through PMREMGenerator, assign to scene.environment.
+  Do NOT add a second key light unless the HDRI is visibly too dark.
+* PBR maps (wood_floor_deck 1k) — colourSpace matters, map is sRGB, the rest linear:
+  map:         https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/wood_floor_deck/wood_floor_deck_diff_1k.jpg
+  normalMap:   https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/wood_floor_deck/wood_floor_deck_nor_gl_1k.jpg
+  roughnessMap:https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/wood_floor_deck/wood_floor_deck_rough_1k.jpg
+  aoMap:       https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/wood_floor_deck/wood_floor_deck_ao_1k.jpg
+* Real CC0 model, load with GLTFLoader (note: .gltf + sidecar textures, not .glb):
+  https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/ArmChair_01/ArmChair_01_1k.gltf
+* Always show a loading state; dispose textures and geometries on teardown.
+` : ''}
+${hints.needsBakedLighting ? `
+BAKED LIGHTING — the reason to reach for Blender
+* Per-frame lighting is what kills WebGL on mid-range hardware. Bake it instead.
+* In Three, apply a baked map with:
+    material.lightMap = bakedTexture;
+    material.lightMapIntensity = 1.0;
+    geometry.setAttribute('uv2', geometry.attributes.uv);   // lightMap/aoMap need uv2
+* Ship the lightmap at 1k, KTX2 or JPEG. Never compute AO per frame.
+* Keep lighting separable from base colour so the material can still react to
+  environment changes — do not bake light into the diffuse map.
+* If no baked texture exists yet, fall back to one directional light + the HDRI
+  and leave a comment saying the lightmap is pending a Blender bake.
 ` : ''}
 
 CRITICAL FORMAT

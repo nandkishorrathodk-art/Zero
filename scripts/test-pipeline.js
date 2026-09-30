@@ -100,3 +100,128 @@ const allowed = ['ls -la', 'cat package.json', 'git status', 'grep foo bar.txt',
   }
   console.log('\nAll pipeline tests passed');
 })();
+
+/* ---- DesignSystem: the scale must be real, ordered, and fluid ---- */
+{
+  const { DesignSystem } = require(path.join(root, 'js', 'design-system.js'));
+  const scale = DesignSystem.typeScale();
+  const sizes = Object.keys(scale).map((k) => scale[k].pxMax);
+  assert(sizes.every((v, i) => i === 0 || v > sizes[i - 1]), 'type scale ascends monotonically');
+  assert(/clamp\(/.test(scale['step-6'].value), 'display steps are fluid clamp() values');
+  assert(/clamp\(/.test(scale['step-0'].value), 'body step is fluid too');
+
+  const optical = DesignSystem.opticalRules(scale);
+  const big = optical.find((r) => r.step === 7);
+  const small = optical.find((r) => r.step === 0);
+  assert(big.letterSpacing.startsWith('-'), 'display type gets negative tracking');
+  assert(parseFloat(big.lineHeight) < 1.1, 'display type gets tight leading');
+  assert(parseFloat(small.lineHeight) > 1.4, 'body type gets loose leading');
+  assert(small.maxWidth !== big.maxWidth, 'measure narrows as size grows');
+
+  const css = DesignSystem.toCSS();
+  for (const token of ['--step-0', '--step-7', '--space-3xl', '--grid-max', '--leading-6', '--tracking-7']) {
+    assert(css.includes(token), `design tokens include ${token}`);
+  }
+  assert(/\.type-6\{/.test(css), 'type role classes are emitted');
+  assert(/\.container\{/.test(css), 'grid container utility is emitted');
+  assert(DesignSystem.layoutPrinciples().length >= 8, 'layout principles are substantial');
+}
+
+/* ---- AssetSources: URLs must match the documented Poly Haven layout ---- */
+{
+  const { AssetSources } = require(path.join(root, 'js', 'asset-sources.js'));
+  const block = AssetSources.toPromptBlock({
+    hdri: { slug: 'studio_small_03', url: 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_03_1k.hdr', sizeKb: 1600 },
+    texture: { slug: 'wood_floor_deck', maps: { diffuse: 'https://x/diff.jpg', normal: 'https://x/nor.jpg' } },
+    model: { url: 'https://x/chair.gltf' },
+    notes: ['CC0'],
+  });
+  assert(/dl\.polyhaven\.org/.test(block), 'prompt block carries real Poly Haven URLs');
+  assert(/PMREMGenerator/.test(block), 'prompt block explains HDRI usage');
+  assert(/colorSpace|sRGB/.test(block), 'prompt block warns about colour space');
+}
+
+/* ---- AssetPipeline: the exact failure it exists to catch ---- */
+{
+  const { AssetPipeline } = require(path.join(root, 'js', 'asset-pipeline.js'));
+  const missing = AssetPipeline.inspectFile('/tmp/definitely-not-here.glb');
+  assert(missing.ok === false && /missing/i.test(missing.error), 'missing asset is reported as missing');
+  assert(AssetPipeline.inspectGlb(Buffer.from('not a glb at all')).ok === false, 'non-GLB input is rejected');
+
+  const report = AssetPipeline.checkBudget([
+    { name: 'hero.glb', kind: 'model', sizeKb: 9000, triangles: 900000, draco: false, images: 4, ktx2: false },
+    { name: 'sky.hdr', kind: 'hdri', sizeKb: 8000 },
+  ]);
+  assert(report.ok === false, 'oversized assets fail the budget');
+  assert(report.warnings.some((w) => /Draco/.test(w)), 'budget suggests Draco for uncompressed geometry');
+  assert(report.warnings.some((w) => /decimate/i.test(w)), 'budget suggests decimation for high poly counts');
+  assert(report.warnings.some((w) => /KTX2/.test(w)), 'budget suggests KTX2 for textures');
+  assert(AssetPipeline.runtimeRules().length >= 5, 'runtime rules are provided');
+}
+
+/* ---- BlenderBridge: generated script must be valid, deterministic Python ---- */
+{
+  const { BlenderBridge } = require(path.join(root, 'js', 'blender-bridge.js'));
+  const bridge = new BlenderBridge({ binary: '/nonexistent/blender' });
+  const spec = {
+    objects: [
+      { type: 'ico_sphere', name: 'Hero', radius: 1, subdivisions: 3, shadeSmooth: true },
+      { type: 'torus', name: 'Ring', radius: 1.4, minorRadius: 0.3 },
+      { type: 'cube', name: 'Base', size: 2, location: [0, 0, -1.5] },
+      { type: 'cylinder', name: 'Column', radius: 0.2, depth: 3 },
+    ],
+    bake: true,
+    bakeResolution: 512,
+    draco: true,
+    exportName: 'hero.glb',
+  };
+  const a = bridge.buildScript(spec);
+  const b = bridge.buildScript(spec);
+  assert(a === b, 'generated Blender script is deterministic');
+  assert(/major_radius=1.4/.test(a) && /minor_radius=0.3/.test(a), 'torus uses the correct operator args');
+  assert(/subdivisions=3/.test(a), 'ico_sphere subdivisions passed at creation, not as a mesh attribute');
+  assert(/radius1=0.2/.test(a) && /depth=3/.test(a), 'cylinder uses radius1/depth, not radius');
+  assert(!/\.data\.subdivisions/.test(a), 'no invalid mesh.subdivisions assignment');
+  assert(/export_draco_mesh_compression_enable=_use_draco/.test(a), 'Draco decision is computed from triangle count');
+  assert(/_use_draco = _tris > 20000/.test(bridge.buildScript({ ...spec, draco: 'auto' })), 'auto Draco enables only above 20k triangles');
+  assert(/_use_draco = False/.test(bridge.buildScript({ ...spec, draco: false })), 'Draco can be forced off');
+  assert(/bpy\.ops\.object\.bake\(/.test(a), 'bake call is emitted when requested');
+  assert(/BLENDER_OK/.test(a), 'script prints a machine-readable success marker');
+
+  const noBake = bridge.buildScript({ objects: [{ type: 'cube', name: 'C' }], draco: false });
+  assert(/_names = \["C"\]/.test(noBake), '_names is defined even when baking is off');
+  assert(/BAKE_BYTES/.test(a) && !/BAKE_BYTES/.test(noBake), 'bake markers appear only when baking');
+
+  const args = bridge.buildArgs('/tmp/s.py', '/tmp/out');
+  assert(args[0] === '--background' && args.includes('--factory-startup'), 'runs headless without user prefs');
+  assert(args[args.length - 1] === '/tmp/out', 'output dir is passed after --');
+  assert(/deterministic/i.test(BlenderBridge.toPromptBlock()), 'prompt block explains why Blender is used');
+}
+
+/* ---- Coder3D: free assets and Blender must reach the scene prompt ---- */
+{
+  (0, eval)(fs.readFileSync(path.join(root, 'js', 'agents', 'coder-3d.js'), 'utf8'));
+  const coder = new Coder3DAgent();
+  const rich = coder.buildPrompt({
+    heroTreatment: 'webgl-scene',
+    complexity: 'ultra-complex',
+    advancedEffects: ['photoreal-product-with-hdri', 'baked-lighting-textures', 'draco-ktx2-pipeline'],
+  });
+  assert(/FREE CC0 ASSETS/.test(rich), 'coder-3d prompt offers the free CC0 assets');
+  assert(/dl\.polyhaven\.org/.test(rich), 'coder-3d prompt carries real asset URLs');
+  assert(/BAKED LIGHTING/.test(rich), 'coder-3d prompt explains baked lighting');
+  assert(/lightMap/.test(rich) && /uv2/.test(rich), 'baked lighting block names the real Three.js API');
+  assert(/import map/.test(rich), 'coder-3d prompt insists on the ES module import map');
+}
+
+/* ---- CoderUI: the computed design system must be in the build prompt ---- */
+{
+  (0, eval)(fs.readFileSync(path.join(root, 'js', 'agents', 'coder-ui.js'), 'utf8'));
+  const ui = new CoderUIAgent();
+  assert(typeof ui._ensureDesignTokens === 'function', 'coder-ui can guarantee design tokens');
+  const tokens = ':root{--step-0:1rem}';
+  assert(ui._ensureDesignTokens(tokens, '.x{color:red}').startsWith(tokens), 'tokens are prepended when the model omitted them');
+  assert(ui._ensureDesignTokens(tokens, ':root{--step-0:2rem}') === ':root{--step-0:2rem}', 'model-authored tokens are left untouched');
+  assert(/DESIGN SYSTEM DISCIPLINE/.test(ui.systemPrompt), 'coder-ui prompt carries the design discipline rules');
+  assert(/Break the centre/.test(ui.systemPrompt), 'coder-ui prompt forbids the centred-template look');
+}

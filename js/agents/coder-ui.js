@@ -360,7 +360,19 @@ RULES:
 - Every hover/interaction needs a state change in under 200ms or it feels laggy;
   use transform/opacity only.
 - Respect prefers-reduced-motion everywhere, and keep 60fps on mid-range mobile:
-  avoid animating layout properties, blur radii, or box-shadow.`;
+  avoid animating layout properties, blur radii, or box-shadow.
+
+DESIGN SYSTEM DISCIPLINE (this is what makes it read as studio work):
+- Sizes come from the computed scale. Use var(--step-N) for type and
+  var(--space-N) for every margin/padding/gap. Do not type raw px for either.
+- Apply the .type-N classes (or the same tracking/leading values) so optical
+  spacing matches the size. Display type is tight; body copy is loose.
+- Break the centre. At least two sections must be asymmetric — offset grid
+  spans, an edge bleed, or deliberate imbalance. A page of centred blocks is
+  the single clearest tell of a generated template.
+- One dominant element per section. If two things compete, one is too big.
+- Never show more than three type sizes in one section.
+- Whitespace is the design: when a section feels empty, add space, not a card.`;
     }
 
     async execute(specification, designSystem, threejsCode = null) {
@@ -444,7 +456,11 @@ INCLUDE THESE ELEMENTS:
 
 ═══════════════════════════════════════════════════════
 BUILD WITH ${designPhilosophy.toUpperCase()} PHILOSOPHY — NOT A GENERIC TEMPLATE
-═══════════════════════════════════════════════════════`;
+═══════════════════════════════════════════════════════
+
+${typeof DesignSystem !== 'undefined' ? DesignSystem.toPromptBlock() : ''}
+
+${typeof LibraryRegistry !== 'undefined' ? LibraryRegistry.runtimeRules(LibraryRegistry.plan(enhanced)).map((r) => `* ${r}`).join('\n') : ''}`;
 
         // Gather component templates
         const componentCSS = (enhanced.components || [])
@@ -676,7 +692,12 @@ Output ONLY the JS file:
             // Assemble final files
             const files = {};
             files['index.html'] = html;
-            files['styles.css'] = css || this._getDefaultCSS(designSystem);
+            const designTokens = typeof DesignSystem !== 'undefined' ? DesignSystem.toCSS() : '';
+            const llmCSS = css || this._getDefaultCSS(designSystem);
+            // The computed scale/grid/spacing tokens are prepended unconditionally.
+            // If the model dropped them the page would silently fall back to
+            // invented sizes, which is exactly the generic look we are removing.
+            files['styles.css'] = this._ensureDesignTokens(designTokens, llmCSS);
             files['script.js'] = this._injectGSAPBoilerplate() + '\n\n' + userJS;
 
             if (threejsCode) {
@@ -892,6 +913,15 @@ if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
 
     _getDefaultCSS(designSystem) {
         return designSystem.css + '\n\nbody { font-family: var(--font-body); background: var(--color-bg); color: var(--color-text); }';
+    }
+
+    /* Guarantee the computed tokens are present. If the model already emitted
+       --step-0 (i.e. it followed the brief) we leave its CSS alone; otherwise
+       the tokens are prepended so nothing can reference an undefined var. */
+    _ensureDesignTokens(tokens, css) {
+        if (!tokens) return css;
+        if (/--step-0\s*:/.test(css)) return css;
+        return `${tokens}\n\n${css}`;
     }
 }
 

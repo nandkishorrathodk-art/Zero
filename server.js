@@ -13,7 +13,7 @@ const dataDir = path.join(root, 'data');
 const projectsFile = path.join(dataDir, 'projects.json');
 const workspacesDir = path.join(dataDir, 'local-workspaces');
 const port = Number(process.env.PORT || 4173);
-const mimeTypes = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.ico': 'image/x-icon' };
+const mimeTypes = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.ico': 'image/x-icon', '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json', '.hdr': 'image/vnd.radiance', '.ktx2': 'image/ktx2', '.wasm': 'application/wasm', '.bin': 'application/octet-stream' };
 
 async function readProjects() {
   try { return JSON.parse(await fs.readFile(projectsFile, 'utf8')); } catch { return {}; }

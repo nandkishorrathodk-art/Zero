@@ -2975,6 +2975,803 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { LibraryR
 
 ;
 /* ============================================================
+   DESIGN SYSTEM — the deterministic scaffolding under an Awwwards-grade page.
+
+   Why this exists: the design pass used to be "describe a mood and let the
+   model pick sizes". That produces centred layouts, arbitrary font sizes,
+   and no rhythm — the exact tells of a generic template. Sites that win
+   awards are built on a system: a modular type scale, a real grid, a
+   spacing rhythm, and optical corrections per size.
+
+   Everything here is computed from a ratio, so it is reproducible and can
+   be emitted as CSS custom properties the coder agent must consume rather
+   than invent.
+   ============================================================ */
+
+const VIEWPORT_MIN = 360;
+const VIEWPORT_MAX = 1240;
+
+class DesignSystem {
+  /* Modular type scale, fluid between a min and max viewport.
+
+     Two ratios rather than one: a tighter ratio on small screens keeps
+     headings from swallowing the layout, a wider ratio on desktop gives
+     the display sizes their drama. This is the "utopia" approach and it
+     is what makes type feel intentional at every width. */
+  static typeScale({ base = 16, baseMax = 18, ratio = 1.2, ratioMax = 1.25, steps = 7 } = {}) {
+    const out = {};
+    for (let n = -1; n <= steps; n += 1) {
+      const minPx = base * Math.pow(ratio, n);
+      const maxPx = baseMax * Math.pow(ratioMax, n);
+      const slope = ((maxPx - minPx) / (VIEWPORT_MAX - VIEWPORT_MIN)) * 100;
+      const intercept = minPx - (slope / 100) * VIEWPORT_MIN;
+      const minRem = +(minPx / 16).toFixed(3);
+      const maxRem = +(maxPx / 16).toFixed(3);
+      const interceptRem = +(intercept / 16).toFixed(3);
+      const clamped = Math.abs(maxPx - minPx) < 0.5;
+      out[`step-${n}`] = {
+        px: Math.round(minPx),
+        pxMax: Math.round(maxPx),
+        rem: minRem,
+        value: clamped
+          ? `${minRem}rem`
+          : `clamp(${minRem}rem, ${interceptRem}rem + ${slope.toFixed(2)}vw, ${maxRem}rem)`,
+      };
+    }
+    return out;
+  }
+
+  /* Fluid spacing rhythm. Every gap on the page is one of these, which is
+     what stops the "each section invented its own padding" look. */
+  static spaceScale() {
+    const steps = {
+      '3xs': [4, 6],
+      '2xs': [8, 10],
+      xs: [12, 16],
+      sm: [16, 24],
+      md: [24, 32],
+      lg: [32, 48],
+      xl: [48, 72],
+      '2xl': [64, 104],
+      '3xl': [96, 160],
+      '4xl': [128, 224],
+    };
+    const out = {};
+    for (const [name, [minPx, maxPx]] of Object.entries(steps)) {
+      const slope = ((maxPx - minPx) / (VIEWPORT_MAX - VIEWPORT_MIN)) * 100;
+      const intercept = minPx - (slope / 100) * VIEWPORT_MIN;
+      out[`space-${name}`] = `clamp(${(minPx / 16).toFixed(3)}rem, ${(intercept / 16).toFixed(3)}rem + ${slope.toFixed(2)}vw, ${(maxPx / 16).toFixed(3)}rem)`;
+    }
+    return out;
+  }
+
+  /* Optical corrections. Large type needs negative tracking and tighter
+     leading; body copy needs the opposite. Applying the same values at
+     every size is the single most common reason display type looks
+     amateur. */
+  static opticalRules(scale) {
+    const rules = [];
+    const step = (n) => scale[`step-${n}`]?.pxMax || 16;
+    for (let n = -1; n <= 7; n += 1) {
+      const size = step(n);
+      let tracking;
+      let leading;
+      let measure;
+      if (size >= 96) { tracking = '-0.045em'; leading = 0.9; measure = '9ch'; }
+      else if (size >= 64) { tracking = '-0.035em'; leading = 0.95; measure = '12ch'; }
+      else if (size >= 40) { tracking = '-0.025em'; leading = 1.05; measure = '18ch'; }
+      else if (size >= 28) { tracking = '-0.015em'; leading = 1.15; measure = '26ch'; }
+      else if (size >= 20) { tracking = '-0.005em'; leading = 1.35; measure = '38ch'; }
+      else { tracking = '0em'; leading = 1.6; measure = '68ch'; }
+      rules.push({ step: n, sizePx: size, letterSpacing: tracking, lineHeight: leading, maxWidth: measure });
+    }
+    return rules;
+  }
+
+  /* A real 12-column grid with a gutter that scales. Published as vars so
+     the layout is consistent instead of per-section guesswork. */
+  static grid() {
+    return {
+      columns: 12,
+      maxWidth: '1440px',
+      gutter: 'clamp(1rem, 2.5vw, 2.5rem)',
+      margin: 'clamp(1.25rem, 5vw, 5rem)',
+      css: [
+        '--grid-columns: 12;',
+        '--grid-max: 1440px;',
+        '--grid-gutter: clamp(1rem, 2.5vw, 2.5rem);',
+        '--grid-margin: clamp(1.25rem, 5vw, 5rem);',
+      ],
+      utility: `.container{width:100%;max-width:var(--grid-max);margin-inline:auto;padding-inline:var(--grid-margin)}` +
+        `.grid-12{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:var(--grid-gutter)}` +
+        `@media(max-width:768px){.grid-12{grid-template-columns:repeat(4,minmax(0,1fr))}}`,
+    };
+  }
+
+  /* The composition rules that actually separate an award-winning page
+     from a tidy template. These are constraints, not suggestions. */
+  static layoutPrinciples() {
+    return [
+      'Break the centre. At least two sections must be asymmetric — offset columns (4/7, 3/8), an element bleeding off the edge, or a deliberate imbalance. A page of centred blocks reads as a template.',
+      'Whitespace is the design. Section padding uses --space-2xl or larger; never less than --space-xl between major blocks. When in doubt, add space, not another element.',
+      'One idea per viewport. Each scroll position should communicate a single thing. If two elements compete for the same beat, move one to the next section.',
+      'Type does the heavy lifting. Use --step-6/--step-7 for a single display line per page. Everything else steps down decisively — no two adjacent sizes within one step of each other.',
+      'Establish a dominant element per section: one thing at --step-4 or larger, the rest small. Equal weighting flattens hierarchy.',
+      'Align to the grid, then break it once, on purpose. Optical alignment beats mathematical alignment for edges and punctuation.',
+      'Contrast in scale, not just colour. A 6:1 size jump between a label and its heading is more premium than any gradient.',
+      'Give the eye a path: enter top-left, travel through the section, exit toward the next. Use alignment and scale to steer, not arrows.',
+      'Never ship more than three type sizes visible at once in a single section.',
+      'Full-bleed is a tool, not a default. Use it for media and one statement section; keep the rest inside the container so the bleed lands.',
+    ];
+  }
+
+  /* Emit the whole system as CSS custom properties. This is the block the
+     coder agent must paste and then only ever reference by var(). */
+  static toCSS(options = {}) {
+    const scale = DesignSystem.typeScale(options);
+    const space = DesignSystem.spaceScale();
+    const grid = DesignSystem.grid();
+    const optical = DesignSystem.opticalRules(scale);
+
+    const lines = [':root{', '  /* fluid type scale — modular ratio, computed not guessed */'];
+    for (const [name, s] of Object.entries(scale)) lines.push(`  --${name}: ${s.value};`);
+    lines.push('', '  /* spacing rhythm — every gap comes from here */');
+    for (const [name, v] of Object.entries(space)) lines.push(`  --${name}: ${v};`);
+    lines.push('', '  /* grid */');
+    for (const l of grid.css) lines.push(`  ${l}`);
+    lines.push('', '  /* optical corrections per step (tracking / leading / measure) */');
+    for (const r of optical) {
+      if (r.step < 0) continue;
+      lines.push(`  --leading-${r.step}: ${r.lineHeight};`);
+      lines.push(`  --tracking-${r.step}: ${r.letterSpacing};`);
+      lines.push(`  --measure-${r.step}: ${r.maxWidth};`);
+    }
+    lines.push('}');
+
+    // Utility classes that pair a step with its optical corrections, so the
+    // agent cannot accidentally apply display tracking to body copy.
+    lines.push('', '/* type roles — size, tracking, leading and measure applied together */');
+    for (let n = 0; n <= 7; n += 1) {
+      lines.push(`.type-${n}{font-size:var(--step-${n});line-height:var(--leading-${n});letter-spacing:var(--tracking-${n});max-width:var(--measure-${n})}`);
+    }
+    lines.push('', grid.utility);
+    return lines.join('\n');
+  }
+
+  /* The prompt block. Values are concrete so the model has nothing to
+     invent, and the principles are framed as hard constraints. */
+  static toPromptBlock(options = {}) {
+    const scale = DesignSystem.typeScale(options);
+    const grid = DesignSystem.grid();
+    const display = scale['step-6'];
+    const hero = scale['step-7'];
+    return [
+      'DESIGN SYSTEM (computed — use these vars, do NOT invent sizes)',
+      `* Display type: var(--step-6) ≈ ${display.px}–${display.pxMax}px. Hero statement: var(--step-7) ≈ ${hero.px}–${hero.pxMax}px.`,
+      `* Body: var(--step-0). Labels/eyebrows: var(--step--1) with uppercase and 0.18em tracking.`,
+      `* Spacing: var(--space-3xl) between sections, var(--space-lg) inside a group, var(--space-xs) between a label and its value.`,
+      `* Grid: ${grid.columns} columns, max ${grid.maxWidth}, gutter var(--grid-gutter), page margin var(--grid-margin). Use .grid-12 or .container.`,
+      '* Apply .type-N classes so tracking and leading match the size automatically.',
+      '',
+      'LAYOUT PRINCIPLES (hard constraints, not advice)',
+      ...DesignSystem.layoutPrinciples().map((p) => `* ${p}`),
+    ].join('\n');
+  }
+}
+
+if (typeof window !== 'undefined') window.DesignSystem = DesignSystem;
+if (typeof module !== 'undefined' && module.exports) module.exports = { DesignSystem, VIEWPORT_MIN, VIEWPORT_MAX };
+
+;
+/* ============================================================
+   ASSET SOURCES — free, CC0, no-API-key 3D assets for generated sites.
+
+   Poly Haven is the one source that is simultaneously:
+     - CC0 (no attribution required, safe to ship to a client)
+     - CORS-open (`access-control-allow-origin: *`), so a browser can
+       load the files directly at runtime, no proxy
+     - available at web-friendly sizes (1k/2k), which is the difference
+       between a 60fps page and a 4MB HDRI stall
+
+   Everything here was verified against the live API. The API itself is
+   queried at build time by the asset resolver; the URLs it returns are
+   what the generated page hardcodes.
+   ============================================================ */
+
+const POLYHAVEN_API = 'https://api.polyhaven.com';
+const POLYHAVEN_CDN = 'https://dl.polyhaven.org/file/ph-assets';
+
+/* Category → what the generated site should ask for. The API groups
+   assets by type (hdris / textures / models) and by category. */
+const CATEGORY_HINTS = {
+  studio: { type: 'hdris', label: 'studio lighting', use: 'product and hero lighting' },
+  indoor: { type: 'hdris', label: 'interior', use: 'architecture and hospitality' },
+  outdoor: { type: 'hdris', label: 'exterior daylight', use: 'real estate and landscape' },
+  sunset: { type: 'hdris', label: 'golden hour', use: 'fashion and editorial warmth' },
+  night: { type: 'hdris', label: 'night', use: 'moody product and automotive' },
+  city: { type: 'hdris', label: 'urban', use: 'street and culture editorial' },
+};
+
+/* Textures worth reaching for, keyed by material intent. These names
+   exist in the Poly Haven catalogue and resolve through the API. */
+const MATERIAL_HINTS = {
+  wood: 'wood_floor_deck',
+  concrete: 'concrete_wall_008',
+  marble: 'marble_01',
+  metal: 'metal_plate',
+  fabric: 'fabric_pattern_07',
+  stone: 'rock_face_03',
+};
+
+class AssetSources {
+  /* Ask the live API for assets in a category, newest first. Returns a
+     compact list the prompt can embed without blowing up the token
+     budget. */
+  static async searchHdris(category = 'studio', limit = 8) {
+    const url = `${POLYHAVEN_API}/assets?t=hdris&categories=${encodeURIComponent(category)}`;
+    const data = await this._getJson(url);
+    return Object.entries(data || {})
+      .slice(0, limit)
+      .map(([slug, meta]) => ({
+        slug,
+        name: meta.name,
+        tags: (meta.tags || []).slice(0, 6),
+        maxResolution: meta.max_resolution,
+        downloadPage: `https://polyhaven.com/a/${slug}`,
+      }));
+  }
+
+  static async searchTextures(category = 'wood', limit = 8) {
+    const url = `${POLYHAVEN_API}/assets?t=textures&categories=${encodeURIComponent(category)}`;
+    const data = await this._getJson(url);
+    return Object.entries(data || {})
+      .slice(0, limit)
+      .map(([slug, meta]) => ({ slug, name: meta.name, tags: (meta.tags || []).slice(0, 6) }));
+  }
+
+  static async searchModels(category = '', limit = 12) {
+    const query = category ? `?t=models&categories=${encodeURIComponent(category)}` : '?t=models';
+    const data = await this._getJson(`${POLYHAVEN_API}/assets${query}`);
+    return Object.entries(data || {})
+      .slice(0, limit)
+      .map(([slug, meta]) => ({ slug, name: meta.name, tags: (meta.tags || []).slice(0, 6) }));
+  }
+
+  /* Resolve an asset slug to concrete, browser-loadable URLs at a given
+     resolution. This is the function the pipeline actually needs: it
+     turns "studio_small_03" into a URL a page can put in an img/loader. */
+  static async resolveHdri(slug, resolution = '1k') {
+    const data = await this._getJson(`${POLYHAVEN_API}/files/${slug}`);
+    const hdri = data?.hdri?.[resolution]?.hdr;
+    if (!hdri) return null;
+    return {
+      slug,
+      kind: 'hdri',
+      resolution,
+      url: hdri.url,
+      sizeKb: Math.round((hdri.size || 0) / 1024),
+      // Equirectangular HDRIs go straight into Three's PMREMGenerator.
+      threeUsage: 'new THREE.RGBELoader().load(url) → PMREMGenerator → scene.environment',
+    };
+  }
+
+  static async resolveTexture(slug, resolution = '1k') {
+    const data = await this._getJson(`${POLYHAVEN_API}/files/${slug}`);
+    const pick = (map) => data?.[map]?.[resolution]?.jpg?.url || null;
+    const maps = {
+      diffuse: pick('Diffuse'),
+      normal: pick('nor_gl'),
+      roughness: pick('Rough'),
+      ao: pick('AO'),
+      displacement: pick('Displacement'),
+      arm: pick('arm'),
+    };
+    if (!maps.diffuse) return null;
+    // The `gltf` bundle is a single .gltf with all maps wired — far fewer
+    // requests than six separate images.
+    const gltf = data?.gltf?.[resolution]?.gltf?.url || null;
+    return {
+      slug,
+      kind: 'texture',
+      resolution,
+      maps,
+      gltfBundle: gltf,
+      sizeKb: Math.round((data?.Diffuse?.[resolution]?.jpg?.size || 0) / 1024),
+    };
+  }
+
+  static async resolveModel(slug, resolution = '1k') {
+    const data = await this._getJson(`${POLYHAVEN_API}/files/${slug}`);
+    const gltf = data?.gltf?.[resolution]?.gltf;
+    if (!gltf) return null;
+    return {
+      slug,
+      kind: 'model',
+      resolution,
+      url: gltf.url,
+      sizeKb: Math.round((gltf.size || 0) / 1024),
+      // Poly Haven ships .gltf (JSON) + sidecar .bin/textures, so the
+      // loader needs a real HTTP path, not a data URI.
+      threeUsage: "new GLTFLoader().load(url, onLoad)",
+    };
+  }
+
+  /* One call the pipeline can make to get everything a build needs,
+     already resolved and budget-checked. */
+  static async bundleForBrief(brief = {}) {
+    const blob = JSON.stringify(brief).toLowerCase();
+    const wantsHdri = /lighting|hdri|environment|studio|pbr|realistic|photoreal|product|interior|exterior/.test(blob);
+    const wantsTexture = /texture|material|wood|concrete|marble|metal|fabric|surface/.test(blob);
+    const wantsModel = /model|product|furniture|object|chair|glb|gltf|3d asset/.test(blob);
+
+    const bundle = { hdri: null, texture: null, model: null, notes: [] };
+    if (wantsHdri) {
+      const category = /interior|indoor/.test(blob) ? 'indoor'
+        : /exterior|outdoor|real estate/.test(blob) ? 'outdoor'
+        : /night|dark|moody/.test(blob) ? 'night'
+        : 'studio';
+      const candidates = await this.searchHdris(category, 4);
+      if (candidates[0]) bundle.hdri = await this.resolveHdri(candidates[0].slug, '1k');
+    }
+    if (wantsTexture) {
+      const key = Object.keys(MATERIAL_HINTS).find((k) => blob.includes(k)) || 'wood';
+      bundle.texture = await this.resolveTexture(MATERIAL_HINTS[key], '1k');
+    }
+    if (wantsModel) {
+      const models = await this.searchModels('', 12);
+      // Prefer something small and generic over a random 4k showpiece.
+      const pick = models.find((m) => /chair|vase|plant|lamp|cup|book/i.test(m.slug)) || models[0];
+      if (pick) bundle.model = await this.resolveModel(pick.slug, '1k');
+    }
+
+    bundle.notes.push('All Poly Haven assets are CC0 — no attribution needed, safe to ship.');
+    if (bundle.hdri) bundle.notes.push(`HDRI ${bundle.hdri.slug} at ${bundle.hdri.sizeKb}KB keeps first paint fast.`);
+    return bundle;
+  }
+
+  /* Render the bundle as instructions a coder agent can follow. */
+  static toPromptBlock(bundle) {
+    if (!bundle) return '';
+    const lines = ['FREE CC0 ASSETS (verified, CORS-open, safe to hotlink)'];
+    if (bundle.hdri) {
+      lines.push(`* Environment: ${bundle.hdri.url}`);
+      lines.push(`  Load with RGBELoader, run through PMREMGenerator, assign to scene.environment.`);
+      lines.push(`  Do NOT add a second background light source unless the HDRI is clearly too dark.`);
+    }
+    if (bundle.texture) {
+      lines.push(`* Material maps (${bundle.texture.slug}):`);
+      for (const [name, url] of Object.entries(bundle.texture.maps)) {
+        if (url) lines.push(`  - ${name}: ${url}`);
+      }
+      lines.push(`  Set map, normalMap, roughnessMap, aoMap with the matching colorSpace (only map/sRGB).`);
+    }
+    if (bundle.model) {
+      lines.push(`* Model: ${bundle.model.url}`);
+      lines.push(`  Load with GLTFLoader; keep a loading state and dispose on teardown.`);
+    }
+    for (const note of bundle.notes) lines.push(`* ${note}`);
+    return lines.join('\n');
+  }
+
+  static async _getJson(url) {
+    if (typeof fetch === 'function') {
+      const res = await fetch(url, { headers: { Accept: 'application/json' } });
+      if (!res.ok) throw new Error(`Asset API ${res.status} for ${url}`);
+      return res.json();
+    }
+    const https = require('https');
+    return new Promise((resolve, reject) => {
+      https.get(url, { headers: { Accept: 'application/json' } }, (res) => {
+        let body = '';
+        res.on('data', (c) => { body += c; });
+        res.on('end', () => {
+          try { resolve(JSON.parse(body)); } catch (e) { reject(e); }
+        });
+      }).on('error', reject);
+    });
+  }
+}
+
+if (typeof window !== 'undefined') window.AssetSources = AssetSources;
+if (typeof module !== 'undefined' && module.exports) module.exports = { AssetSources, MATERIAL_HINTS, CATEGORY_HINTS };
+
+;
+/* ============================================================
+   ASSET PIPELINE — validate and budget 3D assets before they ship.
+
+   The failure this prevents: generated code references a .glb that does
+   not exist, or exists at 8k/40MB, and the page dies at runtime with a
+   blank canvas and a console error the user never sees. Checking here
+   turns that into a build-time warning with a concrete fix.
+
+   Parses the glTF container directly (GLB header + JSON chunk) so it
+   works in Node and the browser without a 3D engine.
+   ============================================================ */
+
+const BUDGET = {
+  glbKb: 2500,        // a hero model over ~2.5MB stalls first paint
+  triangles: 300_000, // beyond this, mid-range GPUs drop frames
+  textureKb: 2048,    // per texture, decoded
+  totalKb: 6000,      // whole page's 3D payload
+};
+
+const DRACO_EXT = 'KHR_draco_mesh_compression';
+const KTX2_EXT = 'KHR_texture_basisu';
+
+class AssetPipeline {
+  /* Read a .glb from disk and report what it contains. */
+  static inspectGlb(buffer) {
+    const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+    if (buf.length < 20) return { ok: false, error: 'File is too small to be a GLB.' };
+    const magic = buf.toString('ascii', 0, 4);
+    if (magic !== 'glTF') return { ok: false, error: `Not a GLB (magic "${magic}").` };
+
+    const version = buf.readUInt32LE(4);
+    const declaredLength = buf.readUInt32LE(8);
+    const jsonLength = buf.readUInt32LE(12);
+    const jsonType = buf.toString('ascii', 16, 20);
+    if (jsonType !== 'JSON') return { ok: false, error: 'First GLB chunk is not JSON.' };
+    if (20 + jsonLength > buf.length) return { ok: false, error: 'GLB JSON chunk is truncated.' };
+
+    let gltf;
+    try {
+      gltf = JSON.parse(buf.toString('utf8', 20, 20 + jsonLength));
+    } catch (e) {
+      return { ok: false, error: `GLB JSON chunk did not parse: ${e.message}` };
+    }
+
+    const extensions = gltf.extensionsUsed || [];
+    const primitives = (gltf.meshes || []).flatMap((m) => m.primitives || []);
+    const triangles = primitives.reduce((sum, p) => {
+      const accessor = gltf.accessors?.[p.indices ?? p.attributes?.POSITION];
+      return sum + (accessor?.count ? Math.floor(accessor.count / 3) : 0);
+    }, 0);
+
+    const images = gltf.images || [];
+    const usesKTX2 = extensions.includes(KTX2_EXT) ||
+      images.some((img) => (img.mimeType || '').includes('ktx2') || /\.ktx2$/i.test(img.uri || ''));
+
+    return {
+      ok: true,
+      version,
+      generator: gltf.asset?.generator || 'unknown',
+      lengthMatches: declaredLength === buf.length,
+      bytes: buf.length,
+      sizeKb: Math.round(buf.length / 1024),
+      meshes: (gltf.meshes || []).length,
+      materials: (gltf.materials || []).length,
+      images: images.length,
+      triangles,
+      draco: extensions.includes(DRACO_EXT),
+      ktx2: usesKTX2,
+      animations: (gltf.animations || []).length,
+      extensionsUsed: extensions,
+    };
+  }
+
+  static inspectFile(filePath) {
+    const fs = require('fs');
+    if (!fs.existsSync(filePath)) {
+      return { ok: false, error: `Asset missing: ${filePath}. Generate it (Blender) or point the code at a real file.` };
+    }
+    try {
+      return AssetPipeline.inspectGlb(fs.readFileSync(filePath));
+    } catch (e) {
+      return { ok: false, error: `Could not read ${filePath}: ${e.message}` };
+    }
+  }
+
+  /* Decide whether a set of assets fits the page budget. Returns warnings
+     phrased as fixes, not just numbers. */
+  static checkBudget(assets = []) {
+    const warnings = [];
+    const items = [];
+    let totalKb = 0;
+
+    for (const asset of assets) {
+      const sizeKb = asset.sizeKb || 0;
+      totalKb += sizeKb;
+      items.push({ name: asset.name || asset.url || 'asset', kind: asset.kind || 'binary', sizeKb });
+
+      if (asset.kind === 'model') {
+        if (sizeKb > BUDGET.glbKb) {
+          warnings.push(`${asset.name}: ${sizeKb}KB exceeds the ${BUDGET.glbKb}KB model budget — enable Draco, or drop to a lower texture resolution.`);
+        }
+        if (asset.triangles > BUDGET.triangles) {
+          warnings.push(`${asset.name}: ${asset.triangles} triangles exceeds ${BUDGET.triangles} — decimate in Blender before export.`);
+        }
+        if (!asset.draco) {
+          warnings.push(`${asset.name}: geometry is uncompressed — export with Draco (export_draco_mesh_compression_enable=True).`);
+        }
+        if (asset.images > 0 && !asset.ktx2) {
+          warnings.push(`${asset.name}: textures ship as PNG/JPEG — convert to KTX2 for GPU-native upload.`);
+        }
+      }
+      if (asset.kind === 'hdri' && sizeKb > 2048) {
+        warnings.push(`${asset.name}: HDRI is ${sizeKb}KB — 1k is usually enough for environment lighting; 2k+ only when the sky is visible.`);
+      }
+      if (asset.kind === 'texture' && sizeKb > BUDGET.textureKb) {
+        warnings.push(`${asset.name}: texture is ${sizeKb}KB — downscale to 1k unless it is the hero surface.`);
+      }
+    }
+
+    if (totalKb > BUDGET.totalKb) {
+      warnings.push(`3D payload is ${totalKb}KB, over the ${BUDGET.totalKb}KB page budget — defer non-hero assets until after first paint.`);
+    }
+
+    return { ok: warnings.length === 0, totalKb, items, warnings, budget: BUDGET };
+  }
+
+  /* The rules a generated scene should follow so the assets above stay
+     cheap at runtime. Fed straight into the coder prompt. */
+  static runtimeRules() {
+    return [
+      'Preload only the hero asset; lazy-load the rest with IntersectionObserver.',
+      'Dispose geometries, materials, and textures on teardown (no leaks across route changes).',
+      'Cap devicePixelRatio at 2; render at 1x on low-end devices.',
+      'Pause the render loop when the canvas is off-screen or the tab is hidden.',
+      'Respect prefers-reduced-motion: swap to a static poster, do not just slow the animation.',
+      'Use InstancedMesh for repeated geometry instead of cloning meshes.',
+    ];
+  }
+
+  static toPromptBlock(report) {
+    if (!report || !report.warnings?.length) return '';
+    return ['ASSET BUDGET WARNINGS', ...report.warnings.map((w) => `* ${w}`)].join('\n');
+  }
+}
+
+if (typeof window !== 'undefined') window.AssetPipeline = AssetPipeline;
+if (typeof module !== 'undefined' && module.exports) module.exports = { AssetPipeline, BUDGET };
+
+;
+/* ============================================================
+   BLENDER BRIDGE — turn a scene spec into a headless Blender run.
+
+   Blender is the only free tool that can take a description, build real
+   geometry, bake lighting into textures, and export a Draco-compressed
+   .glb — all without a GUI. That last part is what makes it usable by an
+   agent: `blender --background --python script.py` is a deterministic
+   build step, not an interactive app.
+
+   This module never shells out by itself. It produces the script and the
+   argument list; the execution engine runs them so the existing binary
+   allow-list and timeout still apply.
+   ============================================================ */
+
+const PRIMITIVES = new Set(['cube', 'sphere', 'ico_sphere', 'cylinder', 'cone', 'torus', 'plane']);
+
+/* Escape a value for embedding in generated Python source. */
+function py(value) {
+  return JSON.stringify(String(value));
+}
+
+function pyNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? String(n) : String(fallback);
+}
+
+class BlenderBridge {
+  constructor({ binary = null, engine = null, workspaceRoot = null } = {}) {
+    this.binary = binary || BlenderBridge.findBinary();
+    this.engine = engine;
+    this.workspaceRoot = workspaceRoot;
+  }
+
+  static findBinary() {
+    const candidates = [
+      process.env.BLENDER_BIN,
+      'blender',
+      `${process.cwd()}/tools/blender-4.2.0-linux-x64/blender`,
+      '/usr/local/bin/blender',
+      '/usr/bin/blender',
+    ].filter(Boolean);
+    const fs = require('fs');
+    for (const c of candidates) {
+      if (c === 'blender') return c; // resolved via PATH at exec time
+      try { if (fs.existsSync(c)) return c; } catch { /* keep looking */ }
+    }
+    return 'blender';
+  }
+
+  available() {
+    const fs = require('fs');
+    if (this.binary === 'blender') return true;
+    try { return fs.existsSync(this.binary); } catch { return false; }
+  }
+
+  /* Build a complete, self-contained bpy script. Deterministic: the same
+     spec always produces the same script, which is what makes a bake
+     reproducible. */
+  buildScript(spec = {}) {
+    const objects = Array.isArray(spec.objects) && spec.objects.length
+      ? spec.objects
+      : [{ type: 'ico_sphere', name: 'Hero', radius: 1 }];
+
+    const lines = [];
+    lines.push('import bpy, os, sys, math, json');
+    lines.push('out_dir = sys.argv[-1]');
+    lines.push('os.makedirs(out_dir, exist_ok=True)');
+    lines.push('bpy.ops.wm.read_factory_settings(use_empty=True)');
+    lines.push('scene = bpy.context.scene');
+    lines.push('');
+
+    // Geometry
+    lines.push('# --- geometry ---');
+    const names = [];
+    for (const raw of objects) {
+      const type = PRIMITIVES.has(raw.type) ? raw.type : 'ico_sphere';
+      const name = String(raw.name || type).replace(/[^A-Za-z0-9_]/g, '_');
+      names.push(name);
+      const loc = Array.isArray(raw.location) ? raw.location : [0, 0, 0];
+      const op = type === 'ico_sphere' ? 'primitive_ico_sphere_add' : `primitive_${type}_add`;
+      // Each Blender primitive operator names its size argument differently,
+      // so the mapping has to be explicit rather than a generic `radius`.
+      const parts = [];
+      const radius = pyNumber(raw.radius, 1);
+      switch (type) {
+        case 'cube':
+        case 'plane':
+          parts.push(`size=${pyNumber(raw.size, 1)}`);
+          break;
+        case 'torus':
+          parts.push(`major_radius=${radius}`);
+          parts.push(`minor_radius=${pyNumber(raw.minorRadius, 0.35)}`);
+          break;
+        case 'cylinder':
+        case 'cone':
+          parts.push(`radius1=${radius}`);
+          if (type === 'cone') parts.push(`radius2=${pyNumber(raw.radius2, 0)}`);
+          parts.push(`depth=${pyNumber(raw.depth, 2)}`);
+          break;
+        default:
+          parts.push(`radius=${radius}`);
+      }
+      if (type === 'ico_sphere' && raw.subdivisions) parts.push(`subdivisions=${pyNumber(raw.subdivisions, 2)}`);
+      parts.push(`location=(${loc.map((v) => pyNumber(v)).join(', ')})`);
+      lines.push(`bpy.ops.mesh.${op}(${parts.join(', ')})`);
+      lines.push(`_o = bpy.context.active_object; _o.name = ${py(name)}`);
+      if (raw.shadeSmooth) lines.push('bpy.ops.object.shade_smooth()');
+      // Material
+      const color = Array.isArray(raw.color) ? raw.color : [0.98, 0.81, 0.90, 1];
+      lines.push(`_m = bpy.data.materials.new(${py(name + 'Mat')}); _m.use_nodes = True`);
+      lines.push(`_b = _m.node_tree.nodes["Principled BSDF"]`);
+      lines.push(`_b.inputs["Base Color"].default_value = (${color.map((c) => pyNumber(c, 1)).join(', ')})`);
+      lines.push(`_b.inputs["Metallic"].default_value = ${pyNumber(raw.metallic, 0.2)}`);
+      lines.push(`_b.inputs["Roughness"].default_value = ${pyNumber(raw.roughness, 0.35)}`);
+      lines.push(`_o.data.materials.append(_m)`);
+      lines.push('');
+    }
+
+    // Lighting
+    lines.push('# --- lighting ---');
+    if (spec.bake) {
+      lines.push('bpy.ops.object.light_add(type="AREA", location=(2.5, -2.5, 3.5))');
+      lines.push('bpy.context.active_object.data.energy = 800');
+      lines.push('bpy.ops.object.light_add(type="POINT", location=(-2, 1.5, 1.5))');
+      lines.push('bpy.context.active_object.data.energy = 200');
+    } else {
+      lines.push('bpy.ops.object.light_add(type="AREA", location=(3, -3, 5))');
+      lines.push('bpy.context.active_object.data.energy = 500');
+    }
+    lines.push('bpy.ops.object.camera_add(location=(0, -4.2, 1.6), rotation=(math.radians(80), 0, 0))');
+    lines.push('');
+    lines.push(`_names = ${JSON.stringify(names)}`);
+    lines.push('');
+
+    // Bake
+    if (spec.bake) {
+      lines.push('# --- bake lighting into a lightmap ---');
+      lines.push('scene.render.engine = "CYCLES"');
+      lines.push(`scene.cycles.samples = ${pyNumber(spec.bakeSamples, 16)}`);
+      lines.push('scene.cycles.device = "CPU"');
+      lines.push(`_res = ${pyNumber(spec.bakeResolution, 512)}`);
+      lines.push('for _n in _names:');
+      lines.push('    _ob = bpy.data.objects[_n]');
+      lines.push('    _mat = _ob.data.materials[0]');
+      lines.push('    _img = bpy.data.images.new(_n + "_lightmap", _res, _res)');
+      lines.push('    _tex = _mat.node_tree.nodes.new("ShaderNodeTexImage")');
+      lines.push('    _tex.image = _img');
+      lines.push('    _mat.node_tree.nodes.active = _tex');
+      lines.push('bpy.ops.object.select_all(action="DESELECT")');
+      lines.push('for _n in _names: bpy.data.objects[_n].select_set(True)');
+      lines.push('bpy.context.view_layer.objects.active = bpy.data.objects[_names[-1]]');
+      lines.push('bpy.ops.object.bake(type="DIFFUSE", pass_filter={"DIRECT", "INDIRECT"}, margin=4)');
+      lines.push('_baked = 0');
+      lines.push('for _n in _names:');
+      lines.push('    _img = bpy.data.images[_n + "_lightmap"]');
+      lines.push('    _p = os.path.join(out_dir, _n + "_lightmap.png")');
+      lines.push('    _img.filepath_raw = _p; _img.file_format = "PNG"; _img.save()');
+      lines.push('    _baked += os.path.getsize(_p)');
+      lines.push('print("BAKE_BYTES=%d" % _baked)');
+      lines.push('');
+    }
+
+    // Export. Draco only pays off on dense meshes — on a low-poly scene it
+    // adds decoder weight and can make the file larger, so it is chosen from
+    // the real triangle count rather than defaulted on.
+    lines.push('# --- export ---');
+    lines.push(`_glb = os.path.join(out_dir, ${py(spec.exportName || 'scene.glb')})`);
+    lines.push('_tris = sum(len(bpy.data.objects[_n].data.polygons) for _n in _names)');
+    if (spec.draco === 'auto') {
+      lines.push('_use_draco = _tris > 20000');
+    } else {
+      lines.push(`_use_draco = ${spec.draco === false ? 'False' : 'True'}`);
+    }
+    lines.push('bpy.ops.export_scene.gltf(');
+    lines.push('    filepath=_glb,');
+    lines.push('    export_format="GLB",');
+    lines.push('    use_selection=False,');
+    lines.push('    export_draco_mesh_compression_enable=_use_draco,');
+    lines.push(`    export_draco_mesh_compression_level=${pyNumber(spec.dracoLevel, 6)},`);
+    lines.push(')');
+    lines.push('print("BLENDER_OK tris=%d glb_bytes=%d draco=%s" % (_tris, os.path.getsize(_glb), _use_draco))');
+
+    return lines.join('\n') + '\n';
+  }
+
+  /* The exact argv the engine should run. Keeping this separate from
+     buildScript means the script can be written to disk, inspected, or
+     re-run by hand. */
+  buildArgs(scriptPath, outDir) {
+    return ['--background', '--factory-startup', '--python', scriptPath, '--', outDir];
+  }
+
+  /* Run a spec through Blender via the execution engine. Returns the
+     artifact paths and the parsed stdout markers. */
+  async render(spec, { workspace, scriptPath, outDir } = {}) {
+    if (!this.engine) throw new Error('BlenderBridge needs an execution engine to run.');
+    const fs = require('fs');
+    const path = require('path');
+
+    const script = this.buildScript(spec);
+    const targetScript = scriptPath || path.join(workspace, 'build_blender.py');
+    fs.mkdirSync(path.dirname(targetScript), { recursive: true });
+    fs.writeFileSync(targetScript, script);
+
+    const result = await this.engine.runArgs(this.binary, this.buildArgs(targetScript, outDir), {
+      cwd: workspace,
+      timeoutMs: spec.timeoutMs || 300_000,
+    });
+
+    const stdout = result.stdout || '';
+    const ok = result.ok && /BLENDER_OK/.test(stdout);
+    const glbMatch = stdout.match(/glb_bytes=(\d+)/);
+    const triMatch = stdout.match(/tris=(\d+)/);
+    const bakeMatch = stdout.match(/BAKE_BYTES=(\d+)/);
+
+    return {
+      ok,
+      error: ok ? null : (result.error || result.stderr || 'Blender did not report BLENDER_OK'),
+      scriptPath: targetScript,
+      glbPath: path.join(outDir, spec.exportName || 'scene.glb'),
+      glbBytes: glbMatch ? Number(glbMatch[1]) : 0,
+      triangles: triMatch ? Number(triMatch[1]) : 0,
+      bakeBytes: bakeMatch ? Number(bakeMatch[1]) : 0,
+      stdout,
+      stderr: result.stderr || '',
+    };
+  }
+
+  /* Render the capability as prompt text for the coder agents. */
+  static toPromptBlock() {
+    return [
+      'BLENDER (installed, headless)',
+      '* Blender 4.2 runs as `blender --background --python <script>`; no GUI, no display.',
+      '* Use it to BUILD geometry, BAKE lighting into lightmaps, and EXPORT Draco .glb.',
+      '* Baking is the reason to reach for Blender: a baked lightmap removes per-frame',
+      '  lighting cost, which is what keeps a WebGL scene at 60fps on mid-range hardware.',
+      '* Do not ask Blender for textures — pull those from the CC0 asset sources.',
+      '* Blender output is deterministic: same spec, same bytes. Good for repeatable builds.',
+    ].join('\n');
+  }
+}
+
+if (typeof window !== 'undefined') window.BlenderBridge = BlenderBridge;
+if (typeof module !== 'undefined' && module.exports) module.exports = { BlenderBridge };
+
+;
+/* ============================================================
    ZERO-BUILDER — Advanced Agentic Framework
    State Machine-based orchestrator with Plan→Design→Media→
    Code(Vanilla/React/Fullstack)→Review→Refine loop
@@ -6374,7 +7171,15 @@ Generate a premium prompt pack now.`;
                 'fake metrics',
                 'floating orbs',
                 'template icons',
+                'every section centred with equal weight',
+                'more than three type sizes in one viewport',
+                'raw px font sizes instead of the fluid scale',
             ],
+            assetSources: {
+                free: 'Poly Haven (CC0, CORS-open) — HDRIs, PBR texture sets, and real models, all hotlinkable at 1k.',
+                blender: 'Blender 4.2 is installed headless — build geometry, bake lighting to a lightmap, export Draco .glb.',
+                rule: 'Use these instead of placeholder URLs. Never invent asset links.',
+            },
             qualityBar: 'premium-studio-handoff',
             responsiveBreakpoints: {
                 mobile: '375px',
@@ -9358,7 +10163,19 @@ RULES:
 - Every hover/interaction needs a state change in under 200ms or it feels laggy;
   use transform/opacity only.
 - Respect prefers-reduced-motion everywhere, and keep 60fps on mid-range mobile:
-  avoid animating layout properties, blur radii, or box-shadow.`;
+  avoid animating layout properties, blur radii, or box-shadow.
+
+DESIGN SYSTEM DISCIPLINE (this is what makes it read as studio work):
+- Sizes come from the computed scale. Use var(--step-N) for type and
+  var(--space-N) for every margin/padding/gap. Do not type raw px for either.
+- Apply the .type-N classes (or the same tracking/leading values) so optical
+  spacing matches the size. Display type is tight; body copy is loose.
+- Break the centre. At least two sections must be asymmetric — offset grid
+  spans, an edge bleed, or deliberate imbalance. A page of centred blocks is
+  the single clearest tell of a generated template.
+- One dominant element per section. If two things compete, one is too big.
+- Never show more than three type sizes in one section.
+- Whitespace is the design: when a section feels empty, add space, not a card.`;
     }
 
     async execute(specification, designSystem, threejsCode = null) {
@@ -9442,7 +10259,11 @@ INCLUDE THESE ELEMENTS:
 
 ═══════════════════════════════════════════════════════
 BUILD WITH ${designPhilosophy.toUpperCase()} PHILOSOPHY — NOT A GENERIC TEMPLATE
-═══════════════════════════════════════════════════════`;
+═══════════════════════════════════════════════════════
+
+${typeof DesignSystem !== 'undefined' ? DesignSystem.toPromptBlock() : ''}
+
+${typeof LibraryRegistry !== 'undefined' ? LibraryRegistry.runtimeRules(LibraryRegistry.plan(enhanced)).map((r) => `* ${r}`).join('\n') : ''}`;
 
         // Gather component templates
         const componentCSS = (enhanced.components || [])
@@ -9674,7 +10495,12 @@ Output ONLY the JS file:
             // Assemble final files
             const files = {};
             files['index.html'] = html;
-            files['styles.css'] = css || this._getDefaultCSS(designSystem);
+            const designTokens = typeof DesignSystem !== 'undefined' ? DesignSystem.toCSS() : '';
+            const llmCSS = css || this._getDefaultCSS(designSystem);
+            // The computed scale/grid/spacing tokens are prepended unconditionally.
+            // If the model dropped them the page would silently fall back to
+            // invented sizes, which is exactly the generic look we are removing.
+            files['styles.css'] = this._ensureDesignTokens(designTokens, llmCSS);
             files['script.js'] = this._injectGSAPBoilerplate() + '\n\n' + userJS;
 
             if (threejsCode) {
@@ -9890,6 +10716,15 @@ if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
 
     _getDefaultCSS(designSystem) {
         return designSystem.css + '\n\nbody { font-family: var(--font-body); background: var(--color-bg); color: var(--color-text); }';
+    }
+
+    /* Guarantee the computed tokens are present. If the model already emitted
+       --step-0 (i.e. it followed the brief) we leave its CSS alone; otherwise
+       the tokens are prepended so nothing can reference an undefined var. */
+    _ensureDesignTokens(tokens, css) {
+        if (!tokens) return css;
+        if (/--step-0\s*:/.test(css)) return css;
+        return `${tokens}\n\n${css}`;
     }
 }
 
@@ -11788,6 +12623,9 @@ PERFORMANCE GUIDELINES
         const needsBakedLighting = /baked|lightmap|ambient.?occlusion|blender|cinema.?4d|c4d/i.test(advBlob);
         const needsCameraCurve = /camera.?curve|catmull|dolly|flythrough|camera.?path/i.test(advBlob);
         const needsDragGrid = /infinite.?grid|drag.?grid|endless.?canvas|world.?page|raycast/i.test(advBlob);
+        // Free asset sources and headless Blender are always worth offering;
+        // the coder agent decides whether the brief actually needs them.
+        const wantsFreeAssets = /lighting|hdri|environment|pbr|photoreal|realistic|texture|material|model|product|furniture|interior/i.test(advBlob);
 
         // Budget is computed from the same registry the HTML pass uses, so the
         // scene prompt and the page prompt cannot disagree about what is loaded.
@@ -11817,6 +12655,7 @@ PERFORMANCE GUIDELINES
             needsBakedLighting,
             needsCameraCurve,
             needsDragGrid,
+            wantsFreeAssets,
             performanceRules,
         };
 
@@ -11964,6 +12803,35 @@ INFINITE DRAG GRID REQUIRED
 * Use raycasting for hover/selection, throttled to pointer events (not every frame)
 * Momentum/inertia on release with exponential decay
 * Support touch and pointer capture; never hijack native scroll on the page itself
+` : ''}
+${hints.wantsFreeAssets ? `
+FREE CC0 ASSETS — USE THESE EXACT URLS, DO NOT INVENT ANY
+* Poly Haven is CC0 and CORS-open, so the browser can load it directly.
+* Environment HDRI (1k is plenty for lighting):
+  https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_03_1k.hdr
+* Load with RGBELoader, run through PMREMGenerator, assign to scene.environment.
+  Do NOT add a second key light unless the HDRI is visibly too dark.
+* PBR maps (wood_floor_deck 1k) — colourSpace matters, map is sRGB, the rest linear:
+  map:         https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/wood_floor_deck/wood_floor_deck_diff_1k.jpg
+  normalMap:   https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/wood_floor_deck/wood_floor_deck_nor_gl_1k.jpg
+  roughnessMap:https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/wood_floor_deck/wood_floor_deck_rough_1k.jpg
+  aoMap:       https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/wood_floor_deck/wood_floor_deck_ao_1k.jpg
+* Real CC0 model, load with GLTFLoader (note: .gltf + sidecar textures, not .glb):
+  https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/ArmChair_01/ArmChair_01_1k.gltf
+* Always show a loading state; dispose textures and geometries on teardown.
+` : ''}
+${hints.needsBakedLighting ? `
+BAKED LIGHTING — the reason to reach for Blender
+* Per-frame lighting is what kills WebGL on mid-range hardware. Bake it instead.
+* In Three, apply a baked map with:
+    material.lightMap = bakedTexture;
+    material.lightMapIntensity = 1.0;
+    geometry.setAttribute('uv2', geometry.attributes.uv);   // lightMap/aoMap need uv2
+* Ship the lightmap at 1k, KTX2 or JPEG. Never compute AO per frame.
+* Keep lighting separable from base colour so the material can still react to
+  environment changes — do not bake light into the diffuse map.
+* If no baked texture exists yet, fall back to one directional light + the HDRI
+  and leave a comment saying the lightmap is pending a Blender bake.
 ` : ''}
 
 CRITICAL FORMAT
