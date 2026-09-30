@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Jarvis — engineering assistant</title>
+<style>
+  :root {
+    --bg: #07090f;
+    --panel: rgba(255,255,255,0.04);
+    --line: rgba(255,255,255,0.10);
+    --text: #e8ecf4;
+    --muted: #8b93a7;
+    --accent: #5eead4;
+    --warn: #fbbf24;
+    --bad: #f87171;
+    --font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: radial-gradient(1200px 600px at 70% -10%, #10202b 0%, var(--bg) 55%);
+    color: var(--text);
+    font-family: var(--font);
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    overflow: hidden;
+  }
+  @media (max-width: 900px) { body { grid-template-columns: 1fr; } aside { display: none; } }
+
+  main { display: flex; flex-direction: column; min-width: 0; }
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 18px 24px; border-bottom: 1px solid var(--line);
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); transition: background .3s; }
+  .dot.working { background: var(--accent); box-shadow: 0 0 12px var(--accent); animation: pulse 1.4s infinite; }
+  @keyframes pulse { 50% { opacity: .45; } }
+  header h1 { font-size: 15px; margin: 0; letter-spacing: .04em; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 12px; margin-left: auto; }
+
+  #log { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 14px; }
+  .msg { max-width: 76ch; line-height: 1.55; font-size: 14.5px; }
+  .msg.user { align-self: flex-end; background: rgba(94,234,212,0.10); border: 1px solid rgba(94,234,212,0.22); padding: 10px 14px; border-radius: 14px 14px 3px 14px; }
+  .msg.jarvis { align-self: flex-start; color: var(--text); white-space: pre-wrap; }
+  .msg.jarvis::before { content: "JARVIS"; display: block; font-size: 10px; letter-spacing: .18em; color: var(--muted); margin-bottom: 5px; }
+
+  .act {
+    align-self: flex-start; font-family: var(--mono); font-size: 12.5px;
+    border-left: 2px solid var(--line); padding: 4px 0 4px 12px; color: var(--muted);
+    display: flex; gap: 8px; align-items: baseline; max-width: 100%;
+  }
+  .act .name { color: var(--accent); }
+  .act .cmd { color: var(--text); opacity: .85; word-break: break-all; }
+  .act.bad { border-left-color: var(--bad); }
+  .act.ok .tick { color: var(--accent); }
+
+  .ask {
+    align-self: flex-start; border: 1px solid var(--warn); background: rgba(251,191,36,0.07);
+    border-radius: 12px; padding: 14px 16px; max-width: 60ch; width: 100%;
+  }
+  .ask p { margin: 0 0 10px; font-size: 14px; }
+  .ask code { font-family: var(--mono); font-size: 12.5px; background: rgba(0,0,0,.35); padding: 2px 6px; border-radius: 5px; display: inline-block; margin-bottom: 10px; word-break: break-all; }
+  .ask .row { display: flex; gap: 8px; }
+
+  footer { border-top: 1px solid var(--line); padding: 14px 24px; display: flex; gap: 10px; align-items: center; }
+  input[type=text], select, input[type=password] {
+    background: var(--panel); border: 1px solid var(--line); color: var(--text);
+    padding: 11px 13px; border-radius: 10px; font-family: inherit; font-size: 14px; outline: none; width: 100%;
+  }
+  input:focus { border-color: rgba(94,234,212,0.45); }
+  button {
+    background: var(--accent); color: #06231f; border: 0; padding: 11px 18px;
+    border-radius: 10px; font-weight: 650; font-size: 13.5px; cursor: pointer; font-family: inherit; white-space: nowrap;
+  }
+  button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); font-weight: 500; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  #mic.on { background: var(--bad); color: #fff; }
+
+  aside { border-left: 1px solid var(--line); padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; }
+  aside h2 { font-size: 11px; letter-spacing: .16em; color: var(--muted); margin: 0; font-weight: 600; text-transform: uppercase; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label { font-size: 12px; color: var(--muted); }
+  .hint { font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+  .toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .toggle input { width: auto; }
+  #activity { font-family: var(--mono); font-size: 11.5px; color: var(--muted); line-height: 1.7; word-break: break-all; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <span class="dot" id="dot"></span>
+    <h1>JARVIS</h1>
+    <span class="sub" id="status">idle</span>
+  </header>
+
+  <div id="log">
+    <div class="msg jarvis">Ready. Configure your API key on the right, then tell me what to build or fix. I work in a real workspace and ask before anything risky.</div>
+  </div>
+
+  <footer>
+    <input type="text" id="input" placeholder="Tell Jarvis what to do…" autocomplete="off" />
+    <button id="mic" class="ghost" title="Speak">🎙</button>
+    <button id="send">Send</button>
+  </footer>
+</main>
+
+<aside>
+  <h2>Model</h2>
+  <div class="field">
+    <label>Provider</label>
+    <select id="provider">
+      <option value="gemini">Gemini</option>
+      <option value="openai">OpenAI</option>
+      <option value="anthropic">Anthropic</option>
+    </select>
+  </div>
+  <div class="field">
+    <label>Model</label>
+    <input type="text" id="model" value="gemini-3.8-flash" />
+  </div>
+  <div class="field">
+    <label>API key</label>
+    <input type="password" id="apiKey" placeholder="stored in this browser only" />
+  </div>
+  <div class="field">
+    <label>Workspace</label>
+    <input type="text" id="workspace" value="default" />
+  </div>
+  <label class="toggle"><input type="checkbox" id="autoApprove" /> Auto-approve commands</label>
+  <label class="toggle"><input type="checkbox" id="voiceOut" checked /> Speak replies aloud</label>
+  <button id="connect">Connect</button>
+  <p class="hint">The key is kept in localStorage and sent per request. It is never written to the server.</p>
+
+  <h2>Activity</h2>
+  <div id="activity">—</div>
+</aside>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const log = $('log');
+let sessionId = null;
+let pendingAsk = null;
+let speaking = false;
+
+const saved = JSON.parse(localStorage.getItem('jarvis_settings') || '{}');
+if (saved.provider) $('provider').value = saved.provider;
+if (saved.model) $('model').value = saved.model;
+if (saved.apiKey) $('apiKey').value = saved.apiKey;
+if (saved.workspace) $('workspace').value = saved.workspace;
+if (saved.autoApprove) $('autoApprove').checked = true;
+
+function scroll() { log.scrollTop = log.scrollHeight; }
+function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
+
+function addMessage(role, text) {
+  const n = el('div', 'msg ' + role, text);
+  log.appendChild(n); scroll();
+}
+
+function addActivity(text) {
+  const a = $('activity');
+  if (a.textContent === '—') a.textContent = '';
+  a.textContent += text + '\n';
+  a.scrollTop = a.scrollHeight;
+}
+
+function speak(text) {
+  if (!$('voiceOut').checked || !window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text.slice(0, 600));
+  u.rate = 1.03; u.pitch = 0.95;
+  window.speechSynthesis.speak(u);
+}
+
+function render(event) {
+  if (event.type === 'status') {
+    $('dot').className = 'dot' + (event.state === 'working' || event.state === 'thinking' ? ' working' : '');
+    $('status').textContent = event.state;
+  }
+  if (event.type === 'thought') addActivity('· ' + event.text);
+  if (event.type === 'tool') {
+    const row = el('div', 'act');
+    row.appendChild(el('span', 'name', event.tool));
+    const arg = event.args.command || event.args.path || event.args.question || '';
+    if (arg) row.appendChild(el('span', 'cmd', String(arg)));
+    log.appendChild(row); scroll();
+    addActivity('→ ' + event.tool + ' ' + arg);
+  }
+  if (event.type === 'result') {
+    const rows = log.querySelectorAll('.act');
+    const last = rows[rows.length - 1];
+    if (last) last.classList.add(event.ok ? 'ok' : 'bad');
+    addActivity((event.ok ? '✓ ' : '✗ ') + event.text);
+  }
+  if (event.type === 'ask') {
+    const box = el('div', 'ask');
+    box.appendChild(el('p', null, event.question.question));
+    if (event.question.command) box.appendChild(el('code', null, event.question.command));
+    const row = el('div', 'row');
+    const yes = el('button', null, 'Run it');
+    const no = el('button', 'ghost', 'Skip');
+    yes.onclick = () => { answer(true); box.remove(); };
+    no.onclick = () => { answer(false); box.remove(); };
+    row.append(yes, no);
+    box.appendChild(row);
+    log.appendChild(box); scroll();
+    if (event.question.command) speak('I need your approval to run a command.');
+  }
+  if (event.type === 'message') {
+    addMessage(event.role, event.text);
+    if (event.role === 'jarvis') speak(event.text);
+  }
+  if (event.type === 'error') {
+    const n = el('div', 'msg jarvis');
+    n.style.color = 'var(--bad)';
+    n.textContent = event.message;
+    log.appendChild(n); scroll();
+    addActivity('✗ ' + event.message);
+    speak('Sorry, I hit a problem. ' + event.message);
+  }
+}
+
+async function answer(value) {
+  if (!sessionId) return;
+  await fetch('/api/jarvis/answer', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: sessionId, value }),
+  });
+}
+
+async function connect() {
+  const payload = {
+    provider: $('provider').value,
+    model: $('model').value.trim(),
+    apiKey: $('apiKey').value.trim(),
+    workspace: $('workspace').value.trim() || 'default',
+    autoApprove: $('autoApprove').checked,
+  };
+  localStorage.setItem('jarvis_settings', JSON.stringify(payload));
+  const res = await fetch('/api/jarvis/session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!data.ok) { addMessage('jarvis', 'Could not start: ' + (data.error || 'unknown error')); return; }
+  sessionId = data.id;
+  const stream = new EventSource('/api/jarvis/stream?id=' + encodeURIComponent(sessionId));
+  stream.onmessage = (e) => render(JSON.parse(e.data));
+  stream.onerror = () => { $('status').textContent = 'disconnected'; };
+  addMessage('jarvis', 'Connected to workspace "' + data.workspace + '". What are we building?');
+  $('connect').textContent = 'Reconnect';
+}
+
+async function send() {
+  const text = $('input').value.trim();
+  if (!text) return;
+  if (!sessionId) { await connect(); }
+  $('input').value = '';
+  addMessage('user', text);
+  await fetch('/api/jarvis/message', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: sessionId, text }),
+  });
+}
+
+$('connect').onclick = connect;
+$('send').onclick = send;
+$('input').addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+
+// Voice input — browser-native speech recognition, no dependency.
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+$('mic').onclick = () => {
+  if (!SR) { addMessage('jarvis', 'This browser has no speech recognition. Chrome or Edge will work.'); return; }
+  const rec = new SR();
+  rec.lang = 'en-IN'; rec.interimResults = false;
+  rec.onresult = (e) => { $('input').value = e.results[0][0].transcript; send(); };
+  rec.onend = () => $('mic').classList.remove('on');
+  $('mic').classList.add('on');
+  rec.start();
+};
+</script>
+</body>
+</html>

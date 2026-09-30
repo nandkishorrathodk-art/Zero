@@ -5,6 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const os = require('node:os');
 const { EngineExecutor } = require('./engine/executor');
+const jarvis = require('./jarvis/server');
 
 const root = __dirname;
 const engine = new EngineExecutor(root);
@@ -61,7 +62,38 @@ function readJson(req) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   try {
-    if (url.pathname === '/api/health' && req.method === 'GET') return send(res, 200, { ok: true, service: 'zero-builder-max', version: '5.0.0-engine', capabilities: ['local-device-bridge', 'project-sync', 'workspace-export', 'zip-project-intake', 'domparser-preview', 'google-auth-ready', 'project-intelligence-agents', 'agent-recovery-supervisor', 'project-repository-memory', 'motion-studio', 'execution-engine', 'real-verify-loop', 'git-workspaces', 'repo-intake', 'repo-aware-context', 'coordinator-swarm'] });
+    if (url.pathname === '/api/health' && req.method === 'GET') return send(res, 200, { ok: true, service: 'zero-builder-max', version: '5.0.0-engine', capabilities: ['local-device-bridge', 'project-sync', 'workspace-export', 'zip-project-intake', 'domparser-preview', 'google-auth-ready', 'project-intelligence-agents', 'agent-recovery-supervisor', 'project-repository-memory', 'motion-studio', 'execution-engine', 'real-verify-loop', 'git-workspaces', 'repo-intake', 'repo-aware-context', 'coordinator-swarm', 'jarvis-agent'] });
+
+    /* ── JARVIS ── */
+    if (url.pathname === '/api/jarvis/session' && req.method === 'POST') {
+      const payload = await readJson(req);
+      const session = jarvis.createSession(engine, payload);
+      return send(res, 200, { ok: true, ...session });
+    }
+    if (url.pathname === '/api/jarvis/stream' && req.method === 'GET') {
+      const ok = jarvis.attachStream(url.searchParams.get('id'), res);
+      if (!ok) return send(res, 404, { error: 'Unknown session' });
+      return; // stream owns the response now
+    }
+    if (url.pathname === '/api/jarvis/message' && req.method === 'POST') {
+      const payload = await readJson(req);
+      // Answer the stream immediately; the work continues in the background.
+      send(res, 200, { ok: true });
+      jarvis.sendMessage(payload.id, String(payload.text || '')).catch((error) => {
+        console.error('Jarvis error:', error.message);
+      });
+      return;
+    }
+    if (url.pathname === '/api/jarvis/answer' && req.method === 'POST') {
+      const payload = await readJson(req);
+      const ok = jarvis.answer(payload.id, payload.value);
+      return send(res, 200, { ok });
+    }
+    if (url.pathname === '/api/jarvis/close' && req.method === 'POST') {
+      const payload = await readJson(req);
+      jarvis.closeSession(payload.id);
+      return send(res, 200, { ok: true });
+    }
     if (url.pathname === '/api/device/status' && req.method === 'GET') return send(res, 200, { ok: true, platform: `${os.platform()} ${os.release()}`, workspaceRoot: workspacesDir, mode: 'local-device-bridge' });
     if (url.pathname === '/api/device/workspaces' && req.method === 'POST') {
       const payload = await readJson(req);
