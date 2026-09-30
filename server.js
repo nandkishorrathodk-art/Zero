@@ -175,8 +175,10 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname.startsWith('/api/')) return send(res, 404, { error: 'Not found' });
 
     const relativePath = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname).replace(/^\/+/, '');
-    const filePath = path.resolve(root, relativePath);
+    let filePath = path.resolve(root, relativePath);
     if (!filePath.startsWith(root + path.sep)) return send(res, 403, { error: 'Forbidden' });
+    // Directory URLs ("/jarvis/") should serve the index inside them, not EISDIR.
+    if (relativePath.endsWith('/')) filePath = path.join(filePath, 'index.html');
     const file = await fs.readFile(filePath);
     res.writeHead(200, { 'Content-Type': mimeTypes[path.extname(filePath).toLowerCase()] || 'application/octet-stream' });
     res.end(file);
