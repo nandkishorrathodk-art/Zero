@@ -1673,6 +1673,26 @@ class AgentFramework {
             if (regex && !regex.test(allCode)) {
                 add('warning', 'design-philosophy', 'styles.css', `Design philosophy "${designPhilosophy}" was specified but its CSS classes/patterns were not found.`, `Apply ${designPhilosophy} design system classes throughout the generated code.`);
             }
+
+            // Philosophy bleed: a build tagged brutalist/minimal that still ships
+            // glassy cards reads as two designers fighting. Catch the wrong system
+            // being used, not just a missing one.
+            const foreign = {
+                skeuomorphism: /liquid-glass|glass-card|neo-flat|brutal-card|clay-card/i,
+                neomorphism: /liquid-glass|glass-card|brutal-card|clay-card/i,
+                glassmorphism: /neo-flat|brutal-card|clay-card|skeu-card/i,
+                claymorphism: /liquid-glass|brutal-card|neo-flat|glass-card/i,
+                minimalism: /liquid-glass|neo-flat|clay-card|skeu-card|max-blob/i,
+                maximalism: /liquid-glass|neo-flat|brutal-card/i,
+                brutalism: /liquid-glass|glass-card|neo-flat|clay-card|backdrop-filter/i,
+                liquidglass: /brutal-card|clay-card|neo-flat|skeu-card/i,
+                spatialui: /liquid-glass|brutal-card|clay-card|skeu-card/i,
+            };
+            const bleedRegex = foreign[designPhilosophy];
+            if (bleedRegex && bleedRegex.test(allCode)) {
+                const hit = allCode.match(bleedRegex)[0];
+                add('warning', 'design-philosophy', 'generated files', `A "${designPhilosophy}" build uses foreign philosophy classes (e.g. "${hit}") — the visual system is inconsistent.`, `Remove classes from other design philosophies and use only ${designPhilosophy} surfaces.`);
+            }
         }
 
         // Check advanced effects implementation

@@ -180,6 +180,120 @@ function init3DWindows(){document.querySelectorAll('.window-3d[data-3d-interacti
 </div>`,
                 css: `.brutal-card{background:#fff;border:3px solid #000;padding:24px;box-shadow:8px 8px 0 #000;position:relative;transition:all 0.2s ease}.brutal-card:hover{transform:translate(-4px,-4px);box-shadow:12px 12px 0 #000}`,
                 js: `// Brutalism card hover`
+            },
+            'marquee-text': {
+                html: `<div class="marquee" aria-hidden="true"><div class="marquee-track">{{items}}</div></div>`,
+                css: `.marquee{overflow:hidden;white-space:nowrap;border-block:1px solid currentColor;padding:18px 0}
+.marquee-track{display:inline-flex;gap:48px;animation:marquee-scroll 22s linear infinite;will-change:transform}
+.marquee:hover .marquee-track{animation-play-state:paused}
+@keyframes marquee-scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}`,
+                js: `// Marquee is CSS-driven; duplicate the track content once so the loop is seamless.`
+            },
+            'raw-grid': {
+                html: `<div class="raw-grid">
+  <div class="raw-grid-cell">{{a}}</div>
+  <div class="raw-grid-cell">{{b}}</div>
+  <div class="raw-grid-cell">{{c}}</div>
+  <div class="raw-grid-cell">{{d}}</div>
+</div>`,
+                css: `.raw-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));border:3px solid currentColor}
+.raw-grid-cell{padding:32px;border:1.5px solid currentColor;font-family:var(--font-mono,monospace);text-transform:uppercase}
+.raw-grid-cell:nth-child(odd){background:rgba(0,0,0,0.03)}`,
+                js: `// Exposed grid — borders carry the structure, no shadows.`
+            },
+            'stamp-badge': {
+                html: `<span class="stamp-badge" data-micro="bounce">{{label}}</span>`,
+                css: `.stamp-badge{display:inline-block;border:3px solid currentColor;padding:6px 16px;font-family:var(--font-mono,monospace);text-transform:uppercase;letter-spacing:0.12em;transform:rotate(-3deg);background:transparent}`,
+                js: `// Rotated stamp badge for raw editorial accents.`
+            },
+            'spatial-cards': {
+                html: `<div class="spatial-stack">
+  <div class="spatial-card" data-hover="perspective" data-scroll-3d="rotate">
+    <h3>{{title}}</h3>
+    <p>{{description}}</p>
+  </div>
+</div>`,
+                css: `.spatial-stack{perspective:1200px;display:grid;gap:28px}
+.spatial-card{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:20px;padding:28px;transform-style:preserve-3d;transition:transform 0.5s cubic-bezier(0.23,1,0.32,1);backdrop-filter:blur(20px)}`,
+                js: `// Each card tracks the pointer to tilt in z-space.`
+            },
+            'hud-elements': {
+                html: `<div class="hud" aria-hidden="true">
+  <span class="hud-corner hud-tl"></span><span class="hud-corner hud-tr"></span>
+  <span class="hud-corner hud-bl"></span><span class="hud-corner hud-br"></span>
+  <span class="hud-label">{{label}}</span>
+</div>`,
+                css: `.hud{position:absolute;inset:0;pointer-events:none}
+.hud-corner{position:absolute;width:28px;height:28px;border:1.5px solid rgba(255,255,255,0.5)}
+.hud-tl{top:0;left:0;border-right:0;border-bottom:0}.hud-tr{top:0;right:0;border-left:0;border-bottom:0}
+.hud-bl{bottom:0;left:0;border-right:0;border-top:0}.hud-br{bottom:0;right:0;border-left:0;border-top:0}
+.hud-label{position:absolute;top:12px;left:40px;font-size:0.7rem;letter-spacing:0.24em;text-transform:uppercase;opacity:0.7}`,
+                js: `// Instrument-panel framing for spatial sections.`
+            },
+            'orbital-rings': {
+                html: `<div class="orbital" aria-hidden="true"><span class="orbit orbit-1"></span><span class="orbit orbit-2"></span><span class="orbit orbit-3"></span></div>`,
+                css: `.orbital{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none}
+.orbit{position:absolute;border:1px solid rgba(255,255,255,0.14);border-radius:50%}
+.orbit-1{width:38vmin;height:38vmin;animation:orbit-spin 26s linear infinite}
+.orbit-2{width:56vmin;height:56vmin;animation:orbit-spin 40s linear infinite reverse}
+.orbit-3{width:74vmin;height:74vmin;animation:orbit-spin 58s linear infinite}
+@keyframes orbit-spin{to{transform:rotate(360deg)}}`,
+                js: `// Concentric rings orbit at different speeds to imply depth.`
+            },
+            'hologram-window': {
+                html: `<div class="holo-window" data-3d="float">
+  <div class="holo-titlebar">{{title}}</div>
+  <div class="holo-body">{{description}}</div>
+</div>`,
+                css: `.holo-window{position:relative;border:1px solid rgba(120,200,255,0.5);border-radius:14px;background:linear-gradient(160deg,rgba(80,160,255,0.12),rgba(160,80,255,0.08));backdrop-filter:blur(18px);overflow:hidden}
+.holo-titlebar{padding:10px 16px;border-bottom:1px solid rgba(120,200,255,0.35);font-size:0.75rem;letter-spacing:0.18em;text-transform:uppercase}
+.holo-body{padding:22px}
+.holo-window::after{content:'';position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgba(120,200,255,0.06) 0 1px,transparent 1px 3px);pointer-events:none}`,
+                js: `// Scanline overlay plus a slow float gives the projection feel.`
+            },
+            'clay-cards': {
+                html: `<div class="clay-cards">
+  <div class="clay-card" data-micro="bounce"><h3>{{title}}</h3><p>{{description}}</p></div>
+</div>`,
+                css: `.clay-cards{display:grid;gap:26px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+.clay-card{background:linear-gradient(145deg,#fef3f3,#ffe8e8);border-radius:28px;box-shadow:15px 15px 30px rgba(0,0,0,0.08),-8px -8px 16px rgba(255,255,255,0.9),inset -3px -3px 6px rgba(0,0,0,0.03),inset 3px 3px 6px rgba(255,255,255,0.7);padding:28px;border:2px solid rgba(255,255,255,0.6)}`,
+                js: `// Soft inflated cards; bounce on tap.`
+            },
+            'bubble-buttons': {
+                html: `<button class="bubble-button" data-micro="bounce">{{label}}</button>`,
+                css: `.bubble-button{border:0;cursor:pointer;padding:16px 34px;border-radius:999px;font-weight:700;background:linear-gradient(145deg,#ffe8e8,#ffd3d3);box-shadow:10px 10px 20px rgba(0,0,0,0.1),-6px -6px 14px rgba(255,255,255,0.9);transition:transform 0.2s cubic-bezier(0.34,1.56,0.64,1)}
+.bubble-button:active{transform:scale(0.94)}`,
+                js: `// Overshoot easing makes the press feel bouncy.`
+            },
+            'interactive-grid': {
+                html: `<div class="interactive-grid" data-interactive-grid>
+  <span class="grid-cell"></span><span class="grid-cell"></span><span class="grid-cell"></span>
+  <span class="grid-cell"></span><span class="grid-cell"></span><span class="grid-cell"></span>
+</div>`,
+                css: `.interactive-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.grid-cell{aspect-ratio:1;border-radius:12px;background:rgba(255,255,255,0.06);transition:transform 0.25s ease,background 0.25s ease}
+.grid-cell.is-active{background:var(--accent,#ff6b6b);transform:scale(1.08)}`,
+                js: `// Pointer proximity lights up neighbouring cells.`
+            },
+            'stacked-cards': {
+                html: `<div class="stacked-cards">
+  <div class="stack-card" data-scroll-3d="rotate"><h3>{{title}}</h3><p>{{description}}</p></div>
+</div>`,
+                css: `.stacked-cards{display:grid;gap:22px;perspective:1000px}
+.stack-card{border-radius:20px;padding:26px;background:var(--surface,rgba(255,255,255,0.05));border:1px solid rgba(255,255,255,0.1);transition:transform 0.45s cubic-bezier(0.23,1,0.32,1)}
+.stack-card:hover{transform:translateZ(40px) rotateX(3deg)}`,
+                js: `// Cards lift toward the viewer on hover.`
+            },
+            'image-reveal': {
+                html: `<figure class="image-reveal" data-reveal="clip">
+  <img src="{{src}}" alt="{{alt}}" loading="lazy" decoding="async" />
+  <figcaption>{{caption}}</figcaption>
+</figure>`,
+                css: `.image-reveal{position:relative;overflow:hidden;border-radius:18px;margin:0}
+.image-reveal img{display:block;width:100%;height:100%;object-fit:cover;transform:scale(1.06);transition:transform 0.9s cubic-bezier(0.23,1,0.32,1)}
+.image-reveal.revealed img{transform:scale(1)}
+.image-reveal figcaption{position:absolute;left:18px;bottom:14px;font-size:0.78rem;letter-spacing:0.16em;text-transform:uppercase;opacity:0.85}`,
+                js: `// Clip reveal plus a slow counter-zoom as the image enters.`
             }
         };
 
@@ -261,6 +375,7 @@ RULES:
         const artDirection = enhanced.artDirection || {};
         const brandStrategy = specification.brandStrategy || {};
         const designPhilosophy = enhanced.designPhilosophyName || designSystem.designPhilosophyName || 'Liquid Glass';
+        const philosophyClasses = this._philosophyClasses(designPhilosophy);
         const advancedEffects = enhanced.advancedEffects || designSystem.advancedEffects || [];
 
         const midFlightNotes = Array.isArray(specification.midFlightNotes) ? specification.midFlightNotes.filter(Boolean) : [];
@@ -335,6 +450,13 @@ BUILD WITH ${designPhilosophy.toUpperCase()} PHILOSOPHY — NOT A GENERIC TEMPLA
             .map(c => `/* ${c} */\n${this.componentTemplates[c].css}`)
             .join('\n\n');
 
+        // The markup snippets were never handed to the HTML pass, so components
+        // only contributed CSS/JS and no component was ever placed on the page.
+        const componentHTML = (enhanced.components || [])
+            .filter(c => this.componentTemplates[c]?.html)
+            .map(c => `<!-- ${c} -->\n${this.componentTemplates[c].html}`)
+            .join('\n\n');
+
         const componentJS = (enhanced.components || [])
             .filter(c => this.componentTemplates[c]?.js)
             .map(c => `// === ${c} ===\n${this.componentTemplates[c].js}`)
@@ -354,8 +476,11 @@ BUILD WITH ${designPhilosophy.toUpperCase()} PHILOSOPHY — NOT A GENERIC TEMPLA
 
             const htmlPrompt = `${contextBlock}
 
-DESIGN SYSTEM CSS (reference these variables):
-${designSystem.css.substring(0, 3000)}...
+DESIGN SYSTEM CSS (authoritative tokens + philosophy classes — use these, do not invent):
+${designSystem.css}
+
+COMPONENT MARKUP LIBRARY (use these structures, fill in {{placeholders}} with real copy):
+${componentHTML || '(none specified — build components from the design system classes)'}
 
 YOUR TASK: Generate a complete, cinematic index.html file.
 
@@ -364,7 +489,9 @@ REQUIREMENTS:
 2. Link to styles.css and script.js as external files
 3. Structure as SCENES with data-scene attributes
 4. Hero MUST be immersive: fullscreen video or dramatic media
-5. Use liquid-glass class on nav, cards, badges
+5. Surface classes MUST come from the ${designPhilosophy} system:
+   nav → .${philosophyClasses.nav} | cards → .${philosophyClasses.card} | buttons → .${philosophyClasses.button} | panels → .${philosophyClasses.surface}
+   Do NOT use another philosophy's classes (e.g. no .liquid-glass in a ${designPhilosophy} build).
 6. Use data-blur-text on hero headline
 7. Use data-magnet on CTA buttons
 8. Use data-animate on reveal elements
@@ -374,6 +501,8 @@ REQUIREMENTS:
 12. Use brand strategy copy, not placeholder text
 13. Semantic HTML5 with proper heading hierarchy
 14. Mobile hamburger nav structure
+15. Give each scene a unique, descriptive class (e.g. .scene-hero, .scene-proof)
+    so it can be styled individually — do not reuse one generic section class.
 
 Output ONLY the HTML file:
 **File: index.html**
@@ -564,6 +693,25 @@ Output ONLY the JS file:
             this.log('error', `Generation failed: ${e.message}`);
             throw e;
         }
+    }
+
+    /* The surface class a build should reach for, per design philosophy. The
+       HTML prompt used to hardcode liquid-glass no matter the philosophy, which
+       is why brutalist/minimal builds still shipped glassy cards. */
+    _philosophyClasses(name) {
+        const n = String(name || '').toLowerCase().replace(/[^a-z]/g, '');
+        const map = {
+            skeuomorphism: { surface: 'skeu-surface', card: 'skeu-card', button: 'skeu-button', nav: 'skeu-surface' },
+            neomorphism: { surface: 'neo-flat', card: 'neo-card', button: 'neo-button', nav: 'neo-flat' },
+            glassmorphism: { surface: 'glass', card: 'glass-card', button: 'glass-button', nav: 'glass-navbar' },
+            claymorphism: { surface: 'clay', card: 'clay-card', button: 'clay-button', nav: 'clay' },
+            minimalism: { surface: 'min-surface', card: 'min-card', button: 'min-button', nav: 'min-surface' },
+            maximalism: { surface: 'max-surface', card: 'max-card', button: 'max-button', nav: 'max-surface' },
+            brutalism: { surface: 'brutal-surface', card: 'brutal-card', button: 'brutal-button', nav: 'brutal-surface' },
+            liquidglass: { surface: 'liquid-glass', card: 'liquid-glass-tint', button: 'liquid-glass-button', nav: 'liquid-glass-nav' },
+            spatialui: { surface: 'spatial-scene', card: 'spatial-card', button: 'spatial-button', nav: 'spatial-scene' },
+        };
+        return map[n] || map.liquidglass;
     }
 
     _checkFrameworkAbort() {
