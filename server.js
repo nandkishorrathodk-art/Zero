@@ -61,7 +61,7 @@ function readJson(req) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   try {
-    if (url.pathname === '/api/health' && req.method === 'GET') return send(res, 200, { ok: true, service: 'zero-builder-max', version: '5.0.0-engine', capabilities: ['local-device-bridge', 'project-sync', 'workspace-export', 'zip-project-intake', 'domparser-preview', 'google-auth-ready', 'project-intelligence-agents', 'agent-recovery-supervisor', 'project-repository-memory', 'motion-studio', 'execution-engine', 'real-verify-loop', 'git-workspaces'] });
+    if (url.pathname === '/api/health' && req.method === 'GET') return send(res, 200, { ok: true, service: 'zero-builder-max', version: '5.0.0-engine', capabilities: ['local-device-bridge', 'project-sync', 'workspace-export', 'zip-project-intake', 'domparser-preview', 'google-auth-ready', 'project-intelligence-agents', 'agent-recovery-supervisor', 'project-repository-memory', 'motion-studio', 'execution-engine', 'real-verify-loop', 'git-workspaces', 'repo-intake', 'repo-aware-context', 'coordinator-swarm'] });
     if (url.pathname === '/api/device/status' && req.method === 'GET') return send(res, 200, { ok: true, platform: `${os.platform()} ${os.release()}`, workspaceRoot: workspacesDir, mode: 'local-device-bridge' });
     if (url.pathname === '/api/device/workspaces' && req.method === 'POST') {
       const payload = await readJson(req);
@@ -128,6 +128,16 @@ const server = http.createServer(async (req, res) => {
       const payload = await readJson(req);
       if (!payload.name || !payload.action) return send(res, 400, { error: 'A workspace name and git action are required' });
       return send(res, 200, await engine.git(payload.name, payload.action, payload.message));
+    }
+    if (url.pathname === '/api/engine/clone' && req.method === 'POST') {
+      const payload = await readJson(req);
+      if (!payload.url) return send(res, 400, { error: 'A repository url is required' });
+      return send(res, 200, { ok: true, ...(await engine.cloneRepo(payload.url, { branch: payload.branch })) });
+    }
+    if (url.pathname === '/api/engine/context' && req.method === 'GET') {
+      const name = url.searchParams.get('name');
+      if (!name) return send(res, 400, { error: 'A workspace name is required' });
+      return send(res, 200, { ok: true, ...(await engine.repoContext(name, url.searchParams.get('task') || '')) });
     }
 
     if (url.pathname.startsWith('/api/')) return send(res, 404, { error: 'Not found' });

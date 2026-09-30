@@ -81,6 +81,8 @@
                 if (typeof AgentRecoveryAgent !== 'undefined') framework.registerAgent('fallback-recovery', new AgentRecoveryAgent());
                 if (typeof BugFinderAgent !== 'undefined') framework.registerAgent('bug-finder', new BugFinderAgent());
                 if (typeof EngineerAgent !== 'undefined') framework.registerAgent('engineer', new EngineerAgent());
+                if (typeof CoordinatorAgent !== 'undefined') framework.registerAgent('coordinator', new CoordinatorAgent());
+                if (typeof JudgeAgent !== 'undefined') framework.registerAgent('judge', new JudgeAgent());
                 if (typeof registerProjectIntelligenceAgents !== 'undefined') registerProjectIntelligenceAgents();
 
                 if (typeof EngineClient !== 'undefined') {

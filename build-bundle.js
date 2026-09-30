@@ -37,6 +37,8 @@ const files = [
   'js/agents/recovery-agent.js',
   'js/agents/bug-finder.js',
   'js/agents/engineer.js',
+  'js/agents/judge.js',
+  'js/agents/coordinator.js',
   'js/agents/project-intelligence.js',
   'js/sandbox.js',
   'js/project-intake.js',

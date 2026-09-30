@@ -124,6 +124,109 @@ class EngineExecutor {
     return walk(target, 1);
   }
 
+  /* ---------- repository intake ---------- */
+  parseRepoUrl(url) {
+    const value = String(url || '').trim();
+    let match = value.match(/^https?:\/\/github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i);
+    if (match) return { owner: match[1], repo: match[2], cloneUrl: `https://github.com/${match[1]}/${match[2]}.git` };
+    match = value.match(/^([\w.-]+)\/([\w.-]+)$/);
+    if (match) return { owner: match[1], repo: match[2], cloneUrl: `https://github.com/${match[1]}/${match[2]}.git` };
+    throw new Error('Provide a GitHub URL or "owner/repo"');
+  }
+
+  async cloneRepo(url, options = {}) {
+    const { owner, repo, cloneUrl } = this.parseRepoUrl(url);
+    const branch = String(options.branch || 'main').replace(/[^\w./-]/g, '');
+    const workspace = this.safeName(`${owner}-${repo}-${branch}`);
+    const target = this.resolveWorkspace(workspace);
+    const token = options.token || process.env.GITHUB_TOKEN || '';
+
+    if (fssync.existsSync(path.join(target, '.git'))) {
+      const pull = await this.runArgs('git', ['-C', target, 'pull', '--ff-only'], { timeoutMs: 120_000 });
+      return { workspace, location: target, owner, repo, branch, reused: true, pull: pull.ok, pullOutput: (pull.stdout + pull.stderr).trim() };
+    }
+
+    await fs.mkdir(target, { recursive: true });
+    // Authenticate via -c http.extraheader so the token never lands in
+    // .git/config or the process command line. GitHub expects Basic auth
+    // (x-access-token:<token>) for git-over-HTTPS.
+    const authArgs = token
+      ? ['-c', `http.extraheader=Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`]
+      : [];
+    const clone = await this.runArgs('git', [...authArgs, 'clone', '--depth', '1', '--branch', branch, cloneUrl, '.'], { cwd: target, timeoutMs: 300_000 });
+    if (!clone.ok) {
+      await fs.rm(target, { recursive: true, force: true }).catch(() => {});
+      throw new Error(`Clone failed for ${owner}/${repo}@${branch}: ${(clone.stderr || clone.stdout || '').slice(0, 400)}`);
+    }
+    return { workspace, location: target, owner, repo, branch, reused: false, cloned: true };
+  }
+
+  /* Compact, repo-aware context so agents can modify an existing codebase
+     instead of regenerating it: manifest, tree and the files most likely
+     relevant to the task. */
+  async repoContext(name, task = '', options = {}) {
+    const target = this.resolveWorkspace(name);
+    if (!fssync.existsSync(target)) throw new Error(`Workspace "${name}" does not exist`);
+    const depth = options.depth || 4;
+    const tree = await this.tree(name, depth);
+
+    const flatten = (nodes, acc = []) => {
+      for (const node of nodes || []) {
+        if (node.type === 'file') acc.push(node.path);
+        else if (node.children) flatten(node.children, acc);
+      }
+      return acc;
+    };
+    const allFiles = flatten(tree);
+    const sourceFiles = allFiles.filter((f) => /\.(js|jsx|ts|tsx|mjs|cjs|vue|svelte|py|rb|go|rs|java|php|cs|css|scss|html|sql|json|md|yml|yaml)$/i.test(f));
+
+    const manifestRaw = await this.readFile(name, 'package.json').catch(() => null);
+    let manifest = null;
+    if (manifestRaw?.content) {
+      try { manifest = JSON.parse(manifestRaw.content); } catch { manifest = null; }
+    }
+
+    const keywords = String(task || '').toLowerCase().match(/[a-z0-9_-]{3,}/g) || [];
+    const scored = sourceFiles
+      .map((file) => {
+        const lower = file.toLowerCase();
+        let score = 0;
+        for (const kw of keywords) if (lower.includes(kw)) score += 2;
+        if (/^(src|app|lib|pages|components|server|api)\//i.test(file)) score += 1;
+        if (/\.(test|spec)\./i.test(file)) score += 1;
+        if (/(^|\/)(server|app|main|index)\.(js|ts|jsx|tsx|html)$/i.test(file)) score += 1;
+        // Generated/bundled artefacts are poor edit targets — the source is.
+        if (/\.(bundle|min)\.(js|css)$/i.test(file) || /^(dist|build)\//i.test(file)) score -= 3;
+        return { file, score };
+      })
+      .sort((a, b) => b.score - a.score);
+
+    const picked = scored.filter((s) => s.score > 0).slice(0, 12);
+    const fallback = sourceFiles.filter((f) => !/\.(bundle|min)\.(js|css)$/i.test(f));
+    const selected = picked.length ? picked.map((s) => s.file) : (fallback.length ? fallback : sourceFiles).slice(0, 12);
+    const snippets = [];
+    for (const file of selected) {
+      const read = await this.readFile(name, file).catch(() => null);
+      if (read?.content) snippets.push(`--- ${file} ---\n${read.content.slice(0, 6000)}`);
+    }
+
+    return {
+      workspace: this.safeName(name),
+      fileCount: allFiles.length,
+      sourceFileCount: sourceFiles.length,
+      files: allFiles.slice(0, 400),
+      manifest: manifest ? { name: manifest.name, scripts: manifest.scripts, dependencies: manifest.dependencies, devDependencies: manifest.devDependencies } : null,
+      selected,
+      snippets,
+      contextText: [
+        `Repository ${this.safeName(name)} (${allFiles.length} files).`,
+        manifest ? `Scripts: ${Object.keys(manifest.scripts || {}).join(', ') || 'none'}` : 'No package.json.',
+        'Relevant files for this task:',
+        ...snippets,
+      ].join('\n'),
+    };
+  }
+
   /* ---------- command execution ---------- */
   parseCommand(command) {
     const parts = String(command || '').trim().split(/\s+/).filter(Boolean);
@@ -164,7 +267,7 @@ class EngineExecutor {
       const child = spawn(binary, args, {
         cwd: cwd || this.root,
         shell: false,
-        env: { ...process.env, CI: '1', NO_COLOR: '1', npm_config_yes: 'true' },
+        env: { ...process.env, CI: '1', NO_COLOR: '1', npm_config_yes: 'true', GIT_TERMINAL_PROMPT: '0' },
       });
 
       const timer = setTimeout(() => {

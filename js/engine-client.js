@@ -68,6 +68,14 @@ class EngineClient {
         return this._post('/api/engine/git', { name, action, message });
     }
 
+    async clone(url, branch = 'main') {
+        return this._post('/api/engine/clone', { url, branch });
+    }
+
+    async context(name, task = '') {
+        return this._get(`/api/engine/context?name=${encodeURIComponent(name)}&task=${encodeURIComponent(task)}`);
+    }
+
     /* Distill a failed verify run into a compact, actionable error brief
        the coder agent can consume on the next attempt. */
     static summarizeFailure(verifyResult) {

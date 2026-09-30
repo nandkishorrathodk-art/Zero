@@ -1151,6 +1151,71 @@ class AgentFramework {
         });
     }
 
+    /* ===== GENERAL-PURPOSE TASK ENTRY POINT (repo-aware, coordinated) ===== */
+    async executeTask(userPrompt, options = {}) {
+        if (this._generationLock) throw new Error('A build is already in progress. Wait for completion or cancel.');
+
+        this._generationLock = true;
+        this.abortController = new AbortController();
+        this.isCancelled = false;
+        this.memory.userPrompt = userPrompt;
+
+        try {
+            let workspace = options.workspace || null;
+            let files = { ...(options.files || this.memory.generatedFiles || {}) };
+
+            // Repository intake: clone (or reuse) a real repo when a URL is given.
+            if (this.engine && options.repoUrl) {
+                this._transition(this.states.PLANNING);
+                this.emit('progress', { step: 'planning', percent: 6, message: `Cloning ${options.repoUrl}...` });
+                const clone = await this.engine.clone(options.repoUrl, options.branch || 'main');
+                workspace = clone.workspace;
+                this.emit('log', { type: 'success', message: `Repository ready: ${clone.workspace}${clone.reused ? ' (updated)' : ''}` });
+                this.emit('repoReady', clone);
+
+                const context = await this.engine.context(workspace, userPrompt);
+                this.memory.repoContext = context;
+                this.emit('log', { type: 'info', message: `Repo context: ${context.fileCount} files, ${context.selected.length} selected for this task.` });
+
+                for (const file of context.selected) {
+                    const read = await this.engine.readFile(workspace, file).catch(() => null);
+                    if (read?.content) files[file] = read.content;
+                }
+                this.memory.generatedFiles = { ...files };
+                this.emit('filesReady', { ...files });
+            }
+
+            const coordinator = this.agents['coordinator'];
+            if (!coordinator) throw new Error('Coordinator agent not registered');
+
+            const result = await coordinator.execute(userPrompt, { files, workspace, workspaceName: options.workspaceName });
+            this.memory.generatedFiles = result.files;
+            this.memory.taskReport = result.report;
+            this.emit('filesReady', result.files);
+
+            this._transition(result.report?.ok ? this.states.COMPLETE : this.states.IDLE);
+            this.emit('progress', {
+                step: 'complete',
+                percent: 100,
+                message: result.report?.ok ? 'Task complete — verified by real execution.' : 'Task finished without a fully passing verification.',
+            });
+            this.emit('complete', result.files);
+            return result;
+        } catch (error) {
+            if (error?.message === 'ABORTED') {
+                this._transition(this.states.IDLE);
+                this.emit('log', { type: 'warning', message: 'Task cancelled by user' });
+                return null;
+            }
+            this._transition(this.states.ERROR);
+            this.emit('error', { message: error.message });
+            this._transition(this.states.IDLE);
+            throw error;
+        } finally {
+            this._generationLock = false;
+        }
+    }
+
     /* ===== REAL EXECUTION & SELF-CORRECTION ===== */
     async _runExecutionVerification() {
         if (!this.engine) return;
