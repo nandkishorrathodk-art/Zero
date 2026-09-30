@@ -141,6 +141,32 @@ module computes it deterministically and emits it as CSS custom properties:
 Blender is not vendored: `tools/blender-*/` is gitignored (~1.3GB). See
 `tools/README.md` for install and the `probe_*.py` verification scripts.
 
+## Prompt engineering (`js/agents/prompt-engineer.js`)
+
+The brief this agent produces is the contract every downstream coder agent
+builds against, so drift here is invisible until the page renders wrong.
+
+- `cdnLibraries` must use the library registry's canonical keys (`gsap`,
+  `scrollTrigger`, `splitText`, `morphSVG`, `scrollTo`, `lenis`, `lottie`,
+  `rive`, `three`, `troika`, `modelViewer`). Models reliably emit package
+  specifiers instead (`gsap/ScrollTrigger`, `three@0.165.0`,
+  `@google/model-viewer`), so `_canonicalLibraries()` normalises the model's
+  output and drops anything unrecognised. The registry owns versions and URLs;
+  a version string here would just be a second source of truth that goes stale.
+- The system prompt carries asset sourcing (Poly Haven by slug, Blender for
+  geometry/bakes) and typography rules (tracking and leading per size). Without
+  the former the model invents CDN paths and placeholder image hosts; without
+  the latter it applies one tracking value at every size, which is the clearest
+  visual tell of an amateur build.
+- `execute()` injects `DesignSystem.toPromptBlock()` into the LLM message, so
+  the sizes stated in the brief are the same tokens the coder agents receive.
+  A brief that disagrees with the design system produces a page whose
+  typography is applied inconsistently.
+- The file has duplicate method bodies (e.g. `_composeExactPrompt`,
+  `_buildSearchQueries`, `_describeLayout` are each defined twice); the later
+  definition wins and the earlier is dead. Edit the later one — an edit to the
+  first looks applied but changes nothing.
+
 ## Testing
 
 `npm test` runs `scripts/test-preview-esm.js` and `scripts/test-pipeline.js`

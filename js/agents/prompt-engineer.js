@@ -295,6 +295,30 @@ REFERENCE QUALITY
 - Real asset URL patterns or placeholders
 - Choreographed scroll beats with exact triggers
 
+ASSET SOURCING — never invent asset URLs
+- HDRIs, PBR texture sets and models come from Poly Haven (CC0, CORS-open) at 1k.
+  Reference them by slug (e.g. "studio_small_03", "wood_floor_deck"); the asset
+  resolver turns a slug into a real hotlinkable URL.
+- Geometry, baked lightmaps and Draco .glb exports come from Blender 4.2, which
+  is installed headless. Say what to build and bake; do not describe Blender
+  settings the bridge does not expose.
+- Placeholder image/video hosts (picsum, unsplash source, placeholder.com) and
+  invented CDN paths are a build failure. If an asset is not from Poly Haven,
+  Blender, or the user, do not name it.
+
+TYPOGRAPHY — the fastest signal of quality
+- Display type needs tight tracking and compressed leading; body copy needs
+  loose. Display type carrying body tracking is the clearest tell of an
+  amateur build, so state tracking and leading per size, not once globally.
+- Specify a real pairing (a display face with character + a neutral body face),
+  never a single default family at multiple weights.
+
+CDN LIBRARIES
+- cdnLibraries uses the library registry's canonical names — gsap,
+  scrollTrigger, splitText, morphSVG, scrollTo, lenis, lottie, rive, three,
+  troika, modelViewer. Do not write package specifiers, version numbers, or
+  npm-style paths; the registry owns versions and URLs.
+
 OUTPUT MUST BE VALID JSON ONLY.
 
 Return a JSON object with these fields:
@@ -371,7 +395,7 @@ Return a JSON object with these fields:
     ]
   },
   "techStackBias": "vanilla-gsap-webgl | react-r3f | fullstack-nextjs",
-  "cdnLibraries": ["gsap", "gsap/ScrollTrigger", "lenis", "three@0.165.0"],
+  "cdnLibraries": ["gsap", "scrollTrigger", "lenis", "three", "modelViewer"],
   "antiPatterns": ["purple/cyan gradients", "generic bento", "fake metrics", "floating orbs", "template icons"],
   "responsiveBreakpoints": { "mobile": "375px", "tablet": "768px", "desktop": "1024px", "wide": "1440px" }
 }
@@ -408,6 +432,8 @@ ${cleanedPrompt}
 MODE: ${mode}
 PRESET: ${artDirection}
 
+${typeof DesignSystem !== 'undefined' ? DesignSystem.toPromptBlock() : ''}
+
 FALLBACK HINTS (for grounding only):
 ${JSON.stringify({
             shortTitle: fallback.shortTitle,
@@ -416,6 +442,11 @@ ${JSON.stringify({
             motionSystems: fallback.motionSystems,
             searchQueries: fallback.researchPlan.searchQueries,
         }, null, 2)}
+
+When you state type sizes, spacing, or grid values, use the design-system
+variables above rather than inventing px values — the coder agents receive the
+same tokens, and a brief that disagrees with them produces a page whose
+typography is applied inconsistently.
 
 Generate a premium prompt pack now.`;
 
@@ -576,9 +607,14 @@ Generate a premium prompt pack now.`;
                 copy: this._copyForSection(name, brief.shortTitle, archetype),
             }));
 
-        brief.cdnLibraries = Array.isArray(brief.cdnLibraries) && brief.cdnLibraries.length
-            ? brief.cdnLibraries
-            : this._defaultCDNs(brief.heroTreatment, brief.techStackBias);
+        // The registry owns library names, versions and URLs. A model that
+        // returns "gsap/ScrollTrigger" or "three@0.165.0" would otherwise
+        // reach the coder agents as a name nothing can resolve.
+        brief.cdnLibraries = this._canonicalLibraries(
+            Array.isArray(brief.cdnLibraries) && brief.cdnLibraries.length
+                ? brief.cdnLibraries
+                : this._defaultCDNs(brief.heroTreatment, brief.techStackBias)
+        );
 
         brief.antiPatterns = Array.isArray(brief.antiPatterns) && brief.antiPatterns.length
             ? brief.antiPatterns
@@ -802,6 +838,44 @@ Generate a premium prompt pack now.`;
             'https://unpkg.com/gsap@3.13.0/dist/ScrollTrigger.min.js',
             'https://unpkg.com/lenis@1.1.20/dist/lenis.min.js',
         ];
+    }
+
+    /* Map whatever the model wrote onto the registry's canonical keys.
+       Models reliably emit "gsap/ScrollTrigger", "three@0.165.0" or
+       "@google/model-viewer"; the registry knows those libraries as
+       scrollTrigger, three and modelViewer. Unrecognised entries are dropped
+       rather than passed downstream, where nothing could resolve them. */
+    _canonicalLibraries(entries = []) {
+        const CANON = {
+            gsap: 'gsap',
+            scrolltrigger: 'scrollTrigger',
+            'gsap/scrolltrigger': 'scrollTrigger',
+            splittext: 'splitText',
+            'gsap/splittext': 'splitText',
+            morphsvg: 'morphSVG',
+            'gsap/morphsvg': 'morphSVG',
+            scrollto: 'scrollTo',
+            'gsap/scrollto': 'scrollTo',
+            lenis: 'lenis',
+            lottie: 'lottie',
+            rive: 'rive',
+            three: 'three',
+            threejs: 'three',
+            'three.js': 'three',
+            troika: 'troika',
+            'troika-three-text': 'troika',
+            modelviewer: 'modelViewer',
+            '@google/model-viewer': 'modelViewer',
+        };
+        const out = [];
+        for (const raw of entries) {
+            const key = String(raw || '').trim().toLowerCase()
+                .replace(/@[\d.]+$/, '')      // three@0.165.0 -> three
+                .replace(/\.min\.js$/, '');   // gsap.min.js -> gsap
+            const canonical = CANON[key] || CANON[key.split('/').pop()];
+            if (canonical && !out.includes(canonical)) out.push(canonical);
+        }
+        return out;
     }
 
     _describeHeroBackground(treatment) {
@@ -1038,8 +1112,8 @@ Generate a premium prompt pack now.`;
                 ? 'fullstack-nextjs'
                 : (/\breact\b/i.test(userPrompt) ? 'react-r3f' : 'vanilla-gsap-webgl'),
             cdnLibraries: wants3d
-                ? ['gsap', 'gsap/ScrollTrigger', 'lenis', 'three@0.165.0', '@google/model-viewer']
-                : ['gsap', 'gsap/ScrollTrigger', 'lenis'],
+                ? ['gsap', 'scrollTrigger', 'lenis', 'three', 'modelViewer']
+                : ['gsap', 'scrollTrigger', 'lenis'],
             antiPatterns: [
                 'purple/cyan gradients',
                 'generic bento',
@@ -1250,6 +1324,8 @@ Generate a premium prompt pack now.`;
             `Required components: ${componentsLine}.`,
             `Hero copy: headline "${brief.heroSpec.headline}", subtext "${brief.heroSpec.subtext}", CTAs "${brief.heroSpec.ctaPrimary}" and "${brief.heroSpec.ctaSecondary}".`,
             `Add exact scroll choreography, responsive breakpoints, prefers-reduced-motion fallback, and a clear asset plan.`,
+            `Assets: source HDRIs, PBR textures and models from Poly Haven (CC0) by slug, and build geometry, baked lightmaps and .glb exports with Blender. Do not invent asset URLs or use placeholder image hosts.`,
+            `Typography must set tracking and leading per size — display type tight, body copy loose.`,
             `Research queries to guide reference gathering: ${queriesLine}.`,
             `Avoid: ${(brief.antiPatterns || []).join(', ')}.`,
             `Build it like a hand-crafted Awwwards site, not a template.`,

@@ -55,6 +55,43 @@ for (const key of ['word-blur-reveal', 'scroll-scrub-camera', 'masked-title-reve
 }
 assert(Object.keys(pe.motionCatalog).length > 20, 'motion catalog is merged, not overwritten');
 
+/* ---- Prompt engineering: library names, assets, typography ---- */
+// Models reliably write package specifiers ("gsap/ScrollTrigger",
+// "three@0.165.0", "@google/model-viewer"). The registry knows those
+// libraries by other names, so anything unrecognised must be dropped.
+assert(
+  JSON.stringify(pe._canonicalLibraries(['gsap/ScrollTrigger', 'three@0.165.0', '@google/model-viewer']))
+    === JSON.stringify(['scrollTrigger', 'three', 'modelViewer']),
+  'npm-style library names normalise to registry keys'
+);
+assert(
+  pe._canonicalLibraries(['gsap/ScrollTrigger', 'scrollTrigger']).length === 1,
+  'canonical library names are de-duplicated'
+);
+assert(
+  !pe._canonicalLibraries(['BOGUS/thing', 'whatever']).length,
+  'unresolvable library names are dropped, not passed downstream'
+);
+
+const fallback3d = pe._fallbackPack('an awwwards 3d webgl studio site', {});
+assert(
+  fallback3d.cdnLibraries.every((n) => LibraryRegistry.scriptTags(LibraryRegistry.plan({ needs: new Set(n) })).length >= 0),
+  'fallback cdnLibraries are plain registry keys'
+);
+assert(!fallback3d.cdnLibraries.some((n) => /@|\//.test(n)), 'fallback cdnLibraries carry no versions or paths');
+assert(fallback3d.cdnLibraries.includes('three'), 'a 3D brief pulls in three');
+
+for (const marker of ['ASSET SOURCING', 'Poly Haven', 'TYPOGRAPHY', 'CDN LIBRARIES']) {
+  assert(pe.systemPrompt.includes(marker), `prompt-engineer system prompt covers "${marker}"`);
+}
+assert(/gsap,\s+scrollTrigger/.test(pe.systemPrompt), 'system prompt lists canonical library names');
+assert(!/"cdnLibraries": \["gsap", "gsap\/ScrollTrigger"/.test(pe.systemPrompt), 'system prompt no longer shows package specifiers');
+
+const brief = pe._fallbackPack('an architecture studio site', {});
+assert(/Poly Haven/.test(brief.exactPrompt), 'exact prompt names the real asset source');
+assert(/tracking and leading per size/.test(brief.exactPrompt), 'exact prompt states per-size optical typography');
+assert(!/placeholder\.com|picsum/.test(brief.exactPrompt), 'exact prompt forbids placeholder asset hosts');
+
 /* ---- Coder3D: advanced techniques must reach the prompt ---- */
 (0, eval)(fs.readFileSync(path.join(root, 'js', 'agents', 'coder-3d.js'), 'utf8'));
 const coder = new Coder3DAgent();
