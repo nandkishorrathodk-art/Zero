@@ -11,9 +11,11 @@ class LLMProvider {
                 name: 'Google Gemini',
                 baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
                 models: [
-                    { id: 'gemini-1.5-flash', name: 'Gemini 2.5 Flash (Fast & Free)' },
-                    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro (Best Quality)' },
-                    { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash' },
+                    { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash (Recommended)' },
+                    { id: 'gemini-3.7-flash', name: 'Gemini 3.7 Flash' },
+                    { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash' },
+                    { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro (Best Quality)' },
+                    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Legacy)' },
                 ],
                 format: 'gemini',
                 color: '#22c55e',
@@ -96,13 +98,32 @@ class LLMProvider {
         };
 
         this.currentProvider = 'gemini';
-        this.currentModel = 'gemini-1.5-flash';
+        this.currentModel = 'gemini-3.8-flash';
         this.apiKeys = {};
         this.customBaseUrl = '';
         this.customModelName = '';
         this.tokenUsage = { total: 0, today: 0 };
-        
+
+        /* Retired Gemini endpoints that no longer serve requests. A user who
+           saved one of these would get hard API failures, so migrate on load. */
+        this.retiredModels = {
+            'gemini-1.5-flash': 'gemini-3.8-flash',
+            'gemini-1.5-flash-001': 'gemini-3.8-flash',
+            'gemini-1.5-pro': 'gemini-3.8-flash',
+            'gemini-1.5-pro-001': 'gemini-3.8-flash',
+            'gemini-2.0-flash': 'gemini-3.8-flash',
+            'gemini-2.0-flash-001': 'gemini-3.8-flash',
+            'gemini-2.0-flash-lite': 'gemini-3.8-flash',
+            'gemini-2.0-flash-exp': 'gemini-3.8-flash',
+            'gemini-2.5-pro': 'gemini-3.1-pro-preview',
+        };
+
         this._loadSettings();
+    }
+
+    /* Map a retired model id to a live one; returns the original when current. */
+    resolveModel(modelId) {
+        return this.retiredModels[modelId] || modelId;
     }
 
     /* ===== SETTINGS PERSISTENCE ===== */
@@ -114,7 +135,7 @@ class LLMProvider {
             if (saved) {
                 const s = JSON.parse(saved);
                 this.currentProvider = localStorage.getItem('zb_current_provider') || s.currentProvider || 'gemini';
-                this.currentModel = localStorage.getItem('zb_current_model') || s.currentModel || 'gemini-1.5-flash';
+                this.currentModel = this.resolveModel(localStorage.getItem('zb_current_model') || s.currentModel || 'gemini-3.8-flash');
                 this.apiKeys = s.apiKeys || {};
                 this.customBaseUrl = s.customBaseUrl || '';
                 this.customModelName = s.customModelName || '';
@@ -125,7 +146,7 @@ class LLMProvider {
                     if (this.customModelName.includes('content-safety') || this.customModelName.includes('nemotron')) {
                         this.customModelName = '';
                         this.currentProvider = 'gemini';
-                        this.currentModel = 'gemini-1.5-flash';
+                        this.currentModel = 'gemini-3.8-flash';
                     } else if (this.customModelName === 'meta-llama/llama-3.3-70b-instruct:free') {
                         this.customModelName = 'meta-llama/llama-3.3-70b-instruct';
                     }
@@ -147,7 +168,7 @@ class LLMProvider {
         // Auto-heal: If provider is set to custom without a custom URL, switch to Gemini if Gemini key exists
         if (this.currentProvider === 'custom' && !this.customBaseUrl && this.apiKeys['gemini']) {
             this.currentProvider = 'gemini';
-            this.currentModel = 'gemini-1.5-flash';
+            this.currentModel = 'gemini-3.8-flash';
         }
 
         console.log('[LLMProvider] Initialized. Current Provider:', this.currentProvider, 'Gemini Key Present:', !!this.getApiKey('gemini'), 'Total Keys:', Object.keys(this.apiKeys));
@@ -614,11 +635,11 @@ class LLMProvider {
                 if (isTokenOrRateLimit && (url.includes('openrouter.ai') || url.includes('groq.com') || this.currentProvider === 'groq' || this.currentProvider === 'custom')) {
                     const geminiKey = this.getApiKey('gemini');
                     if (geminiKey) {
-                        console.warn(`[LLMProvider] Provider '${this.currentProvider}' hit rate/token limit (${response.status}). Auto-failing over to Google Gemini 2.5 Flash...`);
+                        console.warn(`[LLMProvider] Provider '${this.currentProvider}' hit rate/token limit (${response.status}). Auto-failing over to Google Gemini 3.8 Flash...`);
                         this.currentProvider = 'gemini';
-                        this.currentModel = 'gemini-1.5-flash';
+                        this.currentModel = 'gemini-3.8-flash';
                         this.saveSettings();
-                        return this._chatGemini(messages, 'gemini-1.5-flash', geminiKey, options);
+                        return this._chatGemini(messages, 'gemini-3.8-flash', geminiKey, options);
                     }
                 }
 
@@ -746,11 +767,11 @@ class LLMProvider {
                 if (isTokenOrRateLimit && (url.includes('openrouter.ai') || url.includes('groq.com') || this.currentProvider === 'groq' || this.currentProvider === 'custom')) {
                     const geminiKey = this.getApiKey('gemini');
                     if (geminiKey) {
-                        console.warn(`[LLMProvider] Provider '${this.currentProvider}' hit rate/token limit (${response.status}). Auto-failing over to Google Gemini 2.5 Flash...`);
+                        console.warn(`[LLMProvider] Provider '${this.currentProvider}' hit rate/token limit (${response.status}). Auto-failing over to Google Gemini 3.8 Flash...`);
                         this.currentProvider = 'gemini';
-                        this.currentModel = 'gemini-1.5-flash';
+                        this.currentModel = 'gemini-3.8-flash';
                         this.saveSettings();
-                        return this._streamGemini(messages, 'gemini-1.5-flash', geminiKey, options, onChunk);
+                        return this._streamGemini(messages, 'gemini-3.8-flash', geminiKey, options, onChunk);
                     }
                 }
 

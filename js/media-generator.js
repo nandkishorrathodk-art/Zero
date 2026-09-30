@@ -18,7 +18,7 @@ class MediaGenerator {
         /* Providers that support image generation */
         this.imageProviders = {
             'openai': { endpoint: 'https://api.openai.com/v1/images/generations', model: 'dall-e-3' },
-            'gemini': { endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent', model: 'gemini-2.0-flash-exp' },
+            'gemini': { endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent', model: 'gemini-2.5-flash-image' },
             'stability': { endpoint: 'https://api.stability.ai/v2beta/stable-image/generate/sd3', model: 'sd3-large' },
         };
     }
@@ -72,6 +72,14 @@ class MediaGenerator {
             return await this._generateWithOpenAI(item, apiKey);
         }
 
+        if (provider === 'gemini' && apiKey) {
+            try {
+                return await this._generateWithGemini(item, apiKey);
+            } catch (e) {
+                console.warn('[MediaGenerator] Gemini image generation failed, falling back:', e.message);
+            }
+        }
+
         if (this.stabilityApiKey) {
             return await this._generateWithStability(item);
         }
@@ -113,6 +121,38 @@ class MediaGenerator {
             format: 'base64',
             prompt: item.prompt,
             provider: 'openai-dalle3',
+        };
+    }
+
+    /* ===== GOOGLE GEMINI (Nano Banana / gemini-2.5-flash-image) ===== */
+    async _generateWithGemini(item, apiKey) {
+        const cfg = this.imageProviders.gemini;
+        const response = await fetch(`${cfg.endpoint}?key=${encodeURIComponent(apiKey)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: this._enhancePrompt(item.prompt, item.style) }] }],
+                generationConfig: { responseModalities: ['IMAGE'] },
+            }),
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`Gemini Image API error ${response.status}: ${errText.slice(0, 200)}`);
+        }
+
+        const data = await response.json();
+        const parts = data?.candidates?.[0]?.content?.parts || [];
+        const imagePart = parts.find((p) => p.inlineData || p.inline_data);
+        const inline = imagePart?.inlineData || imagePart?.inline_data;
+        if (!inline?.data) throw new Error('Gemini returned no image data');
+
+        return {
+            type: 'image',
+            url: `data:${inline.mimeType || inline.mime_type || 'image/png'};base64,${inline.data}`,
+            format: 'base64',
+            prompt: item.prompt,
+            provider: 'gemini-image',
         };
     }
 
