@@ -2653,6 +2653,99 @@ class LiveBrowserAgent {
 window.LiveBrowserAgent = LiveBrowserAgent;
 ;
 /* ============================================================
+   ZERO ENGINE CLIENT — browser bridge to the local execution engine
+   Lets agents scaffold real projects, run install/build/test,
+   inspect failures, write fixes and commit with git.
+   Degrades gracefully when the local server engine is unavailable.
+   ============================================================ */
+
+class EngineClient {
+    constructor(baseUrl = '') {
+        this.baseUrl = baseUrl;
+        this.available = null;
+        this.lastCheck = 0;
+    }
+
+    async _post(path, body) {
+        const res = await fetch(`${this.baseUrl}${path}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body || {}),
+        });
+        const data = await res.json().catch(() => ({ error: 'Invalid engine response' }));
+        return data;
+    }
+
+    async _get(path) {
+        const res = await fetch(`${this.baseUrl}${path}`);
+        return res.json().catch(() => ({ error: 'Invalid engine response' }));
+    }
+
+    async isAvailable(force = false) {
+        const now = Date.now();
+        if (!force && this.available !== null && now - this.lastCheck < 15_000) return this.available;
+        try {
+            const health = await this._get('/api/health');
+            this.available = Array.isArray(health.capabilities) && health.capabilities.includes('execution-engine');
+        } catch {
+            this.available = false;
+        }
+        this.lastCheck = now;
+        return this.available;
+    }
+
+    async scaffold(name, files) {
+        return this._post('/api/engine/scaffold', { name, files });
+    }
+
+    async run(name, command, timeoutMs) {
+        return this._post('/api/engine/run', { name, command, timeoutMs });
+    }
+
+    async verify(name, options = {}) {
+        return this._post('/api/engine/verify', { name, options });
+    }
+
+    async writeFile(name, filePath, content) {
+        return this._post('/api/engine/file', { name, path: filePath, content });
+    }
+
+    async readFile(name, filePath) {
+        return this._get(`/api/engine/file?name=${encodeURIComponent(name)}&path=${encodeURIComponent(filePath)}`);
+    }
+
+    async tree(name, depth = 3) {
+        return this._get(`/api/engine/tree?name=${encodeURIComponent(name)}&depth=${depth}`);
+    }
+
+    async git(name, action, message) {
+        return this._post('/api/engine/git', { name, action, message });
+    }
+
+    /* Distill a failed verify run into a compact, actionable error brief
+       the coder agent can consume on the next attempt. */
+    static summarizeFailure(verifyResult) {
+        if (!verifyResult || verifyResult.ok) return null;
+        const failed = (verifyResult.steps || []).find((s) => !s.ok) || {};
+        const text = `${failed.stdout || ''}\n${failed.stderr || ''}`;
+        const errorLines = text
+            .split('\n')
+            .filter((line) => /error|fail|assert|cannot|unexpected|undefined|is not|expected|not a function|SyntaxError|TypeError|ReferenceError/i.test(line))
+            .slice(0, 12)
+            .join('\n');
+        return {
+            failedAt: verifyResult.failedAt || failed.name || 'unknown',
+            command: failed.command || '',
+            exitCode: failed.exitCode,
+            errorLines: errorLines || text.slice(-1200),
+        };
+    }
+}
+
+window.EngineClient = EngineClient;
+
+;
+/* ============================================================
    ZERO-BUILDER — Advanced Agentic Framework
    State Machine-based orchestrator with Plan→Design→Media→
    Code(Vanilla/React/Fullstack)→Review→Refine loop
@@ -2988,6 +3081,7 @@ class AgentFramework {
 
         this.mediaGenerator = null;
         this.sandbox = null;
+        this.engine = null;
         this.frameworkOverride = null;
         this.aiMode = 'production';
         this.preflightGuard = null;
@@ -3044,6 +3138,7 @@ class AgentFramework {
             browserAudit: null,
             preflightReport: null,
             bugReport: null,
+            executionReport: null,
             projectIntelligence: null,
             midFlightNotes: [],
             _artDirectionPreset: 'editorial',
@@ -3237,6 +3332,10 @@ class AgentFramework {
             typeof LiveBrowserAgent !== 'undefined'
                 ? new LiveBrowserAgent(this.sandbox, (lvl, msg) => this.emit('log', { type: lvl, message: msg }))
                 : null;
+    }
+
+    setEngine(engine) {
+        this.engine = engine;
     }
 
     setPreflightGuard(guard) {
@@ -3654,6 +3753,9 @@ class AgentFramework {
             await this._reviewLoop();
             this._recordWorkflowCheckpoint('verification');
 
+            /* ── PHASE 5.5: REAL EXECUTION & SELF-CORRECTION ── */
+            await this._runExecutionVerification();
+
             this._transition(this.states.COMPLETE);
             const targetLabel = isFullstack ? 'Next.js full-stack' : isReact ? 'React' : 'static website';
             this.emit('progress', { step: 'complete', percent: 100, message: `${targetLabel} generation complete!` });
@@ -3794,6 +3896,40 @@ class AgentFramework {
             type: 'warning',
             message: `Review loop exhausted after ${this.maxRetries} attempts. Proceeding with current code.`,
         });
+    }
+
+    /* ===== REAL EXECUTION & SELF-CORRECTION ===== */
+    async _runExecutionVerification() {
+        if (!this.engine) return;
+        const engineer = this.agents['engineer'];
+        if (!engineer) return;
+
+        const available = await this.engine.isAvailable().catch(() => false);
+        if (!available) {
+            this.emit('log', { type: 'warning', message: 'Execution engine offline — skipping real run verification (run the local server to enable it).' });
+            return;
+        }
+
+        this._transition(this.states.HEALING);
+        this.emit('progress', { step: 'healing', percent: 84, message: 'Scaffolding real workspace and running the project...' });
+
+        const projectName = this.memory.specification?.title || 'zero-project';
+        try {
+            const result = await engineer.execute(this.memory.generatedFiles, { workspaceName: projectName });
+            this.memory.generatedFiles = result.files;
+            this.memory.executionReport = result.report;
+            this.emit('filesReady', this.memory.generatedFiles);
+
+            if (result.report.ok) {
+                this.emit('log', { type: 'success', message: `Execution verified: project runs and passes tests in ${result.report.workspace}.` });
+            } else {
+                this.emit('log', { type: 'warning', message: result.report.reason || 'Execution verification did not fully pass.' });
+            }
+            this.emit('executionReport', result.report);
+        } catch (error) {
+            if (error?.message === 'ABORTED') throw error;
+            this.emit('log', { type: 'warning', message: `Execution verification skipped: ${error.message}` });
+        }
     }
 
     /* ===== IMPORTED PROJECT INTELLIGENCE PIPELINE ===== */
@@ -4309,6 +4445,8 @@ class AgentFramework {
                 timestamp: Date.now(),
                 filesChanged: Object.keys(updatedFiles || {}),
             });
+
+            await this._runExecutionVerification();
 
             this._transition(this.states.COMPLETE);
             this.emit('progress', { step: 'complete', percent: 100, message: 'Refinement complete!' });
@@ -15861,6 +15999,157 @@ window.BugFinderAgent = BugFinderAgent;
 
 ;
 /* ============================================================
+   ENGINEER AGENT — execution-backed self-correcting coder
+   Unlike the one-shot coders, this agent does not stop after
+   generating files. It scaffolds a real workspace, runs the
+   project, reads the real failure, asks the LLM for a targeted
+   fix, and repeats until tests/build pass or the budget is spent.
+   ============================================================ */
+
+class EngineerAgent extends BaseAgent {
+    constructor() {
+        super('engineer', 'Execution-backed self-correcting software engineer');
+    }
+
+    get budget() {
+        return this.framework?.maxRetries || 4;
+    }
+
+    buildRepairPrompt(specification, files, failure, attempt) {
+        const fileList = Object.keys(files).sort().join('\n');
+        const relevant = this._relevantFiles(files, failure);
+        return [
+            `The project failed at "${failure.failedAt}" while running: ${failure.command || 'the project'}.`,
+            `Attempt ${attempt}. Real error output:`,
+            '```',
+            failure.errorLines || '(no output captured)',
+            '```',
+            '',
+            'Project files:',
+            fileList,
+            '',
+            'Here are the current contents of the files most likely responsible:',
+            relevant,
+            '',
+            'Return ONLY the complete corrected files as JSON: {"path/to/file.ext": "full file contents"}.',
+            'Fix the root cause. Do not truncate files or use placeholders. If a test expectation is itself wrong, correct the implementation or the test so the real behaviour is consistent.',
+        ].join('\n');
+    }
+
+    _relevantFiles(files, failure) {
+        const hints = String(failure.errorLines || '')
+            .split('\n')
+            .flatMap((line) => line.match(/[\w./-]+\.(?:js|jsx|ts|tsx|mjs|cjs|json|py)/g) || []);
+        const picked = new Set();
+        for (const hint of hints) {
+            const base = hint.replace(/^.*?([\w.-]+\.\w+)$/, '$1');
+            for (const name of Object.keys(files)) {
+                if (name === hint || name.endsWith('/' + base) || name === base) picked.add(name);
+            }
+        }
+        if (!picked.size) {
+            for (const name of Object.keys(files)) {
+                if (/\.(js|jsx|ts|tsx|py)$/.test(name) && !/node_modules/.test(name)) picked.add(name);
+            }
+        }
+        return [...picked].slice(0, 8).map((name) => `--- ${name} ---\n${files[name]}`).join('\n\n');
+    }
+
+    async execute(files = {}, options = {}) {
+        if (!this.framework?.engine) {
+            return { files, report: { executed: false, reason: 'execution engine unavailable', attempts: 0 } };
+        }
+
+        const workspaceName = options.workspaceName || `zero-${Date.now().toString(36)}`;
+        const engine = this.framework.engine;
+        const scaffold = await engine.scaffold(workspaceName, files);
+        this.log('info', `Workspace scaffolded: ${scaffold.fileCount} files → ${scaffold.location}`);
+
+        let currentFiles = { ...files };
+        const attempts = [];
+
+        for (let attempt = 1; attempt <= this.budget; attempt++) {
+            this.framework.emit('progress', {
+                step: 'healing',
+                percent: 78 + Math.min(attempt * 4, 16),
+                message: `Running project in real workspace (attempt ${attempt}/${this.budget})...`,
+            });
+
+            const verify = await engine.verify(workspaceName, options.verifyOptions || {});
+            this._reportVerify(verify, attempt);
+
+            if (verify.ok) {
+                attempts.push({ attempt, ok: true });
+                await engine.git(workspaceName, 'commit', `Zero Engineer: verified build (attempt ${attempt})`).catch(() => {});
+                return {
+                    files: currentFiles,
+                    report: {
+                        executed: true,
+                        workspace: workspaceName,
+                        location: scaffold.location,
+                        ok: true,
+                        attempts,
+                        steps: verify.steps,
+                    },
+                };
+            }
+
+            const failure = EngineClient.summarizeFailure(verify);
+            attempts.push({ attempt, ok: false, failedAt: failure.failedAt, errorLines: failure.errorLines });
+
+            if (attempt === this.budget) break;
+
+            this.log('warning', `Run failed at ${failure.failedAt}. Requesting fix (attempt ${attempt + 1})...`);
+            const repairPrompt = this.buildRepairPrompt(this.framework.memory?.specification, currentFiles, failure, attempt + 1);
+            const response = await this.streamLLMFiles(
+                repairPrompt,
+                'You are a senior software engineer. Return only complete, working files as a JSON object. No prose, no placeholders.',
+                { temperature: 0.2 }
+            );
+
+            const patched = this.extractFiles(response);
+            if (!patched || !Object.keys(patched).length) {
+                this.log('warning', 'Engineer could not extract a fix from the model response.');
+                continue;
+            }
+
+            Object.assign(currentFiles, patched);
+            for (const [path, content] of Object.entries(patched)) {
+                await engine.writeFile(workspaceName, path, content);
+            }
+            this.framework.memory.generatedFiles = { ...currentFiles };
+            this.framework.emit('filesReady', { ...currentFiles });
+        }
+
+        return {
+            files: currentFiles,
+            report: {
+                executed: true,
+                workspace: workspaceName,
+                location: scaffold.location,
+                ok: false,
+                attempts,
+                reason: `Engineer exhausted ${this.budget} attempts without a passing run.`,
+            },
+        };
+    }
+
+    _reportVerify(verify, attempt) {
+        if (verify.ok) {
+            this.log('success', `Real run passed on attempt ${attempt}: ${(verify.steps || []).map((s) => s.name).join(' → ')}`);
+            return;
+        }
+        const failed = (verify.steps || []).find((s) => !s.ok) || {};
+        this.log('error', `Real run failed at "${verify.failedAt}" (attempt ${attempt}, exit ${failed.exitCode}).`);
+        const brief = (failed.stderr || failed.stdout || '').split('\n').slice(0, 4).join(' | ');
+        if (brief) this.log('warning', `  ↳ ${brief}`);
+    }
+}
+
+window.EngineerAgent = EngineerAgent;
+
+;
+/* ============================================================
    PROJECT INTELLIGENCE AGENTS - imported project analysis suite
    ============================================================ */
 
@@ -19959,7 +20248,12 @@ window.DeployManager = DeployManager;
                 if (typeof RefinerAgent !== 'undefined') framework.registerAgent('refiner', new RefinerAgent());
                 if (typeof AgentRecoveryAgent !== 'undefined') framework.registerAgent('fallback-recovery', new AgentRecoveryAgent());
                 if (typeof BugFinderAgent !== 'undefined') framework.registerAgent('bug-finder', new BugFinderAgent());
+                if (typeof EngineerAgent !== 'undefined') framework.registerAgent('engineer', new EngineerAgent());
                 if (typeof registerProjectIntelligenceAgents !== 'undefined') registerProjectIntelligenceAgents();
+
+                if (typeof EngineClient !== 'undefined') {
+                    framework.setEngine(new EngineClient());
+                }
 
                 if (typeof MediaGenerator !== 'undefined') {
                     const mediaGen = new MediaGenerator(window.llmProvider);

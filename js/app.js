@@ -80,7 +80,12 @@
                 if (typeof RefinerAgent !== 'undefined') framework.registerAgent('refiner', new RefinerAgent());
                 if (typeof AgentRecoveryAgent !== 'undefined') framework.registerAgent('fallback-recovery', new AgentRecoveryAgent());
                 if (typeof BugFinderAgent !== 'undefined') framework.registerAgent('bug-finder', new BugFinderAgent());
+                if (typeof EngineerAgent !== 'undefined') framework.registerAgent('engineer', new EngineerAgent());
                 if (typeof registerProjectIntelligenceAgents !== 'undefined') registerProjectIntelligenceAgents();
+
+                if (typeof EngineClient !== 'undefined') {
+                    framework.setEngine(new EngineClient());
+                }
 
                 if (typeof MediaGenerator !== 'undefined') {
                     const mediaGen = new MediaGenerator(window.llmProvider);

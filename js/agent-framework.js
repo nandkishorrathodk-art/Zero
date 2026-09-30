@@ -334,6 +334,7 @@ class AgentFramework {
 
         this.mediaGenerator = null;
         this.sandbox = null;
+        this.engine = null;
         this.frameworkOverride = null;
         this.aiMode = 'production';
         this.preflightGuard = null;
@@ -390,6 +391,7 @@ class AgentFramework {
             browserAudit: null,
             preflightReport: null,
             bugReport: null,
+            executionReport: null,
             projectIntelligence: null,
             midFlightNotes: [],
             _artDirectionPreset: 'editorial',
@@ -583,6 +585,10 @@ class AgentFramework {
             typeof LiveBrowserAgent !== 'undefined'
                 ? new LiveBrowserAgent(this.sandbox, (lvl, msg) => this.emit('log', { type: lvl, message: msg }))
                 : null;
+    }
+
+    setEngine(engine) {
+        this.engine = engine;
     }
 
     setPreflightGuard(guard) {
@@ -1000,6 +1006,9 @@ class AgentFramework {
             await this._reviewLoop();
             this._recordWorkflowCheckpoint('verification');
 
+            /* ── PHASE 5.5: REAL EXECUTION & SELF-CORRECTION ── */
+            await this._runExecutionVerification();
+
             this._transition(this.states.COMPLETE);
             const targetLabel = isFullstack ? 'Next.js full-stack' : isReact ? 'React' : 'static website';
             this.emit('progress', { step: 'complete', percent: 100, message: `${targetLabel} generation complete!` });
@@ -1140,6 +1149,40 @@ class AgentFramework {
             type: 'warning',
             message: `Review loop exhausted after ${this.maxRetries} attempts. Proceeding with current code.`,
         });
+    }
+
+    /* ===== REAL EXECUTION & SELF-CORRECTION ===== */
+    async _runExecutionVerification() {
+        if (!this.engine) return;
+        const engineer = this.agents['engineer'];
+        if (!engineer) return;
+
+        const available = await this.engine.isAvailable().catch(() => false);
+        if (!available) {
+            this.emit('log', { type: 'warning', message: 'Execution engine offline — skipping real run verification (run the local server to enable it).' });
+            return;
+        }
+
+        this._transition(this.states.HEALING);
+        this.emit('progress', { step: 'healing', percent: 84, message: 'Scaffolding real workspace and running the project...' });
+
+        const projectName = this.memory.specification?.title || 'zero-project';
+        try {
+            const result = await engineer.execute(this.memory.generatedFiles, { workspaceName: projectName });
+            this.memory.generatedFiles = result.files;
+            this.memory.executionReport = result.report;
+            this.emit('filesReady', this.memory.generatedFiles);
+
+            if (result.report.ok) {
+                this.emit('log', { type: 'success', message: `Execution verified: project runs and passes tests in ${result.report.workspace}.` });
+            } else {
+                this.emit('log', { type: 'warning', message: result.report.reason || 'Execution verification did not fully pass.' });
+            }
+            this.emit('executionReport', result.report);
+        } catch (error) {
+            if (error?.message === 'ABORTED') throw error;
+            this.emit('log', { type: 'warning', message: `Execution verification skipped: ${error.message}` });
+        }
     }
 
     /* ===== IMPORTED PROJECT INTELLIGENCE PIPELINE ===== */
@@ -1655,6 +1698,8 @@ class AgentFramework {
                 timestamp: Date.now(),
                 filesChanged: Object.keys(updatedFiles || {}),
             });
+
+            await this._runExecutionVerification();
 
             this._transition(this.states.COMPLETE);
             this.emit('progress', { step: 'complete', percent: 100, message: 'Refinement complete!' });

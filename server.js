@@ -4,8 +4,10 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const os = require('node:os');
+const { EngineExecutor } = require('./engine/executor');
 
 const root = __dirname;
+const engine = new EngineExecutor(root);
 const dataDir = path.join(root, 'data');
 const projectsFile = path.join(dataDir, 'projects.json');
 const workspacesDir = path.join(dataDir, 'local-workspaces');
@@ -59,7 +61,7 @@ function readJson(req) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   try {
-    if (url.pathname === '/api/health' && req.method === 'GET') return send(res, 200, { ok: true, service: 'zero-builder-max', version: '4.4.0', capabilities: ['local-device-bridge', 'project-sync', 'workspace-export', 'zip-project-intake', 'domparser-preview', 'google-auth-ready', 'project-intelligence-agents', 'agent-recovery-supervisor', 'project-repository-memory', 'motion-studio'] });
+    if (url.pathname === '/api/health' && req.method === 'GET') return send(res, 200, { ok: true, service: 'zero-builder-max', version: '5.0.0-engine', capabilities: ['local-device-bridge', 'project-sync', 'workspace-export', 'zip-project-intake', 'domparser-preview', 'google-auth-ready', 'project-intelligence-agents', 'agent-recovery-supervisor', 'project-repository-memory', 'motion-studio', 'execution-engine', 'real-verify-loop', 'git-workspaces'] });
     if (url.pathname === '/api/device/status' && req.method === 'GET') return send(res, 200, { ok: true, platform: `${os.platform()} ${os.release()}`, workspaceRoot: workspacesDir, mode: 'local-device-bridge' });
     if (url.pathname === '/api/device/workspaces' && req.method === 'POST') {
       const payload = await readJson(req);
@@ -83,6 +85,51 @@ const server = http.createServer(async (req, res) => {
       await writeProjects(projects);
       return send(res, 200, { ok: true, updatedAt: projects[project.id].updatedAt });
     }
+    /* ---------- ZERO ENGINE: real execution endpoints ---------- */
+    if (url.pathname === '/api/engine/workspaces' && req.method === 'GET') {
+      return send(res, 200, { ok: true, workspaces: await engine.listWorkspaces() });
+    }
+    if (url.pathname === '/api/engine/scaffold' && req.method === 'POST') {
+      const payload = await readJson(req);
+      if (!payload.name || !payload.files || typeof payload.files !== 'object') return send(res, 400, { error: 'A workspace name and files are required' });
+      const result = await engine.scaffold(payload.name, payload.files);
+      return send(res, 200, { ok: true, ...result });
+    }
+    if (url.pathname === '/api/engine/run' && req.method === 'POST') {
+      const payload = await readJson(req);
+      if (!payload.name || !payload.command) return send(res, 400, { error: 'A workspace name and command are required' });
+      const cwd = engine.resolveWorkspace(payload.name);
+      const result = await engine.runCommand(payload.command, { cwd, timeoutMs: payload.timeoutMs });
+      return send(res, result.ok ? 200 : 422, result);
+    }
+    if (url.pathname === '/api/engine/verify' && req.method === 'POST') {
+      const payload = await readJson(req);
+      if (!payload.name) return send(res, 400, { error: 'A workspace name is required' });
+      const result = await engine.verify(payload.name, payload.options || {});
+      return send(res, result.ok ? 200 : 422, result);
+    }
+    if (url.pathname === '/api/engine/tree' && req.method === 'GET') {
+      const name = url.searchParams.get('name');
+      if (!name) return send(res, 400, { error: 'A workspace name is required' });
+      return send(res, 200, { ok: true, tree: await engine.tree(name, Number(url.searchParams.get('depth')) || 3) });
+    }
+    if (url.pathname === '/api/engine/file' && req.method === 'GET') {
+      const name = url.searchParams.get('name');
+      const file = url.searchParams.get('path');
+      if (!name || !file) return send(res, 400, { error: 'A workspace name and file path are required' });
+      return send(res, 200, { ok: true, ...(await engine.readFile(name, file)) });
+    }
+    if (url.pathname === '/api/engine/file' && req.method === 'POST') {
+      const payload = await readJson(req);
+      if (!payload.name || !payload.path) return send(res, 400, { error: 'A workspace name and file path are required' });
+      return send(res, 200, { ok: true, ...(await engine.writeFile(payload.name, payload.path, payload.content)) });
+    }
+    if (url.pathname === '/api/engine/git' && req.method === 'POST') {
+      const payload = await readJson(req);
+      if (!payload.name || !payload.action) return send(res, 400, { error: 'A workspace name and git action are required' });
+      return send(res, 200, await engine.git(payload.name, payload.action, payload.message));
+    }
+
     if (url.pathname.startsWith('/api/')) return send(res, 404, { error: 'Not found' });
 
     const relativePath = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname).replace(/^\/+/, '');
