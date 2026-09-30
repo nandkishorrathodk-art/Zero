@@ -2947,9 +2947,36 @@ class BaseAgent {
                 .replace(/```json/gi, '')
                 .replace(/```/g, '')
                 .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '') // strip single-line JS comments
+                .replace(stripLineComments)
                 .replace(/,\s*([\}\]])/g, '$1')
                 .trim();
+
+        /* Remove double-slash line comments without touching URLs or string
+           literals. A blanket line-comment regex truncates every "https://..."
+           value, which then fails the whole JSON.parse. */
+        const stripLineComments = (str) => {
+            let out = '';
+            let inString = false;
+            let escaped = false;
+            for (let i = 0; i < str.length; i++) {
+                const ch = str[i];
+                if (inString) {
+                    out += ch;
+                    if (escaped) escaped = false;
+                    else if (ch === '\\') escaped = true;
+                    else if (ch === '"') inString = false;
+                    continue;
+                }
+                if (ch === '"') { inString = true; out += ch; continue; }
+                if (ch === '/' && str[i + 1] === '/') {
+                    while (i < str.length && str[i] !== '\n') i++;
+                    out += '\n';
+                    continue;
+                }
+                out += ch;
+            }
+            return out;
+        };
 
         let cleanText = sanitize(text)
             .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
@@ -3009,6 +3036,8 @@ class BaseAgent {
     }
 
     extractFiles(text) {
+        // Models occasionally emit CRLF; the block regexes below assume LF.
+        text = String(text || '').replace(/\r\n?/g, '\n');
         // 1) JSON file dictionary
         try {
             const obj = this.parseJSON(text);
