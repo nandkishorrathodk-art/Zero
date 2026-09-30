@@ -57,9 +57,9 @@ class LLMProvider {
                 name: 'Groq',
                 baseUrl: 'https://api.groq.com/openai/v1',
                 models: [
-                    { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B (Recommended)' },
-                    { id: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B' },
-                    { id: 'gemma2-9b-it', name: 'Gemma 2 9B' },
+                    { id: 'openai/gpt-oss-120b', name: 'GPT-OSS 120B (Best Quality)' },
+                    { id: 'qwen/qwen3.8-27b', name: 'Qwen3 27B' },
+                    { id: 'openai/gpt-oss-20b', name: 'GPT-OSS 20B (Fast)' },
                 ],
                 format: 'openai-compatible',
                 color: '#eab308',
@@ -557,7 +557,10 @@ class LLMProvider {
         }
         allMessages.push(...conversation);
 
-        const maxLimits = { gemini: 32768, openai: 16384, groq: 4096, mistral: 8192, anthropic: 8192, custom: 16384 };
+        // Per-provider output ceilings. Groq's current models allow far more
+        // than the 4096 the old Llama/Mixtral lineup needed; capping there
+        // truncated multi-file HTML/CSS generation mid-document.
+        const maxLimits = { gemini: 32768, openai: 16384, groq: 32768, mistral: 8192, anthropic: 8192, custom: 16384 };
         const maxTokens = Math.min(options.maxTokens || 4096, maxLimits[this.currentProvider] || 8192);
 
         const body = {
@@ -572,11 +575,13 @@ class LLMProvider {
             body.response_format = { type: 'json_object' };
         }
 
-        // Truncate long message history for Groq to stay under 12,000 TPM limit
-        if ((this.currentProvider === 'groq' || url.includes('groq.com')) && JSON.stringify(body).length > 22000) {
+        // Trim only when the payload genuinely approaches the context window;
+        // the old 22k threshold predated Groq's 128k-context models and cut
+        // design-system context out of otherwise-fine requests.
+        if ((this.currentProvider === 'groq' || url.includes('groq.com')) && JSON.stringify(body).length > 200000) {
             body.messages = body.messages.map(m => {
-                if (typeof m.content === 'string' && m.content.length > 7000) {
-                    return { ...m, content: m.content.slice(0, 7000) + '\n...[context trimmed for model TPM limit]...' };
+                if (typeof m.content === 'string' && m.content.length > 60000) {
+                    return { ...m, content: m.content.slice(0, 60000) + '\n...[context trimmed for model context limit]...' };
                 }
                 return m;
             });
