@@ -1743,6 +1743,31 @@ class AgentFramework {
             }
         }
 
+        // ─── Cross-file style coverage ───
+        // Classes present in the markup but never defined in CSS are the single
+        // most common reason a generated site looks unstyled/broken, and no
+        // per-file check catches it.
+        if (html && !isReact && !isComponentBuild) {
+            const cssText = entries.filter(([n]) => /\.css$/i.test(n)).map(([, c]) => String(c || '')).join('\n');
+            if (cssText) {
+                const used = new Set();
+                for (const m of html.matchAll(/\sclass=["']([^"']+)["']/g)) {
+                    m[1].trim().split(/\s+/).forEach((c) => c && used.add(c));
+                }
+                const defined = new Set();
+                for (const m of cssText.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)) defined.add(m[1]);
+                // Third-party / utility classes are not ours to define.
+                const ignore = /^(?:gsap|lenis|swiper|aos|no-js|is-|has-|js-)/i;
+                const missing = [...used].filter((c) => !defined.has(c) && !ignore.test(c));
+                if (missing.length) {
+                    const ratio = missing.length / Math.max(used.size, 1);
+                    add(ratio > 0.15 ? 'critical' : 'warning', 'css-coverage', 'styles.css',
+                        `${missing.length} of ${used.size} classes used in index.html have no CSS rule (e.g. ${missing.slice(0, 8).join(', ')}).`,
+                        'Define a rule for every class the markup uses, or remove the class from the markup.');
+                }
+            }
+        }
+
         return { issues, critical: issues.some((issue) => issue.severity === 'critical') };
     }
 

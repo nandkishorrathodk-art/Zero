@@ -381,9 +381,11 @@ Output ONLY the HTML file:
             // PASS 2: Generate CSS
             this.log('info', 'Pass 2/3: Generating cinematic CSS styles...');
 
-            const htmlContext = html.length > 8000
-                ? html.substring(0, 4000) + '\n... (middle) ...\n' + html.substring(html.length - 2000)
-                : html;
+            // Truncating the HTML here left the middle of the page invisible to the
+            // CSS pass, so those sections shipped unstyled. Send a complete
+            // structural digest instead: every class, id and data-attribute, plus
+            // the section skeleton — full coverage without the body text.
+            const htmlContext = html.length > 8000 ? this._htmlStructureDigest(html) : html;
 
             const cssPrompt = `${contextBlock}
 
@@ -409,6 +411,12 @@ REQUIREMENTS:
 8. Include @media (prefers-reduced-motion: reduce) fallback
 9. Premium hover effects (scale, glow, magnetic feel)
 10. Make every section feel hand-designed
+11. MANDATORY: write a rule for EVERY class in the CLASS INVENTORY above.
+    A class used in the markup but absent from the CSS ships unstyled — the
+    single most common reason a generated page looks broken. Do not skip
+    section-specific classes; give each one real, art-directed styling.
+12. Style each section in the SKELETON distinctly — no two sections should
+    look identical.
 
 Output ONLY the CSS file:
 **File: styles.css**
@@ -546,6 +554,37 @@ Output ONLY the JS file:
         if (this.framework?.abortController?.signal?.aborted) {
             throw new Error('ABORTED');
         }
+    }
+
+    /* A complete structural view of the HTML for the CSS pass. Sending the raw
+       markup truncated to a byte budget hid whole sections from the styler, so
+       instead we hand over every class/id/data-attribute plus a tag skeleton. */
+    _htmlStructureDigest(html) {
+        const tags = html.match(/<[a-zA-Z][^>]*>/g) || [];
+        const skeleton = tags
+            .filter((t) => /^<(section|header|footer|nav|main|aside|article|div|h[1-6]|p|a|button|ul|li|form|input|video|canvas|img|span|svg)\b/i.test(t))
+            .map((t) => {
+                const name = (t.match(/^<([a-zA-Z0-9-]+)/) || [])[1] || '';
+                const id = (t.match(/\sid=["']([^"']+)["']/) || [])[1];
+                const cls = (t.match(/\sclass=["']([^"']+)["']/) || [])[1];
+                const data = (t.match(/\s(data-[a-z0-9-]+)/gi) || []).map((d) => d.trim());
+                const parts = [name];
+                if (id) parts.push(`#${id}`);
+                if (cls) parts.push(`.${cls.trim().split(/\s+/).join('.')}`);
+                if (data.length) parts.push(`[${data.join(' ')}]`);
+                return parts.join('');
+            });
+
+        const classes = new Set();
+        for (const m of html.matchAll(/\sclass=["']([^"']+)["']/g)) {
+            m[1].trim().split(/\s+/).forEach((c) => c && classes.add(c));
+        }
+
+        return `STRUCTURE SKELETON (${tags.length} tags — style ALL of these):
+${skeleton.join('\n')}
+
+COMPLETE CLASS INVENTORY (${classes.size} classes — every one must have a rule):
+${[...classes].join(', ')}`;
     }
 
     _injectGSAPBoilerplate() {
