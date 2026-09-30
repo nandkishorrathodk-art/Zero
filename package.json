@@ -7,7 +7,7 @@
     "build": "node build-bundle.js",
     "dev": "node build-bundle.js && node server.js",
     "start": "node build-bundle.js && node server.js",
-    "test": "node scripts/test-preview-esm.js && node scripts/test-pipeline.js"
+    "test": "node scripts/test-preview-esm.js && node scripts/test-pipeline.js && node scripts/test-generation-offline.js"
   },
   "engines": {
     "node": ">=18"
