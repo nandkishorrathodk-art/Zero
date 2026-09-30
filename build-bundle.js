@@ -12,6 +12,7 @@ const files = [
   'js/autonomous-batcher.js',
   'js/live-browser-agent.js',
   'js/engine-client.js',
+  'js/library-registry.js',
   'js/agent-framework.js',
   'js/media-generator.js',
   'js/agents/prompt-engineer.js',

@@ -120,7 +120,10 @@ LEVEL 8 — Audio-Reactive
 RULES
 
 1. Output only valid JavaScript code.
-2. Use THREE from global scope, not ES modules.
+2. Three.js is loaded as an ES module. Start the file with the imports you need:
+   import * as THREE from 'three';
+   import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+   Never reference a global THREE — there is no UMD build after r150.
 3. Create a function called initThreeScene(container) that receives a DOM element.
 4. The scene must be responsive and handle resize.
 5. Use requestAnimationFrame for smooth animation.
@@ -181,6 +184,16 @@ PERFORMANCE GUIDELINES
         const needsPostFX = /bloom|chromatic|dof|depth.?of.?field|grain|god.?ray|vignette|effect.?composer|post.?process/i.test(advBlob);
         const needsPhysics = /physics|rapier|cannon|gravity|collision|rigid.?body/i.test(advBlob);
         const needsCurlNoise = /curl.?noise|turbulence|flow.?field|vector.?field/i.test(advBlob);
+        const needsDraco = /draco|ktx2|compressed|gltf|glb|3d.?model|product.?viewer/i.test(advBlob);
+        const needsBakedLighting = /baked|lightmap|ambient.?occlusion|blender|cinema.?4d|c4d/i.test(advBlob);
+        const needsCameraCurve = /camera.?curve|catmull|dolly|flythrough|camera.?path/i.test(advBlob);
+        const needsDragGrid = /infinite.?grid|drag.?grid|endless.?canvas|world.?page|raycast/i.test(advBlob);
+
+        // Budget is computed from the same registry the HTML pass uses, so the
+        // scene prompt and the page prompt cannot disagree about what is loaded.
+        const performanceRules = typeof LibraryRegistry !== 'undefined'
+            ? LibraryRegistry.runtimeRules(LibraryRegistry.plan(specification))
+            : ['Cap devicePixelRatio at 2.', 'Honor prefers-reduced-motion.'];
 
         const visualDirection = {
             siteType,
@@ -200,6 +213,11 @@ PERFORMANCE GUIDELINES
             needsPostFX,
             needsPhysics,
             needsCurlNoise,
+            needsDraco,
+            needsBakedLighting,
+            needsCameraCurve,
+            needsDragGrid,
+            performanceRules,
         };
 
         return visualDirection;
@@ -261,6 +279,9 @@ ${hints.isComplex ? `
 * Subtle color grading over time is allowed
 * Use one strong focal point and supporting ambient motion
   ` : '- Keep the implementation lean and elegant'}
+
+PERFORMANCE RULES (non-negotiable)
+${hints.performanceRules.map((r) => `* ${r}`).join('\n')}
 ${hints.needsGPGPU ? `
 GPGPU PARTICLE SYSTEM REQUIRED
 * Use two WebGLRenderTargets (FloatType, RGBAFormat) as position/velocity data textures
@@ -313,13 +334,45 @@ CURL NOISE / FLOW FIELD REQUIRED
 * Animate noise offset with time for flowing motion
 * Scale noise frequency (0.5-2.0) and amplitude (0.1-0.5) based on mood
 ` : ''}
+${hints.needsDraco ? `
+ASSET PIPELINE REQUIRED
+* Import DRACOLoader and KTX2Loader from three/addons/loaders/
+* dracoLoader.setDecoderPath('https://unpkg.com/three@0.165.0/examples/jsm/libs/draco/')
+* ktx2Loader.setTranscoderPath('https://unpkg.com/three@0.165.0/examples/jsm/libs/basis/')
+* gltfLoader.setDRACOLoader(dracoLoader).setKTX2Loader(ktx2Loader)
+* Show a real loading state; do not block first paint on the model
+* Dispose loaders and decoders on teardown
+` : ''}
+${hints.needsBakedLighting ? `
+BAKED LIGHTING REQUIRED
+* Treat lighting as shipped textures, not per-frame math: use a lightmap or AO map
+* meshStandardMaterial with map + lightMap, lightMapIntensity tuned for the mood
+* No real-time shadow maps unless a single contact shadow is essential
+* Keep the render loop cheap enough for a mid-range laptop GPU
+` : ''}
+${hints.needsCameraCurve ? `
+CAMERA PATH REQUIRED
+* Build a THREE.CatmullRomCurve3 through named waypoints (one per section/project)
+* Move the camera with curve.getPointAt(t); tween t with eased damping, never linear
+* Look-at target lerps toward the active waypoint so turns feel weighted
+* Expose window.__zeroCameraTo(name) so navigation can drive the camera
+` : ''}
+${hints.needsDragGrid ? `
+INFINITE DRAG GRID REQUIRED
+* Pointer drag updates virtual x/y; convert to world space and snap to grid cells
+* Generate or recycle tiles relative to the virtual origin so the plane never ends
+* Use raycasting for hover/selection, throttled to pointer events (not every frame)
+* Momentum/inertia on release with exponential decay
+* Support touch and pointer capture; never hijack native scroll on the page itself
+` : ''}
 
 CRITICAL FORMAT
 
-* Regular script, not ES modules
-* Global function name: initThreeScene(container)
-* THREE from CDN global scope
-* Output only JavaScript code
+* ES module. The HTML page provides an import map for 'three' and 'three/addons/'.
+* Export or attach the entry point as: window.initThreeScene = initThreeScene;
+  (the page calls it after the module loads, since module scope is not global)
+* Import THREE from 'three' — never from a global.
+* Output only JavaScript code, imports first.
 `.trim();
     }
 
@@ -329,12 +382,26 @@ CRITICAL FORMAT
         // Strip common markdown fences if the model returns them anyway.
         output = output.replace(/^```(?:javascript|js|ts|typescript)?\s*/i, '').replace(/```$/i, '').trim();
 
+        // Imports are only legal at module top level, so lift them out before
+        // any wrapping. Wrapping them inside a function is a syntax error.
+        const imports = [];
+        output = output.replace(/^\s*import\s[^;]+;\s*$/gm, (line) => {
+            imports.push(line.trim());
+            return '';
+        }).trim();
+
         // If the model forgot the required entry point, wrap the body in a function.
         if (!/\bfunction\s+initThreeScene\s*\(/.test(output) && !/\bconst\s+initThreeScene\s*=/.test(output)) {
             output = `function initThreeScene(container) {\n${output}\n}`;
         }
 
-        return output;
+        // Module scope is not global, so the page cannot call the entry point
+        // unless it is attached to window.
+        if (!/window\.initThreeScene\s*=/.test(output)) {
+            output += '\n\nwindow.initThreeScene = initThreeScene;';
+        }
+
+        return [...imports, '', output].join('\n').trim();
     }
 
     validateCode(code) {
@@ -350,13 +417,9 @@ CRITICAL FORMAT
     }
 
     addSafeWrapper(code) {
-        const cleaned = this.normalizeCode(code);
-
-        if (/^\s*function\s+initThreeScene\s*\(/.test(cleaned)) {
-            return cleaned;
-        }
-
-        return `function initThreeScene(container) {\n${cleaned}\n}`;
+        // normalizeCode already lifts imports to the top and wraps a bare body,
+        // so re-wrapping here would nest a function inside a function.
+        return this.normalizeCode(code);
     }
 
     async execute(specification = {}, designSystem = null) {

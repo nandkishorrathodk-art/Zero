@@ -6,7 +6,8 @@
   "scripts": {
     "build": "node build-bundle.js",
     "dev": "node build-bundle.js && node server.js",
-    "start": "node build-bundle.js && node server.js"
+    "start": "node build-bundle.js && node server.js",
+    "test": "node scripts/test-preview-esm.js && node scripts/test-pipeline.js"
   },
   "engines": {
     "node": ">=18"

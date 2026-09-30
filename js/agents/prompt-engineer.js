@@ -239,7 +239,10 @@ Position: fixed or absolute, backdrop-filter blur(20px)`,
             ],
         };
 
-        this.motionCatalog = {
+        // Second catalog must merge, not replace: assigning a fresh object here
+        // silently dropped the cinematic vocabulary above (word-blur-reveal,
+        // scroll-scrub-camera, masked-title-reveal, …) from every build.
+        Object.assign(this.motionCatalog, {
             '3d-scroll-rotate': 'Perspective rotateX/translateZ on scroll using data-scroll-3d="rotate"',
             '3d-scroll-zoom': 'Perspective scale/translateZ zoom on scroll using data-scroll-3d="zoom"',
             '3d-window-interactive': 'macOS/Spatial style 3D window mockup with mouse tilt using .window-3d',
@@ -250,8 +253,14 @@ Position: fixed or absolute, backdrop-filter blur(20px)`,
             'smooth-page-loader': 'Full-screen entrance loader with spinner/bar using .page-loader',
             'entrance-clip-circle': 'Expanding circle clip-path reveal using data-reveal="clip-circle"',
             'micro-ripple-click': 'Material/fluid ripple effect on click using data-micro="ripple"',
-            'spatial-depth-layers': '3D z-space layering with perspective transform using .spatial-card'
-        };
+            'spatial-depth-layers': '3D z-space layering with perspective transform using .spatial-card',
+            'camera-path-curve': 'CatmullRomCurve3 camera path; menu/project changes tween the camera along the curve instead of cutting',
+            'infinite-drag-grid': 'Pointer drag updates virtual x/y; grid tiles are generated relative to those coordinates for an endless plane',
+            'z-axis-depth-scroll': 'Map scroll progress to camera Z; content fades in as its depth reaches the view frustum',
+            'draco-ktx2-pipeline': 'DRACOLoader for geometry + KTX2Loader for textures, with a basis transcoder path',
+            'baked-lighting-textures': 'Lightmap/AO baked in Blender or C4D and shipped as textures rather than computed per frame',
+            'ambient-audio-bed': 'Web Audio API gain-node bed plus micro-interaction click sounds, muted until first user gesture'
+        });
 
         this.systemPrompt = `
 You are a principal prompt engineer for an Awwwards / Motionsites / Layers / getlayers.ai-class digital studio.
@@ -784,16 +793,15 @@ Generate a premium prompt pack now.`;
     }
 
     _defaultCDNs(heroTreatment, techBias) {
-        const cdns = [
-            'https://unpkg.com/gsap@3/dist/gsap.min.js',
-            'https://unpkg.com/gsap@3/dist/ScrollTrigger.min.js',
-            'https://unpkg.com/lenis@1/dist/lenis.min.js',
-        ];
-        if (heroTreatment.includes('webgl') || heroTreatment.includes('3d') || techBias.includes('webgl')) {
-            cdns.push('https://unpkg.com/three@0.165.0/build/three.min.js');
-            cdns.push('https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js');
+        // Verified URLs live in the registry; three.min.js was a 404 here.
+        if (typeof LibraryRegistry !== 'undefined') {
+            return LibraryRegistry.scriptTags(LibraryRegistry.plan({ heroTreatment, techStackBias: techBias }));
         }
-        return cdns;
+        return [
+            'https://unpkg.com/gsap@3.13.0/dist/gsap.min.js',
+            'https://unpkg.com/gsap@3.13.0/dist/ScrollTrigger.min.js',
+            'https://unpkg.com/lenis@1.1.20/dist/lenis.min.js',
+        ];
     }
 
     _describeHeroBackground(treatment) {

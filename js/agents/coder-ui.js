@@ -426,7 +426,9 @@ ${(enhanced.components || []).map((c, i) => `${i + 1}. ${c}`).join('\n')}
 SECTIONS/SCENES:
 ${(enhanced.sections || ['hero', 'capabilities', 'about', 'testimonials', 'cta', 'footer']).join(' → ')}
 
-THREE.JS: ${hasThreeJS ? 'Yes - include #three-canvas in hero' : 'No'}
+THREE.JS: ${hasThreeJS ? `Yes — include <div id="three-canvas"></div> in the hero, and load the scene as a module at the end of <body>:
+  <script type="module" src="three-scene.js"></script>
+The scene attaches itself as window.initThreeScene once loaded. Do NOT call it from script.js (that file is a classic script and runs before the module). Let three-scene.js boot itself.` : 'No'}
 
 INCLUDE THESE ELEMENTS:
 - Page loader (.page-loader) with smooth entrance transition
@@ -474,7 +476,13 @@ BUILD WITH ${designPhilosophy.toUpperCase()} PHILOSOPHY — NOT A GENERIC TEMPLA
             // PASS 1: Generate HTML
             this.log('info', 'Pass 1/3: Generating cinematic HTML structure...');
 
-            const htmlPrompt = `${contextBlock}
+            const hasThreeJS = !!threejsCode;
+
+        const libraryBlock = typeof LibraryRegistry !== 'undefined'
+            ? LibraryRegistry.htmlInstructions({ ...specification, heroTreatment: specification.heroTreatment, has3D: hasThreeJS })
+            : 'Include GSAP, ScrollTrigger and Lenis.';
+
+        const htmlPrompt = `${contextBlock}
 
 DESIGN SYSTEM CSS (authoritative tokens + philosophy classes — use these, do not invent):
 ${designSystem.css}
@@ -485,7 +493,8 @@ ${componentHTML || '(none specified — build components from the design system 
 YOUR TASK: Generate a complete, cinematic index.html file.
 
 REQUIREMENTS:
-1. Include all CDN links: GSAP, ScrollTrigger, Lenis, Google Fonts${hasThreeJS ? ', Three.js' : ''}
+1. Include EXACTLY these CDN script tags, verbatim — do not invent or substitute URLs:
+${libraryBlock}
 2. Link to styles.css and script.js as external files
 3. Structure as SCENES with data-scene attributes
 4. Hero MUST be immersive: fullscreen video or dramatic media

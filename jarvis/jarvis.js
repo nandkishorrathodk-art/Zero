@@ -18,7 +18,6 @@ const MAX_STEPS = 40;
 const READ_ONLY = /^(ls|pwd|cat|head|tail|wc|find|grep|rg|git (status|log|diff|show|branch)|npm (ls|view)|node -v|python3? -V|echo)\b/;
 /* Commands that change the machine or the repo. Always ask first. */
 const DESTRUCTIVE = /\b(rm|rmdir|mv|dd|mkfs|shutdown|reboot|kill|pkill|chmod|chown|sudo|curl|wget)\b|>\s*\S|git (push|reset --hard|clean -fd|checkout --)/;
-
 class Jarvis {
   constructor({ provider, engine, emit, ask, autoApprove = false, workspace = 'default', maxSteps = MAX_STEPS }) {
     this.provider = provider;
@@ -175,7 +174,13 @@ class Jarvis {
   }
 
   async _approve(command) {
-    if (this.autoApprove || READ_ONLY.test(command.trim())) return true;
+    if (this.autoApprove) return true;
+    // A read-only verb only stays read-only while it is the whole command.
+    // "echo hi > /etc/passwd" and "ls; rm -rf /" both start with a safe verb,
+    // so the destructive test has to run first and any shell chaining
+    // (;, &&, ||, |, $(), backticks, redirection) forfeits the fast path.
+    const chained = /[;&|`$><\n]|\|\||&&/.test(command);
+    if (!chained && !DESTRUCTIVE.test(command) && READ_ONLY.test(command.trim())) return true;
     const risky = DESTRUCTIVE.test(command);
     const answer = await this.ask({
       question: risky ? `This command can change things permanently. Run it?` : `Run this command?`,

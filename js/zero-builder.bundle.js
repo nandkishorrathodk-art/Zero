@@ -2775,6 +2775,206 @@ window.EngineClient = EngineClient;
 
 ;
 /* ============================================================
+   LIBRARY REGISTRY — verified CDN URLs and the correct way to load
+   each one.
+
+   Two hard-won rules live here:
+
+   1. Three.js has no UMD build after r150. `three.min.js` is a 404 and
+      every scene that loads it dies with "THREE is not defined". Three
+      must be loaded as an ES module, with an import map so that addon
+      imports like `three/addons/...` resolve.
+
+   2. Most addons (DRACO, KTX2, post-processing, Troika) are also ES
+      modules. Mixing a UMD global and a bare-specifier import in the
+      same page fails, so a page picks one loading strategy and sticks
+      to it.
+
+   Every URL below was checked with a real request.
+   ============================================================ */
+
+const THREE_VERSION = '0.165.0';
+const GSAP_VERSION = '3.13.0';
+const LENIS_VERSION = '1.1.20';
+
+/* Script-tag libraries: they attach a global and are safe to combine. */
+const UMD = {
+  gsap: `https://unpkg.com/gsap@${GSAP_VERSION}/dist/gsap.min.js`,
+  scrollTrigger: `https://unpkg.com/gsap@${GSAP_VERSION}/dist/ScrollTrigger.min.js`,
+  splitText: `https://unpkg.com/gsap@${GSAP_VERSION}/dist/SplitText.min.js`,
+  morphSVG: `https://unpkg.com/gsap@${GSAP_VERSION}/dist/MorphSVGPlugin.min.js`,
+  scrollTo: `https://unpkg.com/gsap@${GSAP_VERSION}/dist/ScrollToPlugin.min.js`,
+  lenis: `https://unpkg.com/lenis@${LENIS_VERSION}/dist/lenis.min.js`,
+  lottie: 'https://unpkg.com/lottie-web@5.12.2/build/player/lottie.min.js',
+  rive: 'https://unpkg.com/@rive-app/canvas@2.21.6/rive.js',
+  modelViewer: 'https://unpkg.com/@google/model-viewer@3.5.0/dist/model-viewer.min.js',
+};
+
+/* ES modules, resolved through an import map. */
+const ESM = {
+  three: `https://unpkg.com/three@${THREE_VERSION}/build/three.module.js`,
+  'three/addons/': `https://unpkg.com/three@${THREE_VERSION}/examples/jsm/`,
+  troika: 'https://unpkg.com/troika-three-text@0.52.3/dist/troika-three-text.esm.js',
+};
+
+/* GSAP plugins that attach to the global gsap object once loaded. */
+const GSAP_PLUGIN_GLOBALS = {
+  scrollTrigger: 'ScrollTrigger',
+  splitText: 'SplitText',
+  morphSVG: 'MorphSVGPlugin',
+  scrollTo: 'ScrollToPlugin',
+};
+
+class LibraryRegistry {
+  /* Which libraries a specification actually needs. */
+  static plan(specification = {}) {
+    const blob = JSON.stringify(specification || {}).toLowerCase();
+    const hero = String(specification.heroTreatment || '').toLowerCase();
+    const needs = new Set(['gsap', 'scrollTrigger', 'lenis']);
+
+    const wants3d = /webgl|3d|three|particle|shader|scene|model|gltf|glb|raycast|raymarch|gpgpu/.test(blob)
+      || /webgl|3d/.test(hero);
+    const wantsTextSplit = /split.?text|stagger|word.?reveal|char.?reveal|typographic/.test(blob);
+    const wantsMorph = /morph|svg.?shape|path.?transition|blob.?shape/.test(blob);
+    const wantsLottie = /lottie|after.?effects|icon.?animation/.test(blob);
+    const wantsRive = /rive|state.?machine|interactive.?avatar|game.?like/.test(blob);
+    const wants3DText = /3d.?text|troika|floating.?typography|spatial.?type/.test(blob);
+    const wantsModelViewer = /product.?viewer|ar\b|augmented|3d.?model.?embed/.test(blob);
+
+    if (wants3d) needs.add('three');
+    if (wantsTextSplit) needs.add('splitText');
+    if (wantsMorph) needs.add('morphSVG');
+    if (wantsLottie) needs.add('lottie');
+    if (wantsRive) needs.add('rive');
+    if (wants3DText) needs.add('troika');
+    if (wantsModelViewer) needs.add('modelViewer');
+
+    return {
+      needs,
+      three: needs.has('three'),
+      modules: needs.has('three') || needs.has('troika'),
+      esm: needs.has('three') || needs.has('troika'),
+    };
+  }
+
+  /* The <script> tags for the classic libraries, in load order. */
+  static scriptTags(plan) {
+    const tags = [];
+    for (const name of ['gsap', 'scrollTrigger', 'splitText', 'morphSVG', 'scrollTo', 'lenis', 'lottie', 'rive', 'modelViewer']) {
+      if (plan.needs.has(name) && UMD[name]) tags.push(UMD[name]);
+    }
+    return tags;
+  }
+
+  /* The import map that makes `three/addons/...` resolve. */
+  static importMap(plan) {
+    if (!plan.esm) return null;
+    const imports = { three: ESM.three, 'three/addons/': ESM['three/addons/'] };
+    if (plan.needs.has('troika')) imports['troika-three-text'] = ESM.troika;
+    return { imports };
+  }
+
+  /* Copy-paste-ready instructions for the HTML pass. This is the part the
+     old prompt got wrong: it said "include Three.js" and named no URL, so
+     the model emitted the dead three.min.js path. */
+  static htmlInstructions(specification = {}) {
+    const plan = this.plan(specification);
+    const lines = [];
+
+    const tags = this.scriptTags(plan);
+    if (tags.length) {
+      lines.push('Classic libraries — include exactly these <script> tags in <head>, in this order:');
+      tags.forEach((url) => lines.push(`  <script src="${url}"></script>`));
+    }
+
+    const map = this.importMap(plan);
+    if (map) {
+      lines.push('');
+      lines.push('Three.js is an ES module. It has NO UMD build — three.min.js is a 404 on r150+.');
+      lines.push('Include this import map BEFORE any module script:');
+      lines.push(`  <script type="importmap">${JSON.stringify(map)}</script>`);
+      lines.push('Then load the scene as a module, never as a classic script:');
+      lines.push('  <script type="module" src="three-scene.js"></script>');
+      lines.push('Inside three-scene.js import Three like this:');
+      lines.push("  import * as THREE from 'three';");
+      lines.push("  import { OrbitControls } from 'three/addons/controls/OrbitControls.js';");
+    }
+
+    return lines.join('\n');
+  }
+
+  static gsapPluginNames(plan) {
+    return Object.entries(GSAP_PLUGIN_GLOBALS)
+      .filter(([key]) => plan.needs.has(key))
+      .map(([, globalName]) => globalName);
+  }
+
+  /* Approximate transferred weight per library, in KB (minified, before gzip).
+     These are measured ballpark figures for budgeting, not exact sizes. */
+  static WEIGHTS_KB = {
+    gsap: 70,
+    scrollTrigger: 40,
+    splitText: 15,
+    morphSVG: 30,
+    scrollTo: 8,
+    lenis: 12,
+    lottie: 250,
+    rive: 320,
+    modelViewer: 200,
+    three: 650,
+    troika: 90,
+  };
+
+  /* A page has a budget. Three.js plus two media runtimes plus a 3D text
+     engine is already most of a megabyte before a single line of the site's
+     own code — that is how an "immersive" build becomes a slow one. */
+  static budget(plan, limits = {}) {
+    const cap = limits.capKb || 900;
+    const items = [...plan.needs]
+      .filter((name) => this.WEIGHTS_KB[name])
+      .map((name) => ({ name, kb: this.WEIGHTS_KB[name] }))
+      .sort((a, b) => b.kb - a.kb);
+
+    const totalKb = items.reduce((sum, item) => sum + item.kb, 0);
+    const over = Math.max(0, totalKb - cap);
+
+    const warnings = [];
+    if (totalKb > cap) {
+      warnings.push(`Library payload ~${totalKb}KB exceeds the ${cap}KB budget by ~${over}KB.`);
+    }
+    if (plan.needs.has('lottie') && plan.needs.has('rive')) {
+      warnings.push('Lottie and Rive overlap. Pick one animation runtime unless both formats are genuinely needed.');
+    }
+    if (plan.needs.has('three') && plan.needs.has('modelViewer')) {
+      warnings.push('model-viewer bundles its own Three copy. Prefer a plain Three GLTFLoader unless you need the <model-viewer> element.');
+    }
+
+    return { items, totalKb, capKb: cap, over, ok: totalKb <= cap, warnings };
+  }
+
+  /* Runtime guidance the coder passes must respect, because the failure mode
+     of an immersive page is a dropped frame, not a syntax error. */
+  static runtimeRules(plan) {
+    const rules = [
+      'Cap devicePixelRatio at 2 — retina rendering beyond that is invisible and doubles fill cost.',
+      'Pause requestAnimationFrame work when the canvas is offscreen (IntersectionObserver).',
+      'Honor prefers-reduced-motion: skip or drastically reduce motion, never disable content.',
+    ];
+    if (plan.needs.has('three')) {
+      rules.push('Reuse geometries and materials; dispose everything on teardown.');
+      rules.push('Keep draw calls low with InstancedMesh — thousands of objects should be one call, not thousands.');
+      rules.push('Load models through Draco for geometry and KTX2 for textures; unbaked assets dominate load time.');
+      rules.push('Bake lighting and shadows into textures instead of computing them per frame.');
+    }
+    return rules;
+  }
+}
+
+if (typeof window !== 'undefined') window.LibraryRegistry = LibraryRegistry;
+if (typeof module !== 'undefined' && module.exports) module.exports = { LibraryRegistry };
+
+;
+/* ============================================================
    ZERO-BUILDER — Advanced Agentic Framework
    State Machine-based orchestrator with Plan→Design→Media→
    Code(Vanilla/React/Fullstack)→Review→Refine loop
@@ -5367,7 +5567,10 @@ Position: fixed or absolute, backdrop-filter blur(20px)`,
             ],
         };
 
-        this.motionCatalog = {
+        // Second catalog must merge, not replace: assigning a fresh object here
+        // silently dropped the cinematic vocabulary above (word-blur-reveal,
+        // scroll-scrub-camera, masked-title-reveal, …) from every build.
+        Object.assign(this.motionCatalog, {
             '3d-scroll-rotate': 'Perspective rotateX/translateZ on scroll using data-scroll-3d="rotate"',
             '3d-scroll-zoom': 'Perspective scale/translateZ zoom on scroll using data-scroll-3d="zoom"',
             '3d-window-interactive': 'macOS/Spatial style 3D window mockup with mouse tilt using .window-3d',
@@ -5378,8 +5581,14 @@ Position: fixed or absolute, backdrop-filter blur(20px)`,
             'smooth-page-loader': 'Full-screen entrance loader with spinner/bar using .page-loader',
             'entrance-clip-circle': 'Expanding circle clip-path reveal using data-reveal="clip-circle"',
             'micro-ripple-click': 'Material/fluid ripple effect on click using data-micro="ripple"',
-            'spatial-depth-layers': '3D z-space layering with perspective transform using .spatial-card'
-        };
+            'spatial-depth-layers': '3D z-space layering with perspective transform using .spatial-card',
+            'camera-path-curve': 'CatmullRomCurve3 camera path; menu/project changes tween the camera along the curve instead of cutting',
+            'infinite-drag-grid': 'Pointer drag updates virtual x/y; grid tiles are generated relative to those coordinates for an endless plane',
+            'z-axis-depth-scroll': 'Map scroll progress to camera Z; content fades in as its depth reaches the view frustum',
+            'draco-ktx2-pipeline': 'DRACOLoader for geometry + KTX2Loader for textures, with a basis transcoder path',
+            'baked-lighting-textures': 'Lightmap/AO baked in Blender or C4D and shipped as textures rather than computed per frame',
+            'ambient-audio-bed': 'Web Audio API gain-node bed plus micro-interaction click sounds, muted until first user gesture'
+        });
 
         this.systemPrompt = `
 You are a principal prompt engineer for an Awwwards / Motionsites / Layers / getlayers.ai-class digital studio.
@@ -5912,16 +6121,15 @@ Generate a premium prompt pack now.`;
     }
 
     _defaultCDNs(heroTreatment, techBias) {
-        const cdns = [
-            'https://unpkg.com/gsap@3/dist/gsap.min.js',
-            'https://unpkg.com/gsap@3/dist/ScrollTrigger.min.js',
-            'https://unpkg.com/lenis@1/dist/lenis.min.js',
-        ];
-        if (heroTreatment.includes('webgl') || heroTreatment.includes('3d') || techBias.includes('webgl')) {
-            cdns.push('https://unpkg.com/three@0.165.0/build/three.min.js');
-            cdns.push('https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js');
+        // Verified URLs live in the registry; three.min.js was a 404 here.
+        if (typeof LibraryRegistry !== 'undefined') {
+            return LibraryRegistry.scriptTags(LibraryRegistry.plan({ heroTreatment, techStackBias: techBias }));
         }
-        return cdns;
+        return [
+            'https://unpkg.com/gsap@3.13.0/dist/gsap.min.js',
+            'https://unpkg.com/gsap@3.13.0/dist/ScrollTrigger.min.js',
+            'https://unpkg.com/lenis@1.1.20/dist/lenis.min.js',
+        ];
     }
 
     _describeHeroBackground(treatment) {
@@ -9216,7 +9424,9 @@ ${(enhanced.components || []).map((c, i) => `${i + 1}. ${c}`).join('\n')}
 SECTIONS/SCENES:
 ${(enhanced.sections || ['hero', 'capabilities', 'about', 'testimonials', 'cta', 'footer']).join(' → ')}
 
-THREE.JS: ${hasThreeJS ? 'Yes - include #three-canvas in hero' : 'No'}
+THREE.JS: ${hasThreeJS ? `Yes — include <div id="three-canvas"></div> in the hero, and load the scene as a module at the end of <body>:
+  <script type="module" src="three-scene.js"></script>
+The scene attaches itself as window.initThreeScene once loaded. Do NOT call it from script.js (that file is a classic script and runs before the module). Let three-scene.js boot itself.` : 'No'}
 
 INCLUDE THESE ELEMENTS:
 - Page loader (.page-loader) with smooth entrance transition
@@ -9264,7 +9474,13 @@ BUILD WITH ${designPhilosophy.toUpperCase()} PHILOSOPHY — NOT A GENERIC TEMPLA
             // PASS 1: Generate HTML
             this.log('info', 'Pass 1/3: Generating cinematic HTML structure...');
 
-            const htmlPrompt = `${contextBlock}
+            const hasThreeJS = !!threejsCode;
+
+        const libraryBlock = typeof LibraryRegistry !== 'undefined'
+            ? LibraryRegistry.htmlInstructions({ ...specification, heroTreatment: specification.heroTreatment, has3D: hasThreeJS })
+            : 'Include GSAP, ScrollTrigger and Lenis.';
+
+        const htmlPrompt = `${contextBlock}
 
 DESIGN SYSTEM CSS (authoritative tokens + philosophy classes — use these, do not invent):
 ${designSystem.css}
@@ -9275,7 +9491,8 @@ ${componentHTML || '(none specified — build components from the design system 
 YOUR TASK: Generate a complete, cinematic index.html file.
 
 REQUIREMENTS:
-1. Include all CDN links: GSAP, ScrollTrigger, Lenis, Google Fonts${hasThreeJS ? ', Three.js' : ''}
+1. Include EXACTLY these CDN script tags, verbatim — do not invent or substitute URLs:
+${libraryBlock}
 2. Link to styles.css and script.js as external files
 3. Structure as SCENES with data-scene attributes
 4. Hero MUST be immersive: fullscreen video or dramatic media
@@ -11503,7 +11720,10 @@ LEVEL 8 — Audio-Reactive
 RULES
 
 1. Output only valid JavaScript code.
-2. Use THREE from global scope, not ES modules.
+2. Three.js is loaded as an ES module. Start the file with the imports you need:
+   import * as THREE from 'three';
+   import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+   Never reference a global THREE — there is no UMD build after r150.
 3. Create a function called initThreeScene(container) that receives a DOM element.
 4. The scene must be responsive and handle resize.
 5. Use requestAnimationFrame for smooth animation.
@@ -11564,6 +11784,16 @@ PERFORMANCE GUIDELINES
         const needsPostFX = /bloom|chromatic|dof|depth.?of.?field|grain|god.?ray|vignette|effect.?composer|post.?process/i.test(advBlob);
         const needsPhysics = /physics|rapier|cannon|gravity|collision|rigid.?body/i.test(advBlob);
         const needsCurlNoise = /curl.?noise|turbulence|flow.?field|vector.?field/i.test(advBlob);
+        const needsDraco = /draco|ktx2|compressed|gltf|glb|3d.?model|product.?viewer/i.test(advBlob);
+        const needsBakedLighting = /baked|lightmap|ambient.?occlusion|blender|cinema.?4d|c4d/i.test(advBlob);
+        const needsCameraCurve = /camera.?curve|catmull|dolly|flythrough|camera.?path/i.test(advBlob);
+        const needsDragGrid = /infinite.?grid|drag.?grid|endless.?canvas|world.?page|raycast/i.test(advBlob);
+
+        // Budget is computed from the same registry the HTML pass uses, so the
+        // scene prompt and the page prompt cannot disagree about what is loaded.
+        const performanceRules = typeof LibraryRegistry !== 'undefined'
+            ? LibraryRegistry.runtimeRules(LibraryRegistry.plan(specification))
+            : ['Cap devicePixelRatio at 2.', 'Honor prefers-reduced-motion.'];
 
         const visualDirection = {
             siteType,
@@ -11583,6 +11813,11 @@ PERFORMANCE GUIDELINES
             needsPostFX,
             needsPhysics,
             needsCurlNoise,
+            needsDraco,
+            needsBakedLighting,
+            needsCameraCurve,
+            needsDragGrid,
+            performanceRules,
         };
 
         return visualDirection;
@@ -11644,6 +11879,9 @@ ${hints.isComplex ? `
 * Subtle color grading over time is allowed
 * Use one strong focal point and supporting ambient motion
   ` : '- Keep the implementation lean and elegant'}
+
+PERFORMANCE RULES (non-negotiable)
+${hints.performanceRules.map((r) => `* ${r}`).join('\n')}
 ${hints.needsGPGPU ? `
 GPGPU PARTICLE SYSTEM REQUIRED
 * Use two WebGLRenderTargets (FloatType, RGBAFormat) as position/velocity data textures
@@ -11696,13 +11934,45 @@ CURL NOISE / FLOW FIELD REQUIRED
 * Animate noise offset with time for flowing motion
 * Scale noise frequency (0.5-2.0) and amplitude (0.1-0.5) based on mood
 ` : ''}
+${hints.needsDraco ? `
+ASSET PIPELINE REQUIRED
+* Import DRACOLoader and KTX2Loader from three/addons/loaders/
+* dracoLoader.setDecoderPath('https://unpkg.com/three@0.165.0/examples/jsm/libs/draco/')
+* ktx2Loader.setTranscoderPath('https://unpkg.com/three@0.165.0/examples/jsm/libs/basis/')
+* gltfLoader.setDRACOLoader(dracoLoader).setKTX2Loader(ktx2Loader)
+* Show a real loading state; do not block first paint on the model
+* Dispose loaders and decoders on teardown
+` : ''}
+${hints.needsBakedLighting ? `
+BAKED LIGHTING REQUIRED
+* Treat lighting as shipped textures, not per-frame math: use a lightmap or AO map
+* meshStandardMaterial with map + lightMap, lightMapIntensity tuned for the mood
+* No real-time shadow maps unless a single contact shadow is essential
+* Keep the render loop cheap enough for a mid-range laptop GPU
+` : ''}
+${hints.needsCameraCurve ? `
+CAMERA PATH REQUIRED
+* Build a THREE.CatmullRomCurve3 through named waypoints (one per section/project)
+* Move the camera with curve.getPointAt(t); tween t with eased damping, never linear
+* Look-at target lerps toward the active waypoint so turns feel weighted
+* Expose window.__zeroCameraTo(name) so navigation can drive the camera
+` : ''}
+${hints.needsDragGrid ? `
+INFINITE DRAG GRID REQUIRED
+* Pointer drag updates virtual x/y; convert to world space and snap to grid cells
+* Generate or recycle tiles relative to the virtual origin so the plane never ends
+* Use raycasting for hover/selection, throttled to pointer events (not every frame)
+* Momentum/inertia on release with exponential decay
+* Support touch and pointer capture; never hijack native scroll on the page itself
+` : ''}
 
 CRITICAL FORMAT
 
-* Regular script, not ES modules
-* Global function name: initThreeScene(container)
-* THREE from CDN global scope
-* Output only JavaScript code
+* ES module. The HTML page provides an import map for 'three' and 'three/addons/'.
+* Export or attach the entry point as: window.initThreeScene = initThreeScene;
+  (the page calls it after the module loads, since module scope is not global)
+* Import THREE from 'three' — never from a global.
+* Output only JavaScript code, imports first.
 `.trim();
     }
 
@@ -11712,12 +11982,26 @@ CRITICAL FORMAT
         // Strip common markdown fences if the model returns them anyway.
         output = output.replace(/^```(?:javascript|js|ts|typescript)?\s*/i, '').replace(/```$/i, '').trim();
 
+        // Imports are only legal at module top level, so lift them out before
+        // any wrapping. Wrapping them inside a function is a syntax error.
+        const imports = [];
+        output = output.replace(/^\s*import\s[^;]+;\s*$/gm, (line) => {
+            imports.push(line.trim());
+            return '';
+        }).trim();
+
         // If the model forgot the required entry point, wrap the body in a function.
         if (!/\bfunction\s+initThreeScene\s*\(/.test(output) && !/\bconst\s+initThreeScene\s*=/.test(output)) {
             output = `function initThreeScene(container) {\n${output}\n}`;
         }
 
-        return output;
+        // Module scope is not global, so the page cannot call the entry point
+        // unless it is attached to window.
+        if (!/window\.initThreeScene\s*=/.test(output)) {
+            output += '\n\nwindow.initThreeScene = initThreeScene;';
+        }
+
+        return [...imports, '', output].join('\n').trim();
     }
 
     validateCode(code) {
@@ -11733,13 +12017,9 @@ CRITICAL FORMAT
     }
 
     addSafeWrapper(code) {
-        const cleaned = this.normalizeCode(code);
-
-        if (/^\s*function\s+initThreeScene\s*\(/.test(cleaned)) {
-            return cleaned;
-        }
-
-        return `function initThreeScene(container) {\n${cleaned}\n}`;
+        // normalizeCode already lifts imports to the top and wraps a bare body,
+        // so re-wrapping here would nest a function inside a function.
+        return this.normalizeCode(code);
     }
 
     async execute(specification = {}, designSystem = null) {
@@ -17902,6 +18182,38 @@ try {
             .replace(/import\s*\*\s*as\s+(\w+)\s+from\s*['"]three[^'"]*['"]\s*;?/g, 'const $1 = window.THREE;')
             .replace(/import\s+(\w+)\s+from\s*['"][^'"]*lenis[^'"]*['"]\s*;?/g, 'const $1 = window.Lenis;');
 
+        // Three addons (OrbitControls, GLTFLoader, post-processing, …) have no
+        // bare-specifier equivalent in a classic preview. Point each named import
+        // at its THREE.* global and pull in the matching r128 examples/js file,
+        // which is the last version that shipped UMD addons.
+        code = code.replace(
+            /import\s*\{\s*([^}]+)\s*\}\s*from\s*['"]three\/addons\/([^'"]+)['"]\s*;?/g,
+            (match, names, addonPath) => {
+                const path = addonPath.replace(/^examples\/js\//, '');
+                addCdn(`https://unpkg.com/three@0.128.0/examples/js/${path}`);
+                const binds = names.split(',').map((n) => n.trim()).filter(Boolean).map((n) => {
+                    const [orig, alias] = n.split(/\s+as\s+/).map((s) => s.trim());
+                    const local = alias || orig;
+                    return `const ${local} = window.THREE?.${orig};`;
+                });
+                return binds.join('\n');
+            }
+        );
+
+        // Bare 'three/examples/jsm/...' spelling of the same thing.
+        code = code.replace(
+            /import\s*\{\s*([^}]+)\s*\}\s*from\s*['"]three\/examples\/jsm\/([^'"]+)['"]\s*;?/g,
+            (match, names, addonPath) => {
+                addCdn(`https://unpkg.com/three@0.128.0/examples/js/${addonPath}`);
+                const binds = names.split(',').map((n) => n.trim()).filter(Boolean).map((n) => {
+                    const [orig, alias] = n.split(/\s+as\s+/).map((s) => s.trim());
+                    const local = alias || orig;
+                    return `const ${local} = window.THREE?.${orig};`;
+                });
+                return binds.join('\n');
+            }
+        );
+
         // Generic https ESM imports → try to keep as classic globals if possible, else strip
         code = code.replace(
             /import\s+(\w+)\s+from\s*['"](https?:\/\/[^'"]+)['"]\s*;?/g,
@@ -17938,8 +18250,12 @@ try {
         doc.querySelectorAll('script[src]').forEach(script => {
             const src = script.getAttribute('src') || '';
             if (src.includes('@studio-freight/lenis')) {
-                script.setAttribute('src', 'https://unpkg.com/lenis@1.1.14/dist/lenis.min.js');
-            } else if (src.includes('OrbitControls.js')) {
+                script.setAttribute('src', 'https://unpkg.com/lenis@1.1.20/dist/lenis.min.js');
+            } else if (src.includes('three@0.165.0/build/three.min.js')) {
+                // Dead UMD path: three dropped its global build after r150.
+                script.remove();
+            } else if (/examples\/jsm\/(controls|loaders|postprocessing|utils|shaders)\//.test(src)) {
+                // Bare-specifier addon URL that a classic preview cannot resolve.
                 script.remove();
             }
         });

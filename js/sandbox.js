@@ -540,6 +540,38 @@ try {
             .replace(/import\s*\*\s*as\s+(\w+)\s+from\s*['"]three[^'"]*['"]\s*;?/g, 'const $1 = window.THREE;')
             .replace(/import\s+(\w+)\s+from\s*['"][^'"]*lenis[^'"]*['"]\s*;?/g, 'const $1 = window.Lenis;');
 
+        // Three addons (OrbitControls, GLTFLoader, post-processing, …) have no
+        // bare-specifier equivalent in a classic preview. Point each named import
+        // at its THREE.* global and pull in the matching r128 examples/js file,
+        // which is the last version that shipped UMD addons.
+        code = code.replace(
+            /import\s*\{\s*([^}]+)\s*\}\s*from\s*['"]three\/addons\/([^'"]+)['"]\s*;?/g,
+            (match, names, addonPath) => {
+                const path = addonPath.replace(/^examples\/js\//, '');
+                addCdn(`https://unpkg.com/three@0.128.0/examples/js/${path}`);
+                const binds = names.split(',').map((n) => n.trim()).filter(Boolean).map((n) => {
+                    const [orig, alias] = n.split(/\s+as\s+/).map((s) => s.trim());
+                    const local = alias || orig;
+                    return `const ${local} = window.THREE?.${orig};`;
+                });
+                return binds.join('\n');
+            }
+        );
+
+        // Bare 'three/examples/jsm/...' spelling of the same thing.
+        code = code.replace(
+            /import\s*\{\s*([^}]+)\s*\}\s*from\s*['"]three\/examples\/jsm\/([^'"]+)['"]\s*;?/g,
+            (match, names, addonPath) => {
+                addCdn(`https://unpkg.com/three@0.128.0/examples/js/${addonPath}`);
+                const binds = names.split(',').map((n) => n.trim()).filter(Boolean).map((n) => {
+                    const [orig, alias] = n.split(/\s+as\s+/).map((s) => s.trim());
+                    const local = alias || orig;
+                    return `const ${local} = window.THREE?.${orig};`;
+                });
+                return binds.join('\n');
+            }
+        );
+
         // Generic https ESM imports → try to keep as classic globals if possible, else strip
         code = code.replace(
             /import\s+(\w+)\s+from\s*['"](https?:\/\/[^'"]+)['"]\s*;?/g,
@@ -576,8 +608,12 @@ try {
         doc.querySelectorAll('script[src]').forEach(script => {
             const src = script.getAttribute('src') || '';
             if (src.includes('@studio-freight/lenis')) {
-                script.setAttribute('src', 'https://unpkg.com/lenis@1.1.14/dist/lenis.min.js');
-            } else if (src.includes('OrbitControls.js')) {
+                script.setAttribute('src', 'https://unpkg.com/lenis@1.1.20/dist/lenis.min.js');
+            } else if (src.includes('three@0.165.0/build/three.min.js')) {
+                // Dead UMD path: three dropped its global build after r150.
+                script.remove();
+            } else if (/examples\/jsm\/(controls|loaders|postprocessing|utils|shaders)\//.test(src)) {
+                // Bare-specifier addon URL that a classic preview cannot resolve.
                 script.remove();
             }
         });
