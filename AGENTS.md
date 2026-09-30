@@ -80,6 +80,26 @@ Two invariants that are easy to regress:
   A blanket line-comment regex truncates `"https://..."` values and fails the
   whole parse whenever the fallback path is taken.
 
+## Generation quality pipeline (`js/agents/coder-ui.js`, `js/agent-framework.js`)
+
+The site builder runs three sequential LLM passes (HTML, then CSS, then JS). Each pass
+only sees what the previous pass hands it, so anything dropped between passes
+silently degrades the output. Invariants:
+
+- The CSS pass receives `_htmlStructureDigest(html)`, never a truncated excerpt.
+  Truncating the HTML left the middle of the page unstyled.
+- The HTML pass receives the full design-system CSS and the component markup
+  library. It used to get only the first 3000 chars and no markup at all.
+- Surface classes come from `_philosophyClasses(designPhilosophy)`; the HTML
+  prompt must never hardcode one philosophy's classes (e.g. `liquid-glass`),
+  or every brief renders the same regardless of art direction.
+- Every component name in a designer template needs a `componentTemplates`
+  entry in `coder-ui.js`. A missing key is silently filtered out of the build.
+- `_runStaticQualityGate()` carries the cross-file checks that per-file checks
+  cannot: css-coverage (markup classes with no rule), philosophy-bleed (a build
+  using another philosophy's classes) and motion-craft (missing timeline, ease
+  monoculture, unstaggered groups).
+
 ## Testing
 
 There is no test runner in-repo. Verify behaviour by exercising the real engine
