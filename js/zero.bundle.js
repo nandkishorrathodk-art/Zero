@@ -4519,6 +4519,26 @@ class AgentFramework {
             }
         }
 
+        // ─── Motion craft ───
+        // "It animates" is not the bar. Choreographed timelines with varied eases
+        // are what read as premium; independent tweens on one repeated ease read
+        // as a generic template.
+        const motionText = entries.filter(([n]) => /\.(?:js|ts|jsx|tsx)$/i.test(n)).map(([, c]) => String(c || '')).join('\n');
+        if (motionText && /\bgsap\b|ScrollTrigger/.test(motionText)) {
+            if (!/\btimeline\s*\(/.test(motionText)) {
+                add('warning', 'motion-craft', 'script.js', 'No GSAP timeline found — motion is a set of uncoordinated tweens.', 'Choreograph the sequence with a named gsap.timeline() and staggered positions.');
+            }
+            const eases = motionText.match(/ease\s*:\s*["'][^"']+["']/g) || [];
+            const lazyEases = eases.filter((e) => /power2\.out|["']none["']|linear["']/.test(e)).length;
+            if (eases.length >= 4 && lazyEases / eases.length > 0.7) {
+                add('warning', 'motion-craft', 'script.js', `${lazyEases} of ${eases.length} eases are power2.out/linear — flat, generic motion.`, 'Vary the easing (power3.out, expo.out, circ.inOut) and match it to the intent of each move.');
+            }
+            const stagger = (motionText.match(/stagger\s*:/g) || []).length;
+            if (!stagger && (html.match(/<li[\s>]/gi) || []).length + (html.match(/class=["'][^"']*(?:card|item|grid)/gi) || []).length > 4) {
+                add('suggestion', 'motion-craft', 'script.js', 'Repeated elements animate without stagger — the entrance will feel simultaneous and cheap.', 'Stagger grouped items (0.08-0.15s) so the eye can follow the sequence.');
+            }
+        }
+
         // ─── Cross-file style coverage ───
         // Classes present in the markup but never defined in CSS are the single
         // most common reason a generated site looks unstyled/broken, and no
@@ -8980,7 +9000,23 @@ RULES:
 12. Include 3D scroll effects (data-scroll-3d) for immersive depth
 13. Include 3D windows (.window-3d) for mockup/demo sections
 14. Include 3D backgrounds when the art direction calls for depth
-15. Generate substantial content - minimum 5 scenes/sections`;
+15. Generate substantial content - minimum 5 scenes/sections
+
+2026 MOTION STANDARD (this is what separates premium from generic):
+- Choreograph a real timeline, do not sprinkle independent tweens. Name it,
+  set explicit durations (0.4-1.2s UI, 1.5-3s cinematic), and use non-linear
+  eases (power3.out, expo.out, circ.inOut). A default "power2.out" on
+  everything reads as cheap.
+- Stage entrances: hero copy, then media, then nav/CTA — staggered by 0.08-0.15s,
+  never everything at once.
+- Scroll-link motion with scrub (pin + scrub: 1 for cinematic sections), so the
+  page responds continuously to the scroll position instead of firing once.
+- Give depth: layered parallax at different speeds (foreground 1.0, mid 0.6,
+  background 0.3) rather than a single moving layer.
+- Every hover/interaction needs a state change in under 200ms or it feels laggy;
+  use transform/opacity only.
+- Respect prefers-reduced-motion everywhere, and keep 60fps on mid-range mobile:
+  avoid animating layout properties, blur radii, or box-shadow.`;
     }
 
     async execute(specification, designSystem, threejsCode = null) {

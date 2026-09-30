@@ -230,7 +230,23 @@ RULES:
 12. Include 3D scroll effects (data-scroll-3d) for immersive depth
 13. Include 3D windows (.window-3d) for mockup/demo sections
 14. Include 3D backgrounds when the art direction calls for depth
-15. Generate substantial content - minimum 5 scenes/sections`;
+15. Generate substantial content - minimum 5 scenes/sections
+
+2026 MOTION STANDARD (this is what separates premium from generic):
+- Choreograph a real timeline, do not sprinkle independent tweens. Name it,
+  set explicit durations (0.4-1.2s UI, 1.5-3s cinematic), and use non-linear
+  eases (power3.out, expo.out, circ.inOut). A default "power2.out" on
+  everything reads as cheap.
+- Stage entrances: hero copy, then media, then nav/CTA — staggered by 0.08-0.15s,
+  never everything at once.
+- Scroll-link motion with scrub (pin + scrub: 1 for cinematic sections), so the
+  page responds continuously to the scroll position instead of firing once.
+- Give depth: layered parallax at different speeds (foreground 1.0, mid 0.6,
+  background 0.3) rather than a single moving layer.
+- Every hover/interaction needs a state change in under 200ms or it feels laggy;
+  use transform/opacity only.
+- Respect prefers-reduced-motion everywhere, and keep 60fps on mid-range mobile:
+  avoid animating layout properties, blur radii, or box-shadow.`;
     }
 
     async execute(specification, designSystem, threejsCode = null) {
