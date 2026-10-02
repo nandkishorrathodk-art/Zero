@@ -136,6 +136,7 @@ class DesignSystem {
     const space = DesignSystem.spaceScale();
     const grid = DesignSystem.grid();
     const optical = DesignSystem.opticalRules(scale);
+    const fonts = options.fonts || {};
 
     const lines = [':root{', '  /* fluid type scale — modular ratio, computed not guessed */'];
     for (const [name, s] of Object.entries(scale)) lines.push(`  --${name}: ${s.value};`);
@@ -143,6 +144,12 @@ class DesignSystem {
     for (const [name, v] of Object.entries(space)) lines.push(`  --${name}: ${v};`);
     lines.push('', '  /* grid */');
     for (const l of grid.css) lines.push(`  ${l}`);
+    if (fonts.heading || fonts.body || fonts.mono) {
+      lines.push('', '  /* font roles — component classes reference these by var() */');
+      if (fonts.heading) lines.push(`  --font-heading: '${fonts.heading}', Georgia, serif;`);
+      if (fonts.body) lines.push(`  --font-body: '${fonts.body}', system-ui, sans-serif;`);
+      if (fonts.mono) lines.push(`  --font-mono: '${fonts.mono}', ui-monospace, monospace;`);
+    }
     lines.push('', '  /* optical corrections per step (tracking / leading / measure) */');
     for (const r of optical) {
       if (r.step < 0) continue;
@@ -159,6 +166,14 @@ class DesignSystem {
       lines.push(`.type-${n}{font-size:var(--step-${n});line-height:var(--leading-${n});letter-spacing:var(--tracking-${n});max-width:var(--measure-${n})}`);
     }
     lines.push('', grid.utility);
+    // Base font assignment. Without this every var(--font-heading)/var(--font-body)
+    // reference in the component library resolves to nothing and the browser
+    // falls back to Times — the clearest tell of a generated page.
+    if (fonts.heading || fonts.body) {
+      lines.push('', '/* base type roles */');
+      if (fonts.body) lines.push(`body{font-family:var(--font-body);}`);
+      if (fonts.heading) lines.push(`h1,h2,h3,h4,.type-4,.type-5,.type-6,.type-7{font-family:var(--font-heading);}`);
+    }
     return lines.join('\n');
   }
 

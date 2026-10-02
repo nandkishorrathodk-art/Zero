@@ -162,6 +162,16 @@ const allowed = ['ls -la', 'cat package.json', 'git status', 'grep foo bar.txt',
   assert(/\.type-6\{/.test(css), 'type role classes are emitted');
   assert(/\.container\{/.test(css), 'grid container utility is emitted');
   assert(DesignSystem.layoutPrinciples().length >= 8, 'layout principles are substantial');
+
+  // Font roles are what every var(--font-heading)/var(--font-body) reference in
+  // the component library resolves to. If toCSS omits them the page renders in
+  // Times, which is the clearest tell of a generated build.
+  const fontCss = DesignSystem.toCSS({ fonts: { heading: 'Instrument Serif', body: 'Barlow', mono: 'JetBrains Mono' } });
+  assert(/--font-heading\s*:\s*'Instrument Serif'/.test(fontCss), 'font tokens include the heading family');
+  assert(/--font-body\s*:\s*'Barlow'/.test(fontCss), 'font tokens include the body family');
+  assert(/--font-mono\s*:\s*'JetBrains Mono'/.test(fontCss), 'font tokens include the mono family');
+  assert(/body\{font-family:var\(--font-body\)/.test(fontCss), 'body is assigned the body font role');
+  assert(/font-family:var\(--font-heading\)/.test(fontCss), 'headings are assigned the heading font role');
 }
 
 /* ---- AssetSources: URLs must match the documented Poly Haven layout ---- */
@@ -261,4 +271,38 @@ const allowed = ['ls -la', 'cat package.json', 'git status', 'grep foo bar.txt',
   assert(ui._ensureDesignTokens(tokens, ':root{--step-0:2rem}') === ':root{--step-0:2rem}', 'model-authored tokens are left untouched');
   assert(/DESIGN SYSTEM DISCIPLINE/.test(ui.systemPrompt), 'coder-ui prompt carries the design discipline rules');
   assert(/Break the centre/.test(ui.systemPrompt), 'coder-ui prompt forbids the centred-template look');
+
+  // Every component a designer template can select must have markup/CSS/JS in
+  // coder-ui. A missing key is silently filtered out of the build, so the
+  // page ships with an unstyled, structureless hole where that section should be.
+  (0, eval)(fs.readFileSync(path.join(root, 'js', 'agents', 'designer.js'), 'utf8'));
+  const designer = new DesignerAgent();
+  const needed = new Set();
+  for (const tmpl of Object.values(designer.templateLibrary || {})) {
+    (tmpl.components || []).forEach((name) => needed.add(name));
+  }
+  const missing = [...needed].filter((name) => !ui.componentTemplates[name]);
+  assert(needed.size > 30, 'designer template library exposes its component set');
+  assert(missing.length === 0, `every designer component has a coder-ui template (missing: ${missing.join(', ') || 'none'})`);
+  assert(
+    [...needed].every((name) => ui.componentTemplates[name]?.html && ui.componentTemplates[name]?.css),
+    'each designer component template carries markup and CSS'
+  );
+
+  // A model that ignores the "include the fonts / philosophy / component CSS"
+  // instructions must not be able to ship a bare page. These guards run at
+  // assembly time and are the difference between a styled site and Times-on-white.
+  assert(/<head/i.test(ui._ensureFontSetup('<html><head></head><body></body></html>', 'https://fonts.googleapis.com/css2?family=Inter'))
+    && /fonts\.googleapis\.com/.test(ui._ensureFontSetup('<html><head></head><body></body></html>', 'https://fonts.googleapis.com/css2?family=Inter')),
+    'a missing Google Fonts link is injected into <head>');
+  assert(ui._ensureFontSetup('<html><head><link rel="stylesheet" href="https://fonts.googleapis.com/x"></head></html>', 'https://fonts.googleapis.com/y') === '<html><head><link rel="stylesheet" href="https://fonts.googleapis.com/x"></head></html>',
+    'an existing font link is not duplicated');
+  assert(/font-family\s*:\s*var\(--font-body/.test(ui._ensureBaseStyles('.x{color:red}')), 'base body font role is guaranteed');
+  assert(/font-family\s*:\s*var\(--font-heading/.test(ui._ensureBaseStyles('.x{color:red}')), 'base heading font role is guaranteed');
+  assert(ui._ensureBaseStyles('body{font-family:var(--font-body);}h1{font-family:var(--font-heading);}').match(/var\(--font-body\)/g).length === 1,
+    'base font roles are not duplicated when already present');
+  assert(ui._appendIfAbsent('.x{}', '.feature-grid{display:grid}').includes('.feature-grid{display:grid}'), 'missing component CSS is appended');
+  assert(ui._appendIfAbsent('.feature-grid{display:grid}', '.feature-grid{display:grid}') === '.feature-grid{display:grid}', 'present component CSS is not duplicated');
+  const partial = ui._appendAllIfAbsent('.a{present}', ['.a{present}', '.b{missing}']);
+  assert(partial.includes('.b{missing}') && partial.match(/\.a\{present\}/g).length === 1, 'partial compliance fills only the dropped blocks');
 }

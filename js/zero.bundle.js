@@ -3117,6 +3117,7 @@ class DesignSystem {
     const space = DesignSystem.spaceScale();
     const grid = DesignSystem.grid();
     const optical = DesignSystem.opticalRules(scale);
+    const fonts = options.fonts || {};
 
     const lines = [':root{', '  /* fluid type scale — modular ratio, computed not guessed */'];
     for (const [name, s] of Object.entries(scale)) lines.push(`  --${name}: ${s.value};`);
@@ -3124,6 +3125,12 @@ class DesignSystem {
     for (const [name, v] of Object.entries(space)) lines.push(`  --${name}: ${v};`);
     lines.push('', '  /* grid */');
     for (const l of grid.css) lines.push(`  ${l}`);
+    if (fonts.heading || fonts.body || fonts.mono) {
+      lines.push('', '  /* font roles — component classes reference these by var() */');
+      if (fonts.heading) lines.push(`  --font-heading: '${fonts.heading}', Georgia, serif;`);
+      if (fonts.body) lines.push(`  --font-body: '${fonts.body}', system-ui, sans-serif;`);
+      if (fonts.mono) lines.push(`  --font-mono: '${fonts.mono}', ui-monospace, monospace;`);
+    }
     lines.push('', '  /* optical corrections per step (tracking / leading / measure) */');
     for (const r of optical) {
       if (r.step < 0) continue;
@@ -3140,6 +3147,14 @@ class DesignSystem {
       lines.push(`.type-${n}{font-size:var(--step-${n});line-height:var(--leading-${n});letter-spacing:var(--tracking-${n});max-width:var(--measure-${n})}`);
     }
     lines.push('', grid.utility);
+    // Base font assignment. Without this every var(--font-heading)/var(--font-body)
+    // reference in the component library resolves to nothing and the browser
+    // falls back to Times — the clearest tell of a generated page.
+    if (fonts.heading || fonts.body) {
+      lines.push('', '/* base type roles */');
+      if (fonts.body) lines.push(`body{font-family:var(--font-body);}`);
+      if (fonts.heading) lines.push(`h1,h2,h3,h4,.type-4,.type-5,.type-6,.type-7{font-family:var(--font-heading);}`);
+    }
     return lines.join('\n');
   }
 
@@ -9044,7 +9059,7 @@ class DesignerAgent extends BaseAgent {
 .liquid-glass-button{background:rgba(255,255,255,0.06);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:none;border-radius:14px;padding:12px 28px;color:rgba(255,255,255,0.9);cursor:pointer;position:relative;overflow:hidden;transition:all 0.3s ease}
 .liquid-glass-button::before{content:'';position:absolute;inset:0;border-radius:inherit;padding:1px;background:linear-gradient(180deg,rgba(255,255,255,0.3),rgba(255,255,255,0.05));-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
 .liquid-glass-button:hover{background:rgba(255,255,255,0.1);transform:translateY(-1px);box-shadow:0 4px 16px rgba(0,0,0,0.1)}
-.liquid-glass-nav{position:fixed;top:16px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,0.02);backdrop-filter:blur(40px) saturate(1.5);-webkit-backdrop-filter:blur(40px) saturate(1.5);border-radius:100px;padding:6px;z-index:1000;position:relative;overflow:hidden}
+.liquid-glass-nav{position:fixed;top:16px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,0.02);backdrop-filter:blur(40px) saturate(1.5);-webkit-backdrop-filter:blur(40px) saturate(1.5);border-radius:100px;padding:6px;z-index:1000;overflow:hidden}
 .liquid-glass-nav::before{content:'';position:absolute;inset:0;border-radius:inherit;padding:1px;background:linear-gradient(180deg,rgba(255,255,255,0.4),rgba(255,255,255,0.1));-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
 .liquid-glass-specular{position:absolute;top:-50%;left:-50%;width:200%;height:200%;background:radial-gradient(ellipse at 30% 20%,rgba(255,255,255,0.08),transparent 60%);pointer-events:none}`,
         compatibleAnimations: ['hover-glow', 'entrance-blur', 'parallax-depth', '3d-tilt', 'shimmer-sweep']
@@ -10178,6 +10193,424 @@ function init3DWindows(){document.querySelectorAll('.window-3d[data-3d-interacti
 .image-reveal.revealed img{transform:scale(1)}
 .image-reveal figcaption{position:absolute;left:18px;bottom:14px;font-size:0.78rem;letter-spacing:0.16em;text-transform:uppercase;opacity:0.85}`,
                 js: `// Clip reveal plus a slow counter-zoom as the image enters.`
+            },
+            'bubble-menu': {
+                html: `<nav class="bubble-menu" aria-label="Primary">
+  <a class="bubble-item" href="#work">Work</a>
+  <a class="bubble-item" href="#studio">Studio</a>
+  <a class="bubble-item" href="#contact">Contact</a>
+</nav>`,
+                css: `.bubble-menu{display:inline-flex;gap:.4rem;padding:.4rem;border-radius:999px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1)}
+.bubble-item{color:inherit;text-decoration:none;font-size:.82rem;padding:.5rem 1.1rem;border-radius:999px;transition:background .3s ease}
+.bubble-item:hover{background:rgba(255,255,255,0.12)}`,
+                js: `// Pill navigation; collapses into the shared hamburger menu on mobile.`
+            },
+            'stats-grid': {
+                html: `<div class="stats-grid" data-animate="stagger">
+  {{#each stats}}
+  <div class="stat-card" data-reveal="slide-up">
+    <div class="stat-value" data-count="{{value}}">0</div>
+    <div class="stat-label">{{label}}</div>
+  </div>
+  {{/each}}
+</div>`,
+                css: `.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:var(--grid-gutter,1.5rem)}
+.stat-card{padding:var(--space-lg,2rem);border-radius:20px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08)}
+.stat-value{font-family:var(--font-heading);font-size:clamp(2rem,5vw,3.5rem);line-height:1;font-weight:700}
+.stat-label{margin-top:.5rem;font-size:.8rem;letter-spacing:.14em;text-transform:uppercase;opacity:.6}`,
+                js: `// Counter animation is handled by the shared [data-count] boilerplate.`
+            },
+            'pricing-toggle': {
+                html: `<div class="pricing" data-pricing>
+  <div class="pricing-switch" role="tablist">
+    <button class="pricing-option active" data-plan="monthly" role="tab">Monthly</button>
+    <button class="pricing-option" data-plan="yearly" role="tab">Yearly</button>
+  </div>
+  <div class="pricing-grid">
+    {{#each tiers}}
+    <div class="price-card" data-reveal="slide-up">
+      <h3 class="price-name">{{name}}</h3>
+      <div class="price-value"><span data-monthly="{{monthly}}" data-yearly="{{yearly}}">{{monthly}}</span><small>/mo</small></div>
+      <ul class="price-features">{{#each features}}<li>{{this}}</li>{{/each}}</ul>
+      <button class="btn btn-primary" data-magnet>{{cta}}</button>
+    </div>
+    {{/each}}
+  </div>
+</div>`,
+                css: `.pricing-switch{display:inline-flex;gap:.25rem;padding:.3rem;border-radius:999px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1)}
+.pricing-option{background:none;border:0;color:inherit;padding:.5rem 1.2rem;border-radius:999px;cursor:pointer;opacity:.6}
+.pricing-option.active{background:rgba(255,255,255,0.12);opacity:1}
+.pricing-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:var(--grid-gutter,1.5rem);margin-top:2rem}
+.price-card{padding:2rem;border-radius:22px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.03)}
+.price-value{font-size:2.5rem;font-weight:700;line-height:1}.price-value small{font-size:.9rem;opacity:.6}
+.price-features{list-style:none;padding:0;margin:1.25rem 0;display:grid;gap:.6rem;font-size:.9rem}`,
+                js: `function initPricingToggle(){document.querySelectorAll('[data-pricing]').forEach(root=>{const opts=root.querySelectorAll('.pricing-option');const values=root.querySelectorAll('[data-monthly]');opts.forEach(opt=>opt.addEventListener('click',()=>{opts.forEach(o=>o.classList.remove('active'));opt.classList.add('active');const plan=opt.dataset.plan;values.forEach(v=>{v.textContent=v.dataset[plan]||v.textContent})}))})}
+document.addEventListener('DOMContentLoaded',initPricingToggle);`
+            },
+            'feature-grid': {
+                html: `<div class="feature-grid">
+  {{#each features}}
+  <article class="feature-card" data-hover="lift" data-reveal="slide-up">
+    <div class="feature-icon">{{icon}}</div>
+    <h3 class="feature-title">{{title}}</h3>
+    <p class="feature-copy">{{description}}</p>
+  </article>
+  {{/each}}
+</div>`,
+                css: `.feature-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:var(--grid-gutter,1.5rem)}
+.feature-card{padding:2rem;border-radius:20px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08)}
+.feature-icon{width:44px;height:44px;display:grid;place-items:center;border-radius:12px;background:rgba(255,255,255,0.06);margin-bottom:1rem}
+.feature-title{font-size:1.25rem;margin:0 0 .5rem}.feature-copy{font-size:.92rem;line-height:1.6;opacity:.75;margin:0}`,
+                js: `// Feature cards lift on hover via [data-hover] and reveal on scroll.`
+            },
+            'testimonial-carousel': {
+                html: `<div class="testimonials" data-carousel>
+  <div class="testimonial-track">
+    {{#each testimonials}}
+    <figure class="testimonial" data-slide>
+      <blockquote class="testimonial-quote">{{quote}}</blockquote>
+      <figcaption class="testimonial-author">{{author}} — {{role}}</figcaption>
+    </figure>
+    {{/each}}
+  </div>
+  <div class="testimonial-dots" data-dots></div>
+</div>`,
+                css: `.testimonials{position:relative;overflow:hidden}
+.testimonial-track{display:flex;transition:transform .6s cubic-bezier(.23,1,.32,1)}
+.testimonial{min-width:100%;margin:0;padding:2rem}
+.testimonial-quote{font-family:var(--font-heading);font-size:clamp(1.4rem,3vw,2.2rem);line-height:1.35;font-style:italic;margin:0 0 1rem}
+.testimonial-author{font-size:.85rem;letter-spacing:.12em;text-transform:uppercase;opacity:.6}
+.testimonial-dots{display:flex;gap:.5rem;justify-content:center;margin-top:1.5rem}
+.testimonial-dot{width:8px;height:8px;border-radius:50%;border:0;background:rgba(255,255,255,0.25);cursor:pointer}
+.testimonial-dot.active{background:currentColor}`,
+                js: `function initTestimonials(){document.querySelectorAll('[data-carousel]').forEach(root=>{const track=root.querySelector('.testimonial-track');const slides=root.querySelectorAll('[data-slide]');const dotsWrap=root.querySelector('[data-dots]');if(!track||!slides.length)return;let index=0;slides.forEach((_,i)=>{const d=document.createElement('button');d.className='testimonial-dot'+(i===0?' active':'');d.addEventListener('click',()=>go(i));dotsWrap&&dotsWrap.appendChild(d)});function go(i){index=i;track.style.transform='translateX('+(-i*100)+'%)';dotsWrap&&dotsWrap.querySelectorAll('.testimonial-dot').forEach((d,di)=>d.classList.toggle('active',di===i))}setInterval(()=>go((index+1)%slides.length),6000)})}
+document.addEventListener('DOMContentLoaded',initTestimonials);`
+            },
+            'cta-glow': {
+                html: `<section class="cta-glow" data-reveal="blur">
+  <h2 class="cta-glow-title">{{title}}</h2>
+  <p class="cta-glow-copy">{{description}}</p>
+  <button class="btn btn-primary cta-glow-button" data-magnet data-micro="ripple">{{cta}}</button>
+</section>`,
+                css: `.cta-glow{position:relative;text-align:center;padding:var(--space-3xl,6rem) var(--grid-margin,5vw);border-radius:32px;background:radial-gradient(ellipse at 50% 0%,rgba(255,255,255,0.08),transparent 70%);border:1px solid rgba(255,255,255,0.08);overflow:hidden}
+.cta-glow-title{font-size:clamp(2rem,6vw,4rem);line-height:1.02;margin:0 0 1rem}
+.cta-glow-copy{max-width:52ch;margin:0 auto 2rem;opacity:.75}
+.cta-glow-button{position:relative;z-index:1}`,
+                js: `// Glow is a CSS radial gradient; the CTA keeps the shared magnetic/ripple behaviour.`
+            },
+            'project-grid': {
+                html: `<div class="project-grid">
+  {{#each projects}}
+  <a class="project-card" href="{{href}}" data-reveal="clip" data-hover="tilt">
+    <div class="project-media"><img src="{{image}}" alt="{{title}}" loading="lazy" decoding="async" /></div>
+    <div class="project-meta"><span class="project-title">{{title}}</span><span class="project-tag">{{tag}}</span></div>
+  </a>
+  {{/each}}
+</div>`,
+                css: `.project-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:var(--grid-gutter,1.5rem)}
+.project-card{display:block;text-decoration:none;color:inherit;border-radius:20px;overflow:hidden}
+.project-media{aspect-ratio:4/3;overflow:hidden;border-radius:20px}
+.project-media img{width:100%;height:100%;object-fit:cover;transition:transform .8s cubic-bezier(.23,1,.32,1)}
+.project-card:hover .project-media img{transform:scale(1.05)}
+.project-meta{display:flex;justify-content:space-between;gap:1rem;padding:1rem 0;font-size:.9rem}
+.project-tag{opacity:.55;text-transform:uppercase;letter-spacing:.12em;font-size:.72rem}`,
+                js: `// Media zooms slowly on hover; the card itself tilts via [data-hover="tilt"].`
+            },
+            'case-study-cards': {
+                html: `<div class="case-studies">
+  {{#each studies}}
+  <article class="case-study" data-reveal="slide-up">
+    <span class="case-study-index">{{index}}</span>
+    <h3 class="case-study-title">{{title}}</h3>
+    <p class="case-study-copy">{{description}}</p>
+    <a class="case-study-link" href="{{href}}">{{cta}}</a>
+  </article>
+  {{/each}}
+</div>`,
+                css: `.case-studies{display:grid;gap:1px;background:rgba(255,255,255,0.08);border-radius:24px;overflow:hidden}
+.case-study{background:var(--color-bg,#0a0a0f);padding:2.5rem;display:grid;gap:.75rem;grid-template-columns:auto 1fr;align-items:start}
+.case-study-index{grid-row:span 3;font-size:.8rem;letter-spacing:.2em;opacity:.45;padding-top:.4rem}
+.case-study-title{margin:0;font-size:clamp(1.5rem,3vw,2.2rem)}
+.case-study-copy{margin:0;max-width:60ch;opacity:.75}
+.case-study-link{color:inherit;text-decoration:none;border-bottom:1px solid currentColor;justify-self:start;padding-bottom:2px}`,
+                js: `// Index numbers and copy form a print-like list; reveal on scroll.`
+            },
+            'contact-form': {
+                html: `<form class="contact-form" data-contact-form novalidate>
+  <div class="field"><label for="cf-name">Name</label><input id="cf-name" name="name" type="text" required /></div>
+  <div class="field"><label for="cf-email">Email</label><input id="cf-email" name="email" type="email" required /></div>
+  <div class="field"><label for="cf-message">Message</label><textarea id="cf-message" name="message" rows="4" required></textarea></div>
+  <button class="btn btn-primary" type="submit" data-magnet>Send</button>
+  <p class="form-status" role="status" aria-live="polite"></p>
+</form>`,
+                css: `.contact-form{display:grid;gap:1.25rem;max-width:560px}
+.field{display:grid;gap:.4rem}
+.field label{font-size:.75rem;letter-spacing:.16em;text-transform:uppercase;opacity:.6}
+.field input,.field textarea{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.12);border-radius:12px;padding:.85rem 1rem;color:inherit;font:inherit;outline:none;transition:border-color .3s ease}
+.field input:focus,.field textarea:focus{border-color:rgba(255,255,255,0.35)}
+.field input.invalid,.field textarea.invalid{border-color:#f87171}
+.form-status{font-size:.85rem;opacity:.75;min-height:1.2em}`,
+                js: `function initContactForms(){document.querySelectorAll('[data-contact-form]').forEach(form=>{form.addEventListener('submit',e=>{e.preventDefault();let valid=true;form.querySelectorAll('[required]').forEach(field=>{const bad=!field.value.trim()||(field.type==='email'&&!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(field.value));field.classList.toggle('invalid',bad);if(bad)valid=false});const status=form.querySelector('.form-status');if(status)status.textContent=valid?'Thanks — we will be in touch.':'Please complete the highlighted fields.'})})}
+document.addEventListener('DOMContentLoaded',initContactForms);`
+            },
+            'social-links': {
+                html: `<ul class="social-links">
+  {{#each links}}<li><a class="social-link" href="{{href}}" rel="noopener">{{label}}</a></li>{{/each}}
+</ul>`,
+                css: `.social-links{list-style:none;display:flex;flex-wrap:wrap;gap:1.5rem;padding:0;margin:0}
+.social-link{color:inherit;text-decoration:none;font-size:.82rem;letter-spacing:.14em;text-transform:uppercase;position:relative}
+.social-link::after{content:'';position:absolute;left:0;bottom:-3px;width:100%;height:1px;background:currentColor;transform:scaleX(0);transform-origin:right;transition:transform .4s cubic-bezier(.65,0,.35,1)}
+.social-link:hover::after{transform:scaleX(1);transform-origin:left}`,
+                js: `// Underline sweep on hover, matching [data-hover="underline"].`
+            },
+            'product-carousel': {
+                html: `<div class="product-carousel" data-carousel>
+  <div class="product-track">
+    {{#each products}}
+    <article class="product-card" data-slide data-hover="lift">
+      <div class="product-media"><img src="{{image}}" alt="{{name}}" loading="lazy" decoding="async" /></div>
+      <h3 class="product-name">{{name}}</h3>
+      <span class="product-price">{{price}}</span>
+    </article>
+    {{/each}}
+  </div>
+  <div class="product-nav">
+    <button class="product-prev" data-carousel-prev aria-label="Previous">Prev</button>
+    <button class="product-next" data-carousel-next aria-label="Next">Next</button>
+  </div>
+</div>`,
+                css: `.product-carousel{overflow:hidden}
+.product-track{display:flex;gap:var(--grid-gutter,1.5rem);transition:transform .6s cubic-bezier(.23,1,.32,1)}
+.product-card{min-width:min(320px,80vw);border-radius:20px;border:1px solid rgba(255,255,255,0.08);padding:1rem;background:rgba(255,255,255,0.03)}
+.product-media{aspect-ratio:1;border-radius:14px;overflow:hidden;margin-bottom:.75rem}
+.product-media img{width:100%;height:100%;object-fit:cover}
+.product-name{margin:0;font-size:1.05rem}.product-price{font-size:.9rem;opacity:.7}
+.product-nav{display:flex;gap:.75rem;margin-top:1.25rem}
+.product-nav button{background:none;border:1px solid rgba(255,255,255,0.2);color:inherit;border-radius:999px;padding:.5rem 1.2rem;cursor:pointer}`,
+                js: `function initProductCarousels(){document.querySelectorAll('[data-carousel]').forEach(root=>{const track=root.querySelector('.product-track');if(!track)return;const cards=track.children;let index=0;const max=Math.max(0,cards.length-1);const step=()=>cards[0]?cards[0].getBoundingClientRect().width+24:0;root.querySelector('[data-carousel-next]')?.addEventListener('click',()=>{index=Math.min(max,index+1);track.style.transform='translateX('+(-index*step())+'px)'});root.querySelector('[data-carousel-prev]')?.addEventListener('click',()=>{index=Math.max(0,index-1);track.style.transform='translateX('+(-index*step())+'px)'})})}
+document.addEventListener('DOMContentLoaded',initProductCarousels);`
+            },
+            'size-selector': {
+                html: `<div class="size-selector" data-size-selector role="radiogroup" aria-label="Size">
+  {{#each sizes}}<button class="size-option" data-size="{{this}}" role="radio" aria-checked="false">{{this}}</button>{{/each}}
+</div>`,
+                css: `.size-selector{display:flex;flex-wrap:wrap;gap:.6rem}
+.size-option{min-width:48px;padding:.6rem 1rem;border-radius:12px;border:1px solid rgba(255,255,255,0.18);background:none;color:inherit;cursor:pointer;transition:all .2s ease}
+.size-option[aria-checked="true"]{background:currentColor;color:var(--color-bg,#0a0a0f);border-color:currentColor}`,
+                js: `function initSizeSelectors(){document.querySelectorAll('[data-size-selector]').forEach(root=>{root.querySelectorAll('.size-option').forEach(opt=>opt.addEventListener('click',()=>{root.querySelectorAll('.size-option').forEach(o=>o.setAttribute('aria-checked','false'));opt.setAttribute('aria-checked','true')}))})}
+document.addEventListener('DOMContentLoaded',initSizeSelectors);`
+            },
+            'add-to-cart': {
+                html: `<div class="cart-control">
+  <div class="qty" data-qty>
+    <button class="qty-btn" data-qty-down aria-label="Decrease">-</button>
+    <span class="qty-value" data-qty-value>1</span>
+    <button class="qty-btn" data-qty-up aria-label="Increase">+</button>
+  </div>
+  <button class="btn btn-primary add-to-cart" data-magnet data-micro="ripple">{{cta}}</button>
+</div>`,
+                css: `.cart-control{display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
+.qty{display:inline-flex;align-items:center;gap:.5rem;border:1px solid rgba(255,255,255,0.16);border-radius:999px;padding:.3rem .6rem}
+.qty-btn{width:32px;height:32px;border-radius:50%;border:0;background:rgba(255,255,255,0.08);color:inherit;cursor:pointer;font-size:1.1rem;line-height:1}
+.qty-value{min-width:1.5rem;text-align:center}`,
+                js: `function initAddToCart(){document.querySelectorAll('[data-qty]').forEach(qty=>{const out=qty.querySelector('[data-qty-value]');let value=1;const set=v=>{value=Math.max(1,v);if(out)out.textContent=value};qty.querySelector('[data-qty-up]')?.addEventListener('click',()=>set(value+1));qty.querySelector('[data-qty-down]')?.addEventListener('click',()=>set(value-1))})}
+document.addEventListener('DOMContentLoaded',initAddToCart);`
+            },
+            'reviews-slider': {
+                html: `<div class="reviews" data-carousel>
+  <div class="reviews-track">
+    {{#each reviews}}<blockquote class="review" data-slide><p>{{quote}}</p><cite>{{author}}</cite></blockquote>{{/each}}
+  </div>
+</div>`,
+                css: `.reviews{overflow:hidden}
+.reviews-track{display:flex;transition:transform .6s cubic-bezier(.23,1,.32,1)}
+.review{min-width:100%;margin:0;padding:1.5rem;border-radius:18px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08)}
+.review p{margin:0 0 .75rem;line-height:1.6}.review cite{font-size:.8rem;opacity:.6;font-style:normal}`,
+                js: `function initReviews(){document.querySelectorAll('[data-carousel]').forEach(root=>{const track=root.querySelector('.reviews-track');const slides=root.querySelectorAll('.review');if(!track||slides.length<2)return;let i=0;setInterval(()=>{i=(i+1)%slides.length;track.style.transform='translateX('+(-i*100)+'%)'},5000)})}
+document.addEventListener('DOMContentLoaded',initReviews);`
+            },
+            'video-background': {
+                html: `<div class="video-background" aria-hidden="true">
+  <video class="bg-video" autoplay muted playsinline loop preload="auto" poster="{{poster}}">
+    <source src="{{videoUrl}}" type="video/mp4" />
+  </video>
+  <div class="bg-video-scrim"></div>
+</div>`,
+                css: `.video-background{position:absolute;inset:0;overflow:hidden;z-index:0}
+.bg-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.bg-video-scrim{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0.35),rgba(0,0,0,0.65))}
+@media (prefers-reduced-motion: reduce){.bg-video{display:none}}`,
+                js: `// Background video is muted and decorative; it hides under reduced-motion.`
+            },
+            'feature-showcase': {
+                html: `<div class="showcase">
+  <div class="showcase-copy">
+    <h2 class="showcase-title">{{title}}</h2>
+    <p class="showcase-text">{{description}}</p>
+    <ul class="showcase-list">{{#each points}}<li>{{this}}</li>{{/each}}</ul>
+  </div>
+  <div class="showcase-media" data-scroll-3d="rotate"><img src="{{image}}" alt="{{title}}" loading="lazy" decoding="async" /></div>
+</div>`,
+                css: `.showcase{display:grid;grid-template-columns:1fr 1fr;gap:var(--grid-gutter,2rem);align-items:center}
+@media(max-width:768px){.showcase{grid-template-columns:1fr}}
+.showcase-title{font-size:clamp(1.8rem,4vw,3rem);line-height:1.05;margin:0 0 1rem}
+.showcase-text{opacity:.75;line-height:1.6}
+.showcase-list{list-style:none;padding:0;margin:1.25rem 0 0;display:grid;gap:.6rem}
+.showcase-list li{padding-left:1.4rem;position:relative}
+.showcase-list li::before{content:'';position:absolute;left:0;top:.55em;width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.5}
+.showcase-media{border-radius:24px;overflow:hidden}
+.showcase-media img{display:block;width:100%;height:100%;object-fit:cover}`,
+                js: `// Media panel carries a subtle 3D scroll rotation via [data-scroll-3d].`
+            },
+            'social-proof': {
+                html: `<div class="social-proof" data-animate="stagger">
+  <span class="social-proof-label">{{label}}</span>
+  <div class="social-proof-logos">
+    {{#each logos}}<span class="proof-logo">{{this}}</span>{{/each}}
+  </div>
+</div>`,
+                css: `.social-proof{display:flex;flex-direction:column;gap:1rem;align-items:center;text-align:center}
+.social-proof-label{font-size:.72rem;letter-spacing:.22em;text-transform:uppercase;opacity:.5}
+.social-proof-logos{display:flex;flex-wrap:wrap;gap:2rem;justify-content:center;align-items:center}
+.proof-logo{font-size:1.05rem;font-weight:600;opacity:.55;transition:opacity .3s ease}
+.proof-logo:hover{opacity:.9}`,
+                js: `// Credible proof only — never invent metrics; the logos reveal with the stagger group.`
+            },
+            'newsletter-capture': {
+                html: `<form class="newsletter" data-newsletter novalidate>
+  <label class="newsletter-label" for="nl-email">{{label}}</label>
+  <div class="newsletter-row">
+    <input id="nl-email" name="email" type="email" class="newsletter-input" placeholder="you@studio.com" required />
+    <button class="btn btn-primary newsletter-submit" type="submit" data-magnet>{{cta}}</button>
+  </div>
+  <p class="newsletter-status" role="status" aria-live="polite"></p>
+</form>`,
+                css: `.newsletter{display:grid;gap:.6rem;max-width:520px}
+.newsletter-label{font-size:.75rem;letter-spacing:.16em;text-transform:uppercase;opacity:.6}
+.newsletter-row{display:flex;gap:.6rem;flex-wrap:wrap}
+.newsletter-input{flex:1 1 240px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.14);border-radius:999px;padding:.85rem 1.2rem;color:inherit;font:inherit;outline:none;transition:border-color .3s ease}
+.newsletter-input:focus{border-color:rgba(255,255,255,0.4)}
+.newsletter-input.invalid{border-color:#f87171}
+.newsletter-status{font-size:.82rem;opacity:.75;min-height:1.2em}`,
+                js: `function initNewsletter(){document.querySelectorAll('[data-newsletter]').forEach(form=>{form.addEventListener('submit',e=>{e.preventDefault();const input=form.querySelector('.newsletter-input');const status=form.querySelector('.newsletter-status');const bad=!input||!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(input.value.trim());input&&input.classList.toggle('invalid',bad);if(status)status.textContent=bad?'Enter a valid email address.':'You are on the list.'})})}
+document.addEventListener('DOMContentLoaded',initNewsletter);`
+            },
+            'data-tables': {
+                html: `<div class="data-table-wrap">
+  <table class="data-table">
+    <thead><tr>{{#each columns}}<th scope="col">{{this}}</th>{{/each}}</tr></thead>
+    <tbody>
+      {{#each rows}}
+      <tr>{{#each this}}<td>{{this}}</td>{{/each}}</tr>
+      {{/each}}
+    </tbody>
+  </table>
+</div>`,
+                css: `.data-table-wrap{overflow-x:auto;border:1px solid rgba(255,255,255,0.08);border-radius:18px}
+.data-table{width:100%;border-collapse:collapse;font-size:.9rem}
+.data-table th,.data-table td{text-align:left;padding:.85rem 1.1rem;border-bottom:1px solid rgba(255,255,255,0.06)}
+.data-table th{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;opacity:.55}
+.data-table tbody tr:hover{background:rgba(255,255,255,0.03)}
+.data-table tbody tr:last-child td{border-bottom:0}`,
+                js: `// Dense, scannable table with hover row highlight.`
+            },
+            'charts': {
+                html: `<div class="chart-card">
+  <div class="chart-head"><span class="chart-title">{{title}}</span><span class="chart-legend">{{legend}}</span></div>
+  <div class="chart-bars">
+    {{#each bars}}<span class="chart-bar" data-value="{{value}}" style="--bar:{{percent}}%"></span>{{/each}}
+  </div>
+</div>`,
+                css: `.chart-card{padding:1.5rem;border-radius:20px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08)}
+.chart-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:1.25rem}
+.chart-title{font-weight:600}.chart-legend{font-size:.75rem;opacity:.55}
+.chart-bars{display:flex;align-items:flex-end;gap:.5rem;height:160px}
+.chart-bar{flex:1;height:var(--bar,20%);border-radius:6px 6px 0 0;background:linear-gradient(180deg,currentColor,transparent);opacity:.55;transition:height .6s cubic-bezier(.23,1,.32,1),opacity .3s ease}
+.chart-bar:hover{opacity:.9}`,
+                js: `// Bars grow on load; values come from data-value, never invented copy.`
+            },
+            'activity-feed': {
+                html: `<ul class="activity-feed">
+  {{#each items}}
+  <li class="activity-item" data-reveal="slide-up">
+    <span class="activity-dot" aria-hidden="true"></span>
+    <div class="activity-body"><span class="activity-text">{{text}}</span><time class="activity-time">{{time}}</time></div>
+  </li>
+  {{/each}}
+</ul>`,
+                css: `.activity-feed{list-style:none;padding:0;margin:0;display:grid;gap:.25rem}
+.activity-item{display:flex;gap:1rem;padding:1rem;border-radius:14px;transition:background .3s ease}
+.activity-item:hover{background:rgba(255,255,255,0.03)}
+.activity-dot{width:8px;height:8px;border-radius:50%;margin-top:.5rem;background:currentColor;opacity:.5;flex:none}
+.activity-body{display:flex;justify-content:space-between;gap:1rem;width:100%}
+.activity-text{font-size:.9rem}.activity-time{font-size:.75rem;opacity:.5;white-space:nowrap}`,
+                js: `// Chronological list with a timeline dot per entry.`
+            },
+            'quick-actions': {
+                html: `<div class="quick-actions" role="group" aria-label="Quick actions">
+  {{#each actions}}<button class="quick-action" data-micro="ripple"><span class="quick-action-icon">{{icon}}</span>{{label}}</button>{{/each}}
+</div>`,
+                css: `.quick-actions{display:flex;flex-wrap:wrap;gap:.75rem}
+.quick-action{display:inline-flex;align-items:center;gap:.5rem;padding:.7rem 1.2rem;border-radius:14px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.04);color:inherit;cursor:pointer;transition:all .25s ease}
+.quick-action:hover{background:rgba(255,255,255,0.09);transform:translateY(-2px)}
+.quick-action-icon{opacity:.7}`,
+                js: `// Compact action buttons with ripple feedback.`
+            },
+            'text-blocks': {
+                html: `<div class="text-blocks">
+  {{#each blocks}}
+  <section class="text-block" data-reveal="slide-up">
+    <span class="text-block-eyebrow">{{eyebrow}}</span>
+    <h2 class="text-block-title">{{title}}</h2>
+    <p class="text-block-body">{{body}}</p>
+  </section>
+  {{/each}}
+</div>`,
+                css: `.text-blocks{display:grid;gap:var(--space-2xl,4rem)}
+.text-block{max-width:68ch}
+.text-block-eyebrow{font-size:.72rem;letter-spacing:.22em;text-transform:uppercase;opacity:.5}
+.text-block-title{font-size:clamp(1.5rem,3vw,2.4rem);line-height:1.1;margin:.75rem 0 1rem}
+.text-block-body{line-height:1.7;opacity:.8;margin:0}`,
+                js: `// Editorial copy blocks; measure is capped so lines stay readable.`
+            },
+            'image-grid': {
+                html: `<div class="image-grid">
+  {{#each images}}<figure class="image-grid-item" data-reveal="clip"><img src="{{src}}" alt="{{alt}}" loading="lazy" decoding="async" /></figure>{{/each}}
+</div>`,
+                css: `.image-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:var(--grid-gutter,1rem)}
+.image-grid-item{margin:0;aspect-ratio:4/5;border-radius:18px;overflow:hidden;background:rgba(255,255,255,0.03)}
+.image-grid-item img{display:block;width:100%;height:100%;object-fit:cover;transition:transform .8s cubic-bezier(.23,1,.32,1)}
+.image-grid-item:hover img{transform:scale(1.04)}`,
+                js: `// Masonry-like media grid with clip reveals.`
+            },
+            'contact-minimal': {
+                html: `<div class="contact-minimal">
+  <a class="contact-minimal-mail" href="mailto:{{email}}">{{email}}</a>
+  <span class="contact-minimal-location">{{location}}</span>
+</div>`,
+                css: `.contact-minimal{display:flex;flex-direction:column;gap:.5rem}
+.contact-minimal-mail{color:inherit;font-size:clamp(1.4rem,3vw,2.2rem);text-decoration:none;border-bottom:1px solid currentColor;align-self:flex-start;padding-bottom:2px}
+.contact-minimal-location{font-size:.85rem;letter-spacing:.14em;text-transform:uppercase;opacity:.55}`,
+                js: `// Minimal contact block: an oversized mail link and a location line.`
+            },
+            'avatar-circles': {
+                html: `<div class="avatar-circles">{{#each avatars}}<span class="avatar-circle" data-micro="bounce">{{initials}}</span>{{/each}}</div>`,
+                css: `.avatar-circles{display:flex}
+.avatar-circle{width:56px;height:56px;border-radius:50%;display:grid;place-items:center;font-weight:700;background:linear-gradient(145deg,rgba(255,255,255,0.14),rgba(255,255,255,0.04));border:2px solid rgba(255,255,255,0.15);margin-left:-12px;transition:transform .25s cubic-bezier(.34,1.56,.64,1)}
+.avatar-circle:first-child{margin-left:0}
+.avatar-circle:hover{transform:translateY(-4px) scale(1.06)}`,
+                js: `// Overlapping avatar stack; each circle bounces on hover.`
+            },
+            'progress-bar': {
+                html: `<div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{value}}">
+  <span class="progress-label">{{label}}</span>
+  <span class="progress-track"><span class="progress-fill" style="--value:{{value}}%"></span></span>
+</div>`,
+                css: `.progress{display:grid;gap:.5rem}
+.progress-label{font-size:.8rem;letter-spacing:.12em;text-transform:uppercase;opacity:.6}
+.progress-track{display:block;height:10px;border-radius:999px;background:rgba(255,255,255,0.08);overflow:hidden}
+.progress-fill{display:block;height:100%;width:var(--value,0%);border-radius:999px;background:linear-gradient(90deg,rgba(255,255,255,0.9),rgba(255,255,255,0.5));transition:width .8s cubic-bezier(.23,1,.32,1)}`,
+                js: `// Width animates from the --value custom property set inline.`
             }
         };
 
@@ -10575,14 +11008,35 @@ Output ONLY the JS file:
 
             // Assemble final files
             const files = {};
-            files['index.html'] = html;
-            const designTokens = typeof DesignSystem !== 'undefined' ? DesignSystem.toCSS() : '';
+            const designTokens = typeof DesignSystem !== 'undefined'
+                ? DesignSystem.toCSS({ fonts: enhanced.typography || designSystem.fonts || {} })
+                : '';
             const llmCSS = css || this._getDefaultCSS(designSystem);
-            // The computed scale/grid/spacing tokens are prepended unconditionally.
-            // If the model dropped them the page would silently fall back to
-            // invented sizes, which is exactly the generic look we are removing.
-            files['styles.css'] = this._ensureDesignTokens(designTokens, llmCSS);
+            // The computed scale/grid/spacing/font tokens are prepended
+            // unconditionally. If the model dropped them the page would silently
+            // fall back to invented sizes and Times, which is exactly the generic
+            // look we are removing.
+            files['styles.css'] = this._ensureDesignTokens(designTokens, this._ensureBaseStyles(llmCSS));
             files['script.js'] = this._injectGSAPBoilerplate() + '\n\n' + userJS;
+            // Fonts only render if the stylesheet is actually linked. A model that
+            // forgets the <link> ships a serif-less page, so guarantee it here.
+            files['index.html'] = this._ensureFontSetup(html, designSystem.googleFontsUrl);
+
+            // Guarantee the deterministic classes the markup relies on. The prompt
+            // asks the model to include the philosophy and component CSS/JS, but a
+            // model that drops it ships markup with no rule behind it — the section
+            // collapses to an unstyled column. Each block is checked independently
+            // so a partially-compliant model still gets what it omitted.
+            files['styles.css'] = this._appendAllIfAbsent(files['styles.css'], [
+                designSystem.designPhilosophyCSS || '',
+                componentCSS,
+            ]);
+
+            files['script.js'] = this._appendAllIfAbsent(files['script.js'], [
+                componentJS,
+                motionJS,
+                typeof advancedJS !== 'undefined' ? advancedJS : '',
+            ]);
 
             if (threejsCode) {
                 files['three-scene.js'] = threejsCode;
@@ -10806,6 +11260,46 @@ if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
         if (!tokens) return css;
         if (/--step-0\s*:/.test(css)) return css;
         return `${tokens}\n\n${css}`;
+    }
+
+    /* Guarantee base font roles exist. Without them a var(--font-heading) in the
+       component library resolves to nothing and the page renders in Times. */
+    _ensureBaseStyles(css) {
+        let out = String(css || '');
+        if (!/font-family\s*:\s*var\(--font-body/.test(out)) {
+            out += `\n\nbody{font-family:var(--font-body,'Manrope',system-ui,sans-serif);}`;
+        }
+        if (!/font-family\s*:\s*var\(--font-heading/.test(out)) {
+            out += `\nh1,h2,h3,h4,.type-4,.type-5,.type-6,.type-7{font-family:var(--font-heading,'Instrument Serif',Georgia,serif);}`;
+        }
+        return out;
+    }
+
+    /* A Google Fonts <link> only helps if it reaches the HTML. A model that
+       forgets it ships a serif-less page, so inject it when absent. */
+    _ensureFontSetup(html, url) {
+        const out = String(html || '');
+        if (!url || /fonts\.googleapis\.com/.test(out)) return out;
+        const tag = `<link rel="preconnect" href="https://fonts.googleapis.com">\n` +
+            `<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n` +
+            `<link rel="stylesheet" href="${url}">`;
+        if (/<head[^>]*>/i.test(out)) return out.replace(/<head([^>]*)>/i, `<head$1>\n${tag}`);
+        return `${tag}\n${out}`;
+    }
+
+    /* Append a deterministic block only when it is absent, so the model's own
+       output is not duplicated when it followed the brief. */
+    _appendIfAbsent(source, block) {
+        if (!block) return source;
+        const probe = String(block).trim().slice(0, 120);
+        if (probe && String(source).includes(probe)) return source;
+        return `${source}\n\n${block}`;
+    }
+
+    /* Same as _appendIfAbsent but checks each block independently, so a model
+       that included one deterministic block still gets the ones it dropped. */
+    _appendAllIfAbsent(source, blocks) {
+        return (blocks || []).filter(Boolean).reduce((acc, block) => this._appendIfAbsent(acc, block), source);
     }
 }
 

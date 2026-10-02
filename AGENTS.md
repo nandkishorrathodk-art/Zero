@@ -99,6 +99,17 @@ silently degrades the output. Invariants:
   cannot: css-coverage (markup classes with no rule), philosophy-bleed (a build
   using another philosophy's classes) and motion-craft (missing timeline, ease
   monoculture, unstaggered groups).
+- Assembly-time guarantees (`coder-ui.js`) do not trust the model to copy the
+  deterministic assets it was given. A model that ignores the brief otherwise
+  ships markup with no rule behind it:
+  - `_ensureDesignTokens()` prepends the computed scale when the model dropped it.
+  - `_ensureBaseStyles()` guarantees `body`/heading `font-family: var(--font-*)`.
+  - `_ensureFontSetup()` injects the Google Fonts `<link>` when the model forgot it.
+  - `_appendIfAbsent()` re-appends the philosophy CSS, component CSS/JS and motion
+    JS that the model omitted. All are idempotent — present content is not duplicated.
+  `DesignSystem.toCSS({ fonts })` must emit `--font-heading/--font-body/--font-mono`
+  and the base `body`/heading assignments; the component library references those
+  vars, so omitting them silently renders the page in Times.
 
 ## Design system (`js/design-system.js`)
 
