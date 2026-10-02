@@ -47,12 +47,12 @@ function send(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
-function readJson(req) {
+function readJson(req, maxBytes = 1_500_000) {
   return new Promise((resolve, reject) => {
     let body = '';
     req.on('data', chunk => {
       body += chunk;
-      if (Buffer.byteLength(body) > 1_500_000) reject(new Error('Project payload exceeds 1.5 MB'));
+      if (Buffer.byteLength(body) > maxBytes) reject(new Error('Request payload too large'));
     });
     req.on('end', () => { try { resolve(JSON.parse(body || '{}')); } catch { reject(new Error('Invalid JSON body')); } });
     req.on('error', reject);
@@ -77,7 +77,9 @@ function isPrivateHost(hostname) {
 
 async function proxyLLM(req, res) {
   let payload;
-  try { payload = await readJson(req); } catch (e) { return send(res, 400, { error: e.message }); }
+  // Generation prompts carry the design system plus component libraries; the
+  // project-sync limit is too small for them.
+  try { payload = await readJson(req, 32 * 1024 * 1024); } catch (e) { return send(res, 400, { error: e.message }); }
 
   const target = String(payload.target || '');
   if (!/^https?:\/\//i.test(target)) return send(res, 400, { error: 'A valid http(s) target URL is required' });
