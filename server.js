@@ -59,10 +59,75 @@ function readJson(req) {
   });
 }
 
+/* The LLM proxy is the only place this server talks to a third party. It exists
+   because browser fetch is blocked by CORS for providers that do not send
+   Access-Control-Allow-Origin (NVIDIA, most self-hosted OpenAI-compatible
+   endpoints). Refuse private/loopback targets so it cannot be used as an SSRF
+   pivot against the local network. */
+function isPrivateHost(hostname) {
+  const h = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+  if (!h) return true;
+  if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.internal')) return true;
+  if (h === '::1' || h.startsWith('fe80:') || h.startsWith('fc') || h.startsWith('fd')) return true;
+  if (/^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h) || /^169\.254\./.test(h)) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true;
+  if (/^0\./.test(h)) return true;
+  return false;
+}
+
+async function proxyLLM(req, res) {
+  let payload;
+  try { payload = await readJson(req); } catch (e) { return send(res, 400, { error: e.message }); }
+
+  const target = String(payload.target || '');
+  if (!/^https?:\/\//i.test(target)) return send(res, 400, { error: 'A valid http(s) target URL is required' });
+  let parsed;
+  try { parsed = new URL(target); } catch { return send(res, 400, { error: 'Invalid target URL' }); }
+  if (isPrivateHost(parsed.hostname)) return send(res, 403, { error: 'Refusing to proxy to a private address' });
+
+  const headers = {};
+  const incoming = payload.headers && typeof payload.headers === 'object' ? payload.headers : {};
+  for (const [k, v] of Object.entries(incoming)) {
+    if (typeof v !== 'string') continue;
+    const key = k.toLowerCase();
+    if (['host', 'content-length', 'connection', 'accept-encoding', 'transfer-encoding'].includes(key)) continue;
+    headers[k] = v;
+  }
+  if (!Object.keys(headers).some(k => k.toLowerCase() === 'content-type')) headers['Content-Type'] = 'application/json';
+
+  const upstreamBody = typeof payload.body === 'string' ? payload.body : JSON.stringify(payload.body || {});
+  const controller = new AbortController();
+  req.on('close', () => controller.abort());
+
+  let upstream;
+  try {
+    upstream = await fetch(target, { method: 'POST', headers, body: upstreamBody, signal: controller.signal });
+  } catch (e) {
+    if (controller.signal.aborted) return;
+    return send(res, 502, { error: `Upstream request failed: ${e.message}` });
+  }
+
+  const contentType = upstream.headers.get('content-type') || 'application/json';
+  if (/text\/event-stream/i.test(contentType) && upstream.body) {
+    res.writeHead(upstream.status, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store' });
+    try {
+      for await (const chunk of upstream.body) res.write(chunk);
+    } catch { /* client disconnected or upstream aborted mid-stream */ }
+    return res.end();
+  }
+
+  const text = await upstream.text();
+  res.writeHead(upstream.status, { 'Content-Type': contentType, 'Cache-Control': 'no-store' });
+  return res.end(text);
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   try {
-    if (url.pathname === '/api/health' && req.method === 'GET') return send(res, 200, { ok: true, service: 'zero-builder-max', version: '5.0.0-engine', capabilities: ['local-device-bridge', 'project-sync', 'workspace-export', 'zip-project-intake', 'domparser-preview', 'google-auth-ready', 'project-intelligence-agents', 'agent-recovery-supervisor', 'project-repository-memory', 'motion-studio', 'execution-engine', 'real-verify-loop', 'git-workspaces', 'repo-intake', 'repo-aware-context', 'coordinator-swarm', 'jarvis-agent'] });
+    if (url.pathname === '/api/health' && req.method === 'GET') return send(res, 200, { ok: true, service: 'zero-builder-max', version: '5.0.0-engine', capabilities: ['local-device-bridge', 'project-sync', 'workspace-export', 'zip-project-intake', 'domparser-preview', 'google-auth-ready', 'project-intelligence-agents', 'agent-recovery-supervisor', 'project-repository-memory', 'motion-studio', 'execution-engine', 'real-verify-loop', 'git-workspaces', 'repo-intake', 'repo-aware-context', 'coordinator-swarm', 'jarvis-agent', 'llm-proxy'] });
+
+    /* ── LLM PROXY (CORS workaround for providers that block browser fetch) ── */
+    if (url.pathname === '/api/llm/proxy' && req.method === 'POST') return proxyLLM(req, res);
 
     /* ── JARVIS ── */
     if (url.pathname === '/api/jarvis/session' && req.method === 'POST') {

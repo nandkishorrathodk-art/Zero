@@ -306,3 +306,29 @@ const allowed = ['ls -la', 'cat package.json', 'git status', 'grep foo bar.txt',
   const partial = ui._appendAllIfAbsent('.a{present}', ['.a{present}', '.b{missing}']);
   assert(partial.includes('.b{missing}') && partial.match(/\.a\{present\}/g).length === 1, 'partial compliance fills only the dropped blocks');
 }
+
+/* ---- LLM proxy routing: CORS-blocked providers must be relayed ---- */
+(async () => {
+  (0, eval)(fs.readFileSync(path.join(root, 'js', 'llm-provider.js'), 'utf8'));
+  const p = new window.llmProvider.constructor();
+
+  // Local providers (Ollama, self-hosted) stay direct — the proxy refuses them.
+  global.window = { location: { origin: 'http://localhost:4173', protocol: 'http:' } };
+  p._proxyAvailable = true;
+  let called = null;
+  global.fetch = async (u) => { called = u; return { ok: true, status: 200, json: async () => ({}) }; };
+  await p._proxyFetch('http://localhost:11434/v1/chat/completions', { method: 'POST', body: '{}' });
+  assert(called === 'http://localhost:11434/v1/chat/completions', 'a local provider is called directly, never proxied');
+
+  // A CORS-blocked cloud provider is relayed through the local server.
+  await p._proxyFetch('https://integrate.api.nvidia.com/v1/chat/completions', { method: 'POST', headers: { Authorization: 'Bearer x' }, body: '{}' });
+  assert(called === '/api/llm/proxy', 'a remote provider is relayed through /api/llm/proxy when the server exposes it');
+
+  // No proxy on a static host: fall back to the direct call.
+  p._proxyAvailable = false;
+  called = null;
+  await p._proxyFetch('https://integrate.api.nvidia.com/v1/chat/completions', { method: 'POST', body: '{}' });
+  assert(called === 'https://integrate.api.nvidia.com/v1/chat/completions', 'without the proxy capability the call goes direct');
+  delete global.window;
+  delete global.fetch;
+})();

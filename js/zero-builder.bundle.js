@@ -519,6 +519,8 @@ class LLMProvider {
         this.customBaseUrl = '';
         this.customModelName = '';
         this.tokenUsage = { total: 0, today: 0 };
+        /* Cached result of probing /api/llm/proxy. null = not probed yet. */
+        this._proxyAvailable = null;
 
         /* Retired Gemini endpoints that no longer serve requests. A user who
            saved one of these would get hard API failures, so migrate on load. */
@@ -943,6 +945,63 @@ class LLMProvider {
         return url;
     }
 
+    /* Providers like NVIDIA's integrate.api.nvidia.com do not send
+       Access-Control-Allow-Origin, so a browser fetch can never reach them
+       directly ("Failed to fetch"). When Zero runs on its own local server we
+       relay the call through it; that server is the only one allowed to talk to
+       the provider. On a static host (no server) there is nothing to relay
+       through and we fall back to the direct call. */
+    async _hasProxy() {
+        if (typeof window === 'undefined') return false;
+        if (this._proxyAvailable !== null) return this._proxyAvailable;
+        try {
+            const res = await fetch('/api/health', { method: 'GET' });
+            if (!res.ok) { this._proxyAvailable = false; return false; }
+            const data = await res.json();
+            this._proxyAvailable = Array.isArray(data?.capabilities) && data.capabilities.includes('llm-proxy');
+        } catch (_) {
+            this._proxyAvailable = false;
+        }
+        return this._proxyAvailable;
+    }
+
+    async _proxyFetch(url, init) {
+        // Relay only absolute, non-local targets. Local providers (Ollama, a
+        // self-hosted box) are reachable directly and the proxy refuses them.
+        const isAbsolute = /^https?:\/\//i.test(url);
+        const isLocalTarget = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])/i.test(url);
+        if (isAbsolute && !isLocalTarget && await this._hasProxy()) {
+            const headers = {};
+            try {
+                const h = init.headers || {};
+                if (typeof h.forEach === 'function') h.forEach((v, k) => { headers[k] = v; });
+                else Object.assign(headers, h);
+            } catch (_) { /* fall through with no headers */ }
+            const payload = {
+                target: url,
+                method: init.method || 'POST',
+                headers,
+                body: typeof init.body === 'string' ? init.body : String(init.body ?? ''),
+            };
+            return fetch('/api/llm/proxy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+                signal: init.signal,
+            });
+        }
+        return fetch(url, init);
+    }
+
+    _connectionErrorMessage(url, error) {
+        const detail = error?.message || String(error);
+        const corsLike = /failed to fetch|networkerror|load failed|cors/i.test(detail);
+        if (corsLike && /^https?:/i.test(url)) {
+            return `Network Error: could not reach ${url}. Most often this is CORS — the provider does not send Access-Control-Allow-Origin, so the browser blocks the request. Run Zero locally (node server.js) and it will relay through the local server, or use a provider that allows browser calls. (${detail})`;
+        }
+        return `Network Error: Failed to connect to ${url}. (${detail})`;
+    }
+
     _parseErrorMessage(status, rawText) {
         let msg = String(rawText || '').trim();
         try {
@@ -1029,7 +1088,7 @@ class LLMProvider {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 120000);
             try {
-                response = await fetch(url, {
+                response = await this._proxyFetch(url, {
                     method: 'POST',
                     headers,
                     body: JSON.stringify(body),
@@ -1042,7 +1101,7 @@ class LLMProvider {
                 if (window.location.protocol === 'https:' && (url.includes('localhost') || url.includes('127.0.0.1'))) {
                     throw new Error(`Browser Security Blocked Local Connection: You are on HTTPS but trying to connect to local Ollama. Please open http://zero-ai.surge.sh (without the 's') or run Zero-Builder locally using 'node server.js'.`);
                 }
-                throw new Error(`Network Error: Failed to connect to ${url}. (${e.message})`);
+                throw new Error(this._connectionErrorMessage(url, e));
             } finally {
                 clearTimeout(timeoutId);
             }
@@ -1161,7 +1220,7 @@ class LLMProvider {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 120000);
             try {
-                response = await fetch(url, {
+                response = await this._proxyFetch(url, {
                     method: 'POST',
                     headers,
                     body: JSON.stringify(body),
@@ -1174,7 +1233,7 @@ class LLMProvider {
                 if (window.location.protocol === 'https:' && (url.includes('localhost') || url.includes('127.0.0.1'))) {
                     throw new Error(`Browser Security Blocked Local Connection: You are on HTTPS but trying to connect to local Ollama. Please open http://zero-ai.surge.sh (without the 's') or run Zero-Builder locally using 'node server.js'.`);
                 }
-                throw new Error(`Network Error: Failed to connect to ${url}. (${e.message})`);
+                throw new Error(this._connectionErrorMessage(url, e));
             } finally {
                 clearTimeout(timeoutId);
             }
@@ -24431,6 +24490,11 @@ Format:
                 fileSystem?.setFiles(saved.files);
                 preview?.render(saved.files);
             }
+            // The saved prompt is a draft of what the user was typing, not a
+            // build that is still running. Repopulating the input with it made
+            // the app look like it had replayed an old generation.
+            const savedPromptInput = document.getElementById('prompt-input') || document.getElementById('welcome-prompt-input');
+            if (savedPromptInput) savedPromptInput.value = '';
 
             // Restore chat history from saved workspace
             if (Array.isArray(saved.chatHistory) && saved.chatHistory.length > 0) {
@@ -24452,10 +24516,13 @@ Format:
                 }
             }
 
-            // Auto-restore workspace view on F5 page refresh
+            // Restore the workspace view only when there are real files to show.
+            // Previously any saved draft prompt (or the persisted active view)
+            // forced the workspace open with the last chat and an error message
+            // still on screen, which read as a phantom generation on load.
             const activeView = localStorage.getItem('zb_active_view');
             const hasFiles = saved && saved.files && Object.keys(saved.files).length > 0;
-            if (activeView === 'workspace' || hasFiles || (saved && saved.prompt)) {
+            if (activeView === 'workspace' && hasFiles) {
                 const welcomeScreen = document.getElementById('welcome-screen');
                 const app = document.getElementById('app');
                 if (welcomeScreen) welcomeScreen.style.display = 'none';

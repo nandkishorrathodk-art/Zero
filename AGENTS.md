@@ -69,6 +69,16 @@ Safety invariants — preserve these:
 - `js/media-generator.js` generates images through the active provider. Gemini
   uses `gemini-2.5-flash-image` (`_generateWithGemini`); without a provider path
   it silently degrades to gradient placeholders.
+- **CORS proxy**: providers that do not send `Access-Control-Allow-Origin`
+  (NVIDIA's `integrate.api.nvidia.com`, most self-hosted OpenAI-compatible
+  servers) cannot be called from the browser at all — the fetch fails with
+  "Failed to fetch". `_proxyFetch()` probes `/api/health` for the `llm-proxy`
+  capability and, when present, relays the request through `server.js`
+  (`POST /api/llm/proxy`). Local targets (Ollama, `localhost`) are called
+  directly. On a static host without the server the call falls back to direct.
+  The proxy refuses private/loopback targets (`isPrivateHost`) so it cannot be
+  used as an SSRF pivot, and streams `text/event-stream` responses through.
+
 
 ## LLM output parsing (`js/agent-framework.js`)
 

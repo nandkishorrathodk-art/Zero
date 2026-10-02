@@ -1837,6 +1837,11 @@ Format:
                 fileSystem?.setFiles(saved.files);
                 preview?.render(saved.files);
             }
+            // The saved prompt is a draft of what the user was typing, not a
+            // build that is still running. Repopulating the input with it made
+            // the app look like it had replayed an old generation.
+            const savedPromptInput = document.getElementById('prompt-input') || document.getElementById('welcome-prompt-input');
+            if (savedPromptInput) savedPromptInput.value = '';
 
             // Restore chat history from saved workspace
             if (Array.isArray(saved.chatHistory) && saved.chatHistory.length > 0) {
@@ -1858,10 +1863,13 @@ Format:
                 }
             }
 
-            // Auto-restore workspace view on F5 page refresh
+            // Restore the workspace view only when there are real files to show.
+            // Previously any saved draft prompt (or the persisted active view)
+            // forced the workspace open with the last chat and an error message
+            // still on screen, which read as a phantom generation on load.
             const activeView = localStorage.getItem('zb_active_view');
             const hasFiles = saved && saved.files && Object.keys(saved.files).length > 0;
-            if (activeView === 'workspace' || hasFiles || (saved && saved.prompt)) {
+            if (activeView === 'workspace' && hasFiles) {
                 const welcomeScreen = document.getElementById('welcome-screen');
                 const app = document.getElementById('app');
                 if (welcomeScreen) welcomeScreen.style.display = 'none';
