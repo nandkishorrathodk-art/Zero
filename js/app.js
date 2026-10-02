@@ -1815,11 +1815,15 @@ Format:
         try {
             const saved = JSON.parse(localStorage.getItem(WORKSPACE_KEY) || 'null');
             if (!saved) return;
+
+            const savedFiles = (saved.files && typeof saved.files === 'object') ? saved.files : {};
+            const hasFiles = Object.keys(savedFiles).length > 0;
+
+            // Project settings (name, chips, quality, art direction) are
+            // preferences, not a session, so they are safe to keep.
             if (saved.id) workspaceProjectId = saved.id;
             const name = document.getElementById('project-name');
             if (name && saved.name) name.value = saved.name;
-            const prompt = document.getElementById('prompt-input');
-            if (prompt && saved.prompt) prompt.value = saved.prompt;
             selectedRequirements = new Set(Array.isArray(saved.requirements) ? saved.requirements : []);
             document.querySelectorAll('.build-chip').forEach(chip => chip.classList.toggle('active', selectedRequirements.has(chip.dataset.requirement)));
             buildQuality = ['fast', 'production', 'autonomous', 'motion-studio', 'power'].includes(saved.quality) ? saved.quality : 'production';
@@ -1832,56 +1836,52 @@ Format:
                 framework.frameworkOverride = saved.framework;
                 document.querySelectorAll('.fw-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.framework === saved.framework));
             }
-            if (saved.files && Object.keys(saved.files).length) {
-                editor?.setFiles(saved.files);
-                fileSystem?.setFiles(saved.files);
-                preview?.render(saved.files);
-            }
-            // The saved prompt is a draft of what the user was typing, not a
-            // build that is still running. Repopulating the input with it made
-            // the app look like it had replayed an old generation.
-            const savedPromptInput = document.getElementById('prompt-input') || document.getElementById('welcome-prompt-input');
-            if (savedPromptInput) savedPromptInput.value = '';
 
-            // Restore chat history from saved workspace
-            if (Array.isArray(saved.chatHistory) && saved.chatHistory.length > 0) {
-                chatHistory = saved.chatHistory;
-                const chatContainer = document.getElementById('chat-messages');
-                if (chatContainer) {
-                    chatContainer.innerHTML = ''; // clear any default content
-                    for (const msg of chatHistory) {
-                        const div = document.createElement('div');
-                        div.className = `ws-chat-msg ${msg.role}`;
-                        if (msg.role === 'system' && msg.isHtml) {
-                            div.innerHTML = msg.text;
-                        } else {
-                            div.innerHTML = `<div class="ws-msg-bubble">${escapeHtml(msg.text)}</div>`;
-                        }
-                        chatContainer.appendChild(div);
-                    }
-                    chatContainer.scrollTop = chatContainer.scrollHeight;
-                }
+            // A saved session is never replayed automatically. Doing so brought
+            // back the previous site, chat and error banner on every reload, and
+            // left the editor holding old files so a new prompt took the
+            // "refine" path instead of building fresh. Keep the work restorable
+            // from Recent Projects and start on a clean slate instead.
+            if (hasFiles) {
+                archiveRestoredWorkspace(saved, savedFiles);
+                localStorage.removeItem(WORKSPACE_KEY);
+                localStorage.setItem('zb_active_view', 'welcome');
+                setSaveState('Previous session kept in Recent Projects — start a new build');
+                return;
             }
 
-            // Restore the workspace view only when there are real files to show.
-            // Previously any saved draft prompt (or the persisted active view)
-            // forced the workspace open with the last chat and an error message
-            // still on screen, which read as a phantom generation on load.
-            const activeView = localStorage.getItem('zb_active_view');
-            const hasFiles = saved && saved.files && Object.keys(saved.files).length > 0;
-            if (activeView === 'workspace' && hasFiles) {
-                const welcomeScreen = document.getElementById('welcome-screen');
-                const app = document.getElementById('app');
-                if (welcomeScreen) welcomeScreen.style.display = 'none';
-                if (app) {
-                    app.classList.remove('hidden');
-                    setTimeout(() => { if (editor) editor.refresh(); }, 100);
-                }
-            }
-            setSaveState(saved.updatedAt ? `Restored ${new Date(saved.updatedAt).toLocaleDateString()}` : 'Workspace restored');
+            // Only a stale draft prompt remains: drop it so the field is empty.
+            localStorage.removeItem(WORKSPACE_KEY);
+            setSaveState('New workspace');
         } catch (error) {
             console.warn('Workspace restore failed:', error);
             setSaveState('New workspace');
+        }
+    }
+
+    /* Preserve a session that was open at reload time as a restorable version
+       rather than silently replaying it. Skips when an identical snapshot for
+       this project already exists, so repeated reloads do not stack copies. */
+    function archiveRestoredWorkspace(saved, files) {
+        try {
+            const snapshots = getSnapshots();
+            const project = saved.name || 'Untitled project';
+            // Dedupe by actual file content, not name: two different builds can
+            // share the default "Untitled project" name.
+            const sig = JSON.stringify(files);
+            if (snapshots.some(s => JSON.stringify(s.files || {}) === sig)) return;
+            const snapshot = {
+                id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                label: 'Session restored',
+                project,
+                prompt: saved.prompt || '',
+                createdAt: saved.updatedAt || Date.now(),
+                framework: saved.framework || 'vanilla',
+                files,
+            };
+            localStorage.setItem(HISTORY_KEY, JSON.stringify([snapshot, ...snapshots].slice(0, 12)));
+        } catch (error) {
+            console.warn('Could not archive previous session:', error);
         }
     }
 

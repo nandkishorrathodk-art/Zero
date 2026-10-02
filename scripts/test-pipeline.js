@@ -332,3 +332,13 @@ const allowed = ['ls -la', 'cat package.json', 'git status', 'grep foo bar.txt',
   delete global.window;
   delete global.fetch;
 })();
+
+/* ---- Workspace restore must archive a saved session, never replay it ---- */
+{
+  const appSrc = fs.readFileSync(path.join(root, 'js', 'app.js'), 'utf8');
+  const fn = appSrc.slice(appSrc.indexOf('function loadWorkspace()'), appSrc.indexOf('function archiveRestoredWorkspace'));
+  assert(fn.length > 0 && /archiveRestoredWorkspace/.test(fn), 'a saved session is archived to Recent Projects on load');
+  assert(/removeItem\(WORKSPACE_KEY\)/.test(fn), 'the saved workspace is cleared so it cannot replay');
+  assert(!/setFiles\(saved\.files\)/.test(fn), 'loadWorkspace never loads saved files into the editor');
+  assert(!/chatHistory\s*=\s*saved\.chatHistory/.test(fn), 'loadWorkspace never restores the previous chat');
+}

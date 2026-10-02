@@ -80,6 +80,17 @@ Safety invariants — preserve these:
   used as an SSRF pivot, and streams `text/event-stream` responses through.
 
 
+## Workspace persistence (`js/app.js`)
+
+`loadWorkspace()` must never replay a saved session. Restoring files + chat on
+load resurrected the previous site and its error banner, and left the editor
+full of old files so the next prompt took the `refine()` path (which throws
+"No website generated yet" against a fresh `framework.memory`) instead of
+building fresh. The saved session is archived to Recent Projects
+(`archiveRestoredWorkspace`) and `zb_project_workspace_v1` is dropped, so the
+app starts on a clean welcome screen. Project *settings* (name, chips, quality,
+art direction) are preferences and are still restored.
+
 ## LLM output parsing (`js/agent-framework.js`)
 
 Two invariants that are easy to regress:
