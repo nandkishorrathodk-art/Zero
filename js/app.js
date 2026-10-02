@@ -151,9 +151,11 @@
                 const app = document.getElementById('app');
                 const activeView = localStorage.getItem('zb_active_view');
                 const saved = JSON.parse(localStorage.getItem(WORKSPACE_KEY) || 'null');
-                const hasSavedData = saved && (saved.prompt || (saved.files && Object.keys(saved.files).length > 0));
+                // A draft prompt is not a session; only real files justify the
+                // workspace view. Otherwise a reload re-opened the old build.
+                const hasSavedData = saved && saved.files && Object.keys(saved.files).length > 0;
 
-                if (activeView === 'workspace' || hasSavedData) {
+                if (activeView === 'workspace' && hasSavedData) {
                     if (welcomeScreen) {
                         welcomeScreen.style.display = 'none';
                         welcomeScreen.classList.add('hidden');
@@ -1852,6 +1854,7 @@ Format:
 
             // Only a stale draft prompt remains: drop it so the field is empty.
             localStorage.removeItem(WORKSPACE_KEY);
+            localStorage.setItem('zb_active_view', 'welcome');
             setSaveState('New workspace');
         } catch (error) {
             console.warn('Workspace restore failed:', error);
@@ -1878,6 +1881,7 @@ Format:
                 createdAt: saved.updatedAt || Date.now(),
                 framework: saved.framework || 'vanilla',
                 files,
+                chat: Array.isArray(saved.chatHistory) ? saved.chatHistory.slice(-100) : [],
             };
             localStorage.setItem(HISTORY_KEY, JSON.stringify([snapshot, ...snapshots].slice(0, 12)));
         } catch (error) {
@@ -1926,6 +1930,23 @@ Format:
         try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch { return []; }
     }
 
+    /* Render a stored conversation into the chat panel and make it the active
+       history, so reopening a project shows what was actually asked. */
+    function renderChatHistory(messages) {
+        const container = document.getElementById('chat-messages');
+        chatHistory = Array.isArray(messages) ? messages.slice(-200) : [];
+        if (!container) return;
+        container.innerHTML = '';
+        for (const msg of chatHistory) {
+            const div = document.createElement('div');
+            div.className = `ws-chat-msg ${msg.role}`;
+            if (msg.role === 'system' && msg.isHtml) div.innerHTML = msg.text;
+            else div.innerHTML = `<div class="ws-msg-bubble">${escapeHtml(msg.text)}</div>`;
+            container.appendChild(div);
+        }
+        container.scrollTop = container.scrollHeight;
+    }
+
     function createSnapshot(label) {
         const files = editor?.getAllFiles() || {};
         if (!Object.keys(files).length) {
@@ -1939,6 +1960,7 @@ Format:
             createdAt: Date.now(),
             framework: framework?.frameworkOverride || 'vanilla',
             files,
+            chat: chatHistory.slice(-100),
         };
         try {
             if (framework?.versionControl) {
@@ -1959,10 +1981,10 @@ Format:
         }
     }
 
-    function restoreSnapshot(id) {
+    function restoreSnapshot(id, { confirmFirst = true } = {}) {
         const snapshot = getSnapshots().find(item => item.id === id);
-        if (!snapshot || !snapshot.files) return;
-        if (!confirm(`Restore “${snapshot.label}”? Your current workspace will be kept as a local draft.`)) return;
+        if (!snapshot || !snapshot.files) return false;
+        if (confirmFirst && !confirm(`Restore “${snapshot.label}”? Your current workspace will be kept as a local draft.`)) return false;
         editor?.setFiles(snapshot.files);
         fileSystem?.setFiles(snapshot.files);
         preview?.render(snapshot.files);
@@ -1971,12 +1993,16 @@ Format:
             framework.memory.generatedFiles = { ...snapshot.files };
             framework.frameworkOverride = snapshot.framework || 'vanilla';
         }
+        if (Array.isArray(snapshot.chat) && snapshot.chat.length) {
+            renderChatHistory(snapshot.chat);
+        }
         const name = document.getElementById('project-name');
         if (name && snapshot.project) name.value = snapshot.project;
         document.querySelectorAll('.fw-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.framework === (framework?.frameworkOverride || 'vanilla')));
         persistWorkspace();
         toggleModal('history-modal', false);
         showToast('success', 'Version restored');
+        return true;
     }
 
     function renderHistory() {
@@ -1996,7 +2022,7 @@ Format:
         list.innerHTML = snapshots.length ? snapshots.map(snapshot => `
             <div class="version-row">
                 <i data-lucide="git-commit-horizontal"></i>
-                <div class="version-main"><span class="version-title">${escapeHtml(snapshot.label)} · ${escapeHtml(snapshot.project || 'Untitled project')}</span><span class="version-meta">${new Date(snapshot.createdAt).toLocaleString()} · ${Object.keys(snapshot.files || {}).length} files · ${escapeHtml(snapshot.framework || 'vanilla')}</span></div>
+                <div class="version-main"><span class="version-title">${escapeHtml(snapshot.label)} · ${escapeHtml(snapshot.project || 'Untitled project')}</span><span class="version-meta">${new Date(snapshot.createdAt).toLocaleString()} · ${Object.keys(snapshot.files || {}).length} files · ${escapeHtml(snapshot.framework || 'vanilla')}${Array.isArray(snapshot.chat) && snapshot.chat.length ? ` · ${snapshot.chat.length} chat` : ''}</span></div>
                 <button class="btn btn-secondary" data-restore-version="${snapshot.id}"><i data-lucide="rotate-ccw"></i> Restore</button>
             </div>`).join('') : '<div class="history-empty">No versions yet. Save a snapshot before a risky change, or build a site to create one automatically.</div>';
         list.querySelectorAll('[data-restore-version]').forEach(btn => btn.addEventListener('click', () => restoreSnapshot(btn.dataset.restoreVersion)));
@@ -2013,18 +2039,25 @@ Format:
             return;
         }
         recent.style.display = 'flex';
-        grid.innerHTML = snapshots.map(snapshot => `
-            <div class="welcome-recent-card" data-restore-version="${snapshot.id}">
+        grid.innerHTML = snapshots.map(snapshot => {
+            const turns = Array.isArray(snapshot.chat) ? snapshot.chat.length : 0;
+            const preview = (snapshot.prompt || '').trim();
+            return `
+            <div class="welcome-recent-card" data-restore-version="${snapshot.id}" title="Reopen this session">
                 <div class="recent-icon"><i data-lucide="box"></i></div>
                 <div class="recent-info">
                     <div class="recent-title">${escapeHtml(snapshot.project || 'Untitled Project')}</div>
-                    <div class="recent-time">${new Date(snapshot.createdAt).toLocaleDateString()}</div>
+                    <div class="recent-time">${escapeHtml(preview.slice(0, 70) || 'No prompt saved')}</div>
+                    <div class="recent-time">${new Date(snapshot.createdAt).toLocaleString()}${turns ? ` · ${turns} chat message${turns === 1 ? '' : 's'}` : ''}</div>
                 </div>
-            </div>`).join('');
+            </div>`;
+        }).join('');
         grid.querySelectorAll('.welcome-recent-card').forEach(card => {
             card.addEventListener('click', () => {
-                restoreSnapshot(card.dataset.restoreVersion);
-                // Switch to workspace view
+                // Reopening a recent project is an explicit action, so it must not
+                // be blocked by a confirm dialog (which also cannot be shown in
+                // every environment).
+                if (!restoreSnapshot(card.dataset.restoreVersion, { confirmFirst: false })) return;
                 const welcomeScreen = document.getElementById('welcome-screen');
                 const app = document.getElementById('app');
                 if (welcomeScreen) welcomeScreen.style.display = 'none';

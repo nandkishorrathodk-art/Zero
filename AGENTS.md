@@ -80,7 +80,7 @@ Safety invariants — preserve these:
   used as an SSRF pivot, and streams `text/event-stream` responses through.
 
 
-## Workspace persistence (`js/app.js`)
+## Workspace persistence and session history (`js/app.js`)
 
 `loadWorkspace()` must never replay a saved session. Restoring files + chat on
 load resurrected the previous site and its error banner, and left the editor
@@ -90,6 +90,22 @@ building fresh. The saved session is archived to Recent Projects
 (`archiveRestoredWorkspace`) and `zb_project_workspace_v1` is dropped, so the
 app starts on a clean welcome screen. Project *settings* (name, chips, quality,
 art direction) are preferences and are still restored.
+
+A draft prompt alone must never count as saved data either: `initApp`'s
+`hasSavedData` check and the workspace-view gate only fire when real files
+exist, or a reload re-opened the workspace with no build behind it.
+
+History is meant to be *visible*, so it must not be thrown away:
+
+- Snapshots (`zb_project_versions_v1`) carry a `chat` transcript
+  (`createSnapshot` stores `chatHistory`; `archiveRestoredWorkspace` stores the
+  saved session's `chatHistory`). Recent Projects shows the prompt and the
+  message count.
+- `restoreSnapshot(id, { confirmFirst })` returns whether it restored. The
+  Recent Projects card calls it with `confirmFirst: false` — an explicit click
+  needs no blocking dialog, and a cancelled confirm must not still switch views.
+- `renderChatHistory(messages)` is the single place that repaints the chat
+  panel from stored messages and sets the active `chatHistory`.
 
 ## LLM output parsing (`js/agent-framework.js`)
 

@@ -341,4 +341,14 @@ const allowed = ['ls -la', 'cat package.json', 'git status', 'grep foo bar.txt',
   assert(/removeItem\(WORKSPACE_KEY\)/.test(fn), 'the saved workspace is cleared so it cannot replay');
   assert(!/setFiles\(saved\.files\)/.test(fn), 'loadWorkspace never loads saved files into the editor');
   assert(!/chatHistory\s*=\s*saved\.chatHistory/.test(fn), 'loadWorkspace never restores the previous chat');
+
+  // A draft prompt alone must not reopen the workspace view.
+  assert(/const hasSavedData = saved && saved\.files/.test(appSrc), 'a draft prompt no longer counts as saved data');
+  assert(/activeView === 'workspace' && hasSavedData/.test(appSrc), 'workspace view requires real files');
+
+  // Session history must be visible and restorable.
+  assert(/function renderChatHistory\(messages\)/.test(appSrc), 'a shared chat-history renderer exists');
+  assert(/chat: chatHistory\.slice\(-100\)/.test(appSrc), 'build snapshots keep their chat transcript');
+  assert(/renderChatHistory\(snapshot\.chat\)/.test(appSrc), 'restoring a version replays its chat');
+  assert(/chat message/.test(appSrc), 'recent projects surface how much chat there was');
 }
