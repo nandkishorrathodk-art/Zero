@@ -721,6 +721,16 @@ class LLMProvider {
                     signal: controller.signal,
                 });
             } catch (e) {
+                if (this.currentProvider === 'custom') {
+                    const geminiKey = this.getApiKey('gemini');
+                    if (geminiKey) {
+                        console.warn(`[LLMProvider] Custom endpoint failed (${e.message}). Auto-failing over to Google Gemini 3.8 Flash...`);
+                        this.currentProvider = 'gemini';
+                        this.currentModel = 'gemini-3.8-flash';
+                        this.saveSettings();
+                        return this._chatGemini(messages, 'gemini-3.8-flash', geminiKey, options);
+                    }
+                }
                 if (e.name === 'AbortError') {
                     throw new Error(`Network Timeout (120s): Request to ${url} timed out. Please check your network connection or try again.`);
                 }
@@ -853,6 +863,16 @@ class LLMProvider {
                     signal: controller.signal,
                 });
             } catch (e) {
+                if (this.currentProvider === 'custom') {
+                    const geminiKey = this.getApiKey('gemini');
+                    if (geminiKey) {
+                        console.warn(`[LLMProvider] Custom endpoint stream failed (${e.message}). Auto-failing over to Google Gemini 3.8 Flash...`);
+                        this.currentProvider = 'gemini';
+                        this.currentModel = 'gemini-3.8-flash';
+                        this.saveSettings();
+                        return this._streamGemini(messages, 'gemini-3.8-flash', geminiKey, options, onChunk);
+                    }
+                }
                 if (e.name === 'AbortError') {
                     throw new Error(`Network Timeout (120s): Request to ${url} timed out. Please check your network connection or try again.`);
                 }

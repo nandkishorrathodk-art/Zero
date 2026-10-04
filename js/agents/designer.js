@@ -974,17 +974,24 @@ ${critique}
 
 Output the completely revised design system. Include ALL design philosophy utilities, motion CSS, animation CSS, and component styles. Maintain the ${philosophyName} visual identity throughout.`;
 
-    const response = await this.callLLM(message, this.systemPrompt, {
-      temperature: 0.6,
-      maxTokens: 32768,
-    });
+    try {
+      const response = await this.callLLM(message, this.systemPrompt, {
+        temperature: 0.6,
+        maxTokens: 32768,
+      });
 
-    const css = this.extractCode(response, 'css');
-
-    return {
-      ...designSystem,
-      css: css,
-    };
+      const css = this.extractCode(response, 'css');
+      if (css && css.trim().length > 100) {
+        return {
+          ...designSystem,
+          css: css,
+        };
+      }
+      return designSystem;
+    } catch (err) {
+      this.log('warning', `Design revision call failed: ${err.message}. Retaining original design system.`);
+      return designSystem;
+    }
   }
 
   /* ════════════════════════════════════════════════════════════

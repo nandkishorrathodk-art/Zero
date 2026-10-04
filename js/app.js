@@ -526,6 +526,9 @@
                 showToast('info', 'Project versions cleared');
             }
         });
+        document.getElementById('btn-reset-factory')?.addEventListener('click', () => {
+            window.resetZeroData?.();
+        });
         // Back to Home logo button
         document.getElementById('ws-back-home')?.addEventListener('click', () => {
             clearTimeout(workspaceSaveTimer);
@@ -866,6 +869,16 @@ Format:
         if (messagesContainer) messagesContainer.innerHTML = '';
         workspaceProjectId = createProjectId();
 
+        const isGreeting = /^(hi|hello|hey|hola|namaste|greetings|what can you do|who are you|help)(\s|\!|\.|\?)*$/i.test(prompt);
+        if (isGreeting || prompt.length < 3) {
+            const reply = "Hello! 👋 I'm Zero AI. What kind of website would you like to build today? Tell me your idea (e.g. 'A luxury watch brand website with 3D product showcase' or 'A dark cinematic SaaS landing page') and I'll architect and build it!";
+            addChatMessage('user', prompt);
+            addChatMessage('ai', reply);
+            scheduleWorkspaceSave();
+            document.getElementById('chat-input')?.focus();
+            return;
+        }
+
         // Put the prompt in the chat history
         addChatMessage('user', prompt);
         addChatMessage('ai', 'Thinking...');
@@ -1036,8 +1049,16 @@ Format:
 
             const msg = e?.message || String(e);
 
+            let errorHtml = `❌ Error: ${escapeHtml(msg)}`;
+            if (/cors|network error|failed to fetch|integrate\.api\.nvidia|blocked the request/i.test(msg)) {
+                errorHtml += `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+                    <button class="btn btn-sm btn-primary" onclick="window.switchProviderToGemini()">Switch to Google Gemini (Browser-Compatible)</button>
+                    <button class="btn btn-sm btn-secondary" onclick="window.resetZeroData()">Reset All Stored Data</button>
+                </div>`;
+            }
+
             // Add error message instead of replacing
-            addChatMessage('system', `❌ Error: ${escapeHtml(msg)}`, true);
+            addChatMessage('system', errorHtml, true);
 
             // Surface engineer-grade failure guidance (no silent fail, no weak shell)
             if (/too thin|no weak|failed permanently|could not finish|extract ANY code|is not a function/i.test(msg)) {
@@ -1165,8 +1186,16 @@ Format:
             if (e?.message === 'ABORTED' || framework?.isCancelled) {
                 return;
             }
-            addChatMessage('system', `❌ Error: ${escapeHtml(e?.message || String(e))}`, true);
-            showToast('error', `Chat failed: ${e?.message || String(e)}`);
+            const chatErrMsg = e?.message || String(e);
+            let chatErrHtml = `❌ Error: ${escapeHtml(chatErrMsg)}`;
+            if (/cors|network error|failed to fetch|integrate\.api\.nvidia|blocked the request/i.test(chatErrMsg)) {
+                chatErrHtml += `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+                    <button class="btn btn-sm btn-primary" onclick="window.switchProviderToGemini()">Switch to Google Gemini (Browser-Compatible)</button>
+                    <button class="btn btn-sm btn-secondary" onclick="window.resetZeroData()">Reset All Stored Data</button>
+                </div>`;
+            }
+            addChatMessage('system', chatErrHtml, true);
+            showToast('error', `Chat failed: ${chatErrMsg.slice(0, 160)}`);
         } finally {
             isGenerating = false;
             updateGenerateButton(false);
@@ -2499,5 +2528,55 @@ Format:
             });
         }
     }
+
+    // Expose helpers globally for error recovery and resetting stale states
+    window.switchProviderToGemini = function() {
+        if (window.llmProvider) {
+            window.llmProvider.currentProvider = 'gemini';
+            window.llmProvider.currentModel = 'gemini-3.8-flash';
+            window.llmProvider.customBaseUrl = '';
+            window.llmProvider.customModelName = '';
+            window.llmProvider.saveSettings();
+            localStorage.setItem('zb_current_provider', 'gemini');
+            localStorage.setItem('zb_current_model', 'gemini-3.8-flash');
+            const customFields = document.getElementById('custom-provider-fields');
+            if (customFields) customFields.style.display = 'none';
+            const settingsProvider = document.getElementById('settings-provider');
+            if (settingsProvider) settingsProvider.value = 'gemini';
+            updateModelDropdown('gemini');
+            updateProviderUI();
+            showToast('success', 'Switched to Google Gemini (gemini-3.8-flash)!');
+            addChatMessage('system', '✅ AI provider switched to <strong>Google Gemini (gemini-3.8-flash)</strong>. You can now build without CORS blocks.', true);
+        }
+    };
+
+    window.resetZeroData = function() {
+        if (confirm('Reset Zero to clean factory state? This will purge all cached sessions, old custom endpoints, and start on a fresh slate.')) {
+            const keysToRemove = [
+                WORKSPACE_KEY,
+                HISTORY_KEY,
+                'zb_active_view',
+                'zb_llm_settings',
+                'zb_current_provider',
+                'zb_current_model',
+                'zero_builder_conversation_memory_v1',
+                'zb_runtime_errors',
+                'zb_custom_url',
+                'zb_custom_model',
+                'zb_key_custom'
+            ];
+            keysToRemove.forEach((k) => {
+                try { localStorage.removeItem(k); } catch (_) {}
+            });
+            if (window.llmProvider) {
+                window.llmProvider.currentProvider = 'gemini';
+                window.llmProvider.currentModel = 'gemini-3.8-flash';
+                window.llmProvider.customBaseUrl = '';
+                window.llmProvider.customModelName = '';
+                window.llmProvider.saveSettings();
+            }
+            window.location.reload();
+        }
+    };
 
 })();
