@@ -105,6 +105,10 @@ class CodeEditor {
         // Open the first file
         const firstFile = Object.keys(this.files)[0];
         if (firstFile) this.openFile(firstFile);
+        else {
+            this.activeFile = null;
+            this.editor.setValue('');
+        }
     }
 
     openFile(filename) {

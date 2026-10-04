@@ -53,6 +53,31 @@ class EngineExecutor {
     return target;
   }
 
+  async resolveWorkspaceFile(name, relativePath) {
+    const target = this.resolveWorkspace(name);
+    const realBase = await fs.realpath(this.workspacesDir);
+    const realTarget = await fs.realpath(target);
+    if (realTarget !== realBase && !realTarget.startsWith(realBase + path.sep)) {
+      throw new Error('Workspace path escapes the workspace root');
+    }
+    const filePath = path.resolve(realTarget, String(relativePath || ''));
+    if (!filePath.startsWith(realTarget + path.sep)) throw new Error('Unsafe file path');
+
+    let currentPath = realTarget;
+    for (const segment of path.relative(realTarget, filePath).split(path.sep)) {
+      if (!segment) continue;
+      currentPath = path.join(currentPath, segment);
+      try {
+        const stat = await fs.lstat(currentPath);
+        if (stat.isSymbolicLink()) throw new Error('Symlink paths are not allowed');
+      } catch (error) {
+        if (error.code === 'ENOENT') break;
+        throw error;
+      }
+    }
+    return { target: realTarget, filePath };
+  }
+
   /* ---------- scaffold ---------- */
   async scaffold(name, files) {
     if (!files || typeof files !== 'object') throw new Error('A files map is required');
@@ -85,9 +110,7 @@ class EngineExecutor {
   }
 
   async readFile(name, relativePath) {
-    const target = this.resolveWorkspace(name);
-    const filePath = path.resolve(target, String(relativePath || ''));
-    if (!filePath.startsWith(target + path.sep)) throw new Error('Unsafe file path');
+    const { filePath } = await this.resolveWorkspaceFile(name, relativePath);
     const content = await fs.readFile(filePath, 'utf8');
     return { path: relativePath, content: content.slice(0, 200_000), truncated: content.length > 200_000 };
   }
@@ -96,8 +119,7 @@ class EngineExecutor {
     const target = this.resolveWorkspace(name);
     if (!relativePath || relativePath.includes('..') || path.isAbsolute(relativePath)) throw new Error('Unsafe file path');
     if (/^\.env(?:$|\.)/i.test(relativePath)) throw new Error('Refusing to write secret files');
-    const filePath = path.resolve(target, relativePath);
-    if (!filePath.startsWith(target + path.sep)) throw new Error('Unsafe file path');
+    const { filePath } = await this.resolveWorkspaceFile(name, relativePath);
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, String(content ?? ''), 'utf8');
     return { path: relativePath, bytes: Buffer.byteLength(String(content ?? '')) };

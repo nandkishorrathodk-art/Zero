@@ -269,6 +269,8 @@ const allowed = ['ls -la', 'cat package.json', 'git status', 'grep foo bar.txt',
   const tokens = ':root{--step-0:1rem}';
   assert(ui._ensureDesignTokens(tokens, '.x{color:red}').startsWith(tokens), 'tokens are prepended when the model omitted them');
   assert(ui._ensureDesignTokens(tokens, ':root{--step-0:2rem}') === ':root{--step-0:2rem}', 'model-authored tokens are left untouched');
+  const fullTokens = ':root{--step-0:1rem;--space-3xl:4rem}';
+  assert(ui._ensureDesignTokens(fullTokens, ':root{--step-0:2rem}').startsWith(fullTokens), 'partial model tokens cannot suppress missing design tokens');
   assert(/DESIGN SYSTEM DISCIPLINE/.test(ui.systemPrompt), 'coder-ui prompt carries the design discipline rules');
   assert(/Break the centre/.test(ui.systemPrompt), 'coder-ui prompt forbids the centred-template look');
 
@@ -303,6 +305,12 @@ const allowed = ['ls -la', 'cat package.json', 'git status', 'grep foo bar.txt',
     'base font roles are not duplicated when already present');
   assert(ui._appendIfAbsent('.x{}', '.feature-grid{display:grid}').includes('.feature-grid{display:grid}'), 'missing component CSS is appended');
   assert(ui._appendIfAbsent('.feature-grid{display:grid}', '.feature-grid{display:grid}') === '.feature-grid{display:grid}', 'present component CSS is not duplicated');
+  const longBlock = `.long{${'color:red;'.repeat(20)}}`;
+  assert(ui._appendIfAbsent(longBlock.slice(0, 120), longBlock).endsWith(longBlock), 'truncated deterministic CSS is restored in full');
+  let navScriptValid = true;
+  try { new Function(ui._injectGSAPBoilerplate() + '\n' + ui.componentTemplates['liquid-glass-nav'].js); }
+  catch { navScriptValid = false; }
+  assert(navScriptValid, 'liquid-glass navigation assembles without duplicate top-level declarations');
   const partial = ui._appendAllIfAbsent('.a{present}', ['.a{present}', '.b{missing}']);
   assert(partial.includes('.b{missing}') && partial.match(/\.a\{present\}/g).length === 1, 'partial compliance fills only the dropped blocks');
 }
@@ -348,7 +356,26 @@ const allowed = ['ls -la', 'cat package.json', 'git status', 'grep foo bar.txt',
 
   // Session history must be visible and restorable.
   assert(/function renderChatHistory\(messages\)/.test(appSrc), 'a shared chat-history renderer exists');
-  assert(/chat: chatHistory\.slice\(-100\)/.test(appSrc), 'build snapshots keep their chat transcript');
+  assert(/const snapshotChat = chatHistory\.slice\(-100\)/.test(appSrc) && /chat: snapshotChat/.test(appSrc), 'build snapshots keep their chat transcript');
   assert(/renderChatHistory\(snapshot\.chat\)/.test(appSrc), 'restoring a version replays its chat');
+  assert(/workspaceProjectId = createProjectId\(\);/.test(fn), 'archiving a previous session assigns a fresh active project id');
+  assert(/renderChatHistory\(snapshot\.chat\);/.test(appSrc), 'restoring a version clears chat when its transcript is empty');
+  assert(/findIndex\(s => s\.projectId === saved\.id\)/.test(appSrc), 'session archives deduplicate by project identity, not file contents');
+  assert(/_createEmptyMemory\(\)/.test(appSrc) && /memory\.userPrompt = snapshot\.prompt/.test(appSrc), 'restoring a version discards stale project-generation context');
+  assert(/setItem\('zb_active_view', 'welcome'\);\s*document\.getElementById\('app'\)\?\.classList\.add\('hidden'\)/.test(appSrc), 'Back to Home hides the workspace before showing the welcome screen');
   assert(/chat message/.test(appSrc), 'recent projects surface how much chat there was');
+  assert(/const hasChatHistory = Array\.isArray\(saved\.chatHistory\)/.test(appSrc) && /if \(hasFiles \|\| hasChatHistory\)/.test(fn), 'chat-only sessions are archived on reload');
+  assert(/welcome-history-btn/.test(appSrc) && /welcome-history-btn/.test(fs.readFileSync(path.join(root, 'index.html'), 'utf8')), 'Home exposes a dedicated History control');
+  assert(/getElementById\('app'\)\?\.classList\.remove\('hidden'\)/.test(appSrc.slice(appSrc.indexOf('function renderHistory()'), appSrc.indexOf('function renderRecentProjects()'))), 'restoring from History opens the workspace');
+  assert(/if \(!Object\.keys\(files\)\.length && !snapshotChat\.length\)/.test(appSrc), 'manual history saves support chat-only sessions');
+  const editorSrc = fs.readFileSync(path.join(root, 'js', 'editor.js'), 'utf8');
+  assert(/else \{\s*this\.activeFile = null;\s*this\.editor\.setValue\(''\);\s*\}/.test(editorSrc), 'restoring an empty project clears stale editor content');
+  assert(/\.modal-overlay\s*\{[^}]*z-index:\s*10001/s.test(fs.readFileSync(path.join(root, 'styles.css'), 'utf8')), 'History modal appears above the welcome screen');
+  const homeHandler = appSrc.slice(appSrc.indexOf('// Back to Home logo button'), appSrc.indexOf("document.getElementById('project-name')?.addEventListener"));
+  assert(/clearTimeout\(workspaceSaveTimer\)/.test(homeHandler) && /persistWorkspace\(\)/.test(homeHandler) && /archiveRestoredWorkspace\(saved, files\)/.test(homeHandler), 'returning Home flushes and archives the active chat/project');
+  assert(/if \(app\) app\.classList\.add\('hidden'\)/.test(appSrc.slice(appSrc.indexOf('const hasSavedData'), appSrc.indexOf('if (loadingScreen)'))), 'welcome startup hides the workspace behind Home');
+  assert(/Chat &amp; project history/.test(fs.readFileSync(path.join(root, 'index.html'), 'utf8')), 'history modal is labeled for chats and projects');
+  assert(/snapshot\.chat\?\.find\(message => message\.role === 'user'\)\?\.text/.test(appSrc), 'history identifies each session by its first user message');
+  assert(/class="version-preview"/.test(appSrc), 'history displays a readable chat preview');
+  assert(/metric-label">Saved sessions/.test(appSrc), 'history count clearly means saved sessions');
 }

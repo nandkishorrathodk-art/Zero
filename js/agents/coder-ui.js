@@ -44,11 +44,7 @@ document.addEventListener('DOMContentLoaded',initBlurText);`
   </div>
 </nav>`,
                 css: `.navbar{position:fixed;top:0;left:0;right:0;z-index:1000;padding:1rem 0}.navbar.scrolled{background:rgba(0,0,0,0.8);backdrop-filter:blur(20px)}.nav-container{max-width:1400px;margin:0 auto;padding:0 2rem;display:flex;align-items:center;justify-content:space-between}.nav-logo{font-family:var(--font-heading);font-style:italic;font-size:1.5rem;color:white;text-decoration:none}.nav-links{display:flex;align-items:center;gap:0.5rem;padding:0.4rem;border-radius:100px}.nav-link{color:rgba(255,255,255,0.7);text-decoration:none;font-size:0.85rem;font-weight:500;padding:0.5rem 1.2rem;border-radius:100px;transition:all 0.3s ease}.nav-link:hover,.nav-link.active{color:white;background:rgba(255,255,255,0.1)}.hamburger{display:none;flex-direction:column;gap:5px;background:none;border:none;cursor:pointer;padding:8px}.hamburger span{width:24px;height:2px;background:white;transition:all 0.3s ease}.hamburger.active span:nth-child(1){transform:rotate(45deg) translate(5px,5px)}.hamburger.active span:nth-child(2){opacity:0}.hamburger.active span:nth-child(3){transform:rotate(-45deg) translate(5px,-5px)}@media(max-width:768px){.nav-links{position:fixed;top:0;left:0;right:0;bottom:0;flex-direction:column;justify-content:center;background:rgba(0,0,0,0.95);opacity:0;visibility:hidden;transition:all 0.4s ease}.nav-links.active{opacity:1;visibility:visible}.hamburger{display:flex}}`,
-                js: `// Navbar scroll behavior
-const navbar=document.getElementById('navbar');let lastScroll=0;window.addEventListener('scroll',()=>{const currentScroll=window.scrollY;navbar?.classList.toggle('scrolled',currentScroll>50);lastScroll=currentScroll},{passive:true});
-// Mobile hamburger
-const hamburger=document.getElementById('hamburger');const navLinks=document.getElementById('nav-links');hamburger?.addEventListener('click',()=>{hamburger.classList.toggle('active');navLinks?.classList.toggle('active');document.body.classList.toggle('menu-open')});
-navLinks?.querySelectorAll('a').forEach(link=>{link.addEventListener('click',()=>{hamburger?.classList.remove('active');navLinks?.classList.remove('active');document.body.classList.remove('menu-open')})});`
+                js: ''
             },
             'stats-cards': {
                 html: `<div class="stats-grid" data-animate="stagger">
@@ -1354,13 +1350,15 @@ if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
         return designSystem.css + '\n\nbody { font-family: var(--font-body); background: var(--color-bg); color: var(--color-text); }';
     }
 
-    /* Guarantee the computed tokens are present. If the model already emitted
-       --step-0 (i.e. it followed the brief) we leave its CSS alone; otherwise
-       the tokens are prepended so nothing can reference an undefined var. */
+    /* Guarantee the full computed token set is present, even if the model
+       emitted only part of it. Existing declarations later in the stylesheet
+       can still override the defaults. */
     _ensureDesignTokens(tokens, css) {
         if (!tokens) return css;
-        if (/--step-0\s*:/.test(css)) return css;
-        return `${tokens}\n\n${css}`;
+      const source = String(css || '');
+      const tokenNames = [...String(tokens).matchAll(/(--[\w-]+)\s*:/g)].map(match => match[1]);
+      if (tokenNames.every(name => new RegExp(`${name}\\s*:`).test(source))) return source;
+      return `${tokens}\n\n${source}`;
     }
 
     /* Guarantee base font roles exist. Without them a var(--font-heading) in the
@@ -1392,8 +1390,8 @@ if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
        output is not duplicated when it followed the brief. */
     _appendIfAbsent(source, block) {
         if (!block) return source;
-        const probe = String(block).trim().slice(0, 120);
-        if (probe && String(source).includes(probe)) return source;
+      const completeBlock = String(block).trim();
+      if (completeBlock && String(source).includes(completeBlock)) return source;
         return `${source}\n\n${block}`;
     }
 

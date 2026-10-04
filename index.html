@@ -144,6 +144,9 @@
 
             <!-- Settings link -->
             <div class="welcome-footer">
+                <button class="welcome-footer-btn" id="welcome-history-btn">
+                    <i data-lucide="clock-3" style="width:14px;height:14px"></i> History
+                </button>
                 <button class="welcome-footer-btn" id="welcome-settings-btn">
                     <i data-lucide="settings" style="width:14px;height:14px"></i> Settings
                 </button>
@@ -617,11 +620,11 @@
         </div>
     </div>
 
-    <!-- ==================== PROJECT VERSIONS MODAL ==================== -->
+    <!-- ==================== CHAT AND PROJECT HISTORY MODAL ==================== -->
     <div class="modal-overlay" id="history-modal" style="display:none">
         <div class="modal modal-lg">
             <div class="modal-header">
-                <h2><i data-lucide="git-branch" class="modal-icon"></i> Project versions</h2>
+                <h2><i data-lucide="clock-3" class="modal-icon"></i> Chat &amp; project history</h2>
                 <button class="modal-close" id="history-close"><i data-lucide="x"></i></button>
             </div>
             <div class="modal-body history-body">
@@ -630,9 +633,9 @@
             </div>
             <div class="modal-footer history-footer">
                 <button class="btn btn-secondary" id="btn-clear-history"><i data-lucide="trash-2"></i> Clear
-                    versions</button>
+                    history</button>
                 <button class="btn btn-primary" id="btn-save-snapshot"><i data-lucide="bookmark-plus"></i> Save
-                    snapshot</button>
+                    chat/version</button>
             </div>
         </div>
     </div>

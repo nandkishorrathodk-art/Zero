@@ -604,6 +604,7 @@ html, body {
 .version-main { flex: 1; min-width: 0; }
 .version-title { display: block; overflow: hidden; color: var(--text-secondary); font-size: .8rem; text-overflow: ellipsis; white-space: nowrap; }
 .version-meta { display: block; margin-top: 3px; color: var(--text-muted); font: .68rem var(--font-code); }
+.version-preview { display: block; margin-top: 6px; color: var(--text-secondary); font-size: .78rem; overflow-wrap: anywhere; }
 .version-row .btn { padding: 7px 11px; font-size: .72rem; }
 .history-footer { justify-content: space-between; }
 
@@ -1144,7 +1145,7 @@ html, body {
 .modal-overlay {
     position: fixed;
     inset: 0;
-    z-index: 1000;
+    z-index: 10001;
     display: flex;
     align-items: center;
     justify-content: center;

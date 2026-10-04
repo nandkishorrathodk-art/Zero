@@ -166,9 +166,9 @@
                         welcomeScreen.style.display = 'flex';
                         welcomeScreen.classList.remove('hidden');
                     }
+                    if (app) app.classList.add('hidden');
                 }
 
-                if (app) app.classList.remove('hidden');
                 if (loadingScreen) {
                     loadingScreen.classList.add('fade-out');
                     setTimeout(() => loadingScreen.remove(), 600);
@@ -266,6 +266,10 @@
         const welcomeSendBtn = document.getElementById('welcome-send-btn');
 
         welcomeSendBtn?.addEventListener('click', () => handleWelcomeGenerate());
+        document.getElementById('welcome-history-btn')?.addEventListener('click', () => {
+            renderHistory();
+            toggleModal('history-modal', true);
+        });
         document.getElementById('welcome-enhance-btn')?.addEventListener('click', () => handleEnhancePrompt());
         welcomePromptInput?.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -495,7 +499,20 @@
         });
         // Back to Home logo button
         document.getElementById('ws-back-home')?.addEventListener('click', () => {
+            clearTimeout(workspaceSaveTimer);
+            persistWorkspace();
+            try {
+                const saved = JSON.parse(localStorage.getItem(WORKSPACE_KEY) || 'null');
+                const files = saved?.files && typeof saved.files === 'object' ? saved.files : {};
+                if (saved && (Object.keys(files).length || (saved.chatHistory || []).length)) {
+                    archiveRestoredWorkspace(saved, files);
+                }
+            } catch (error) {
+                console.warn('Could not archive current session:', error);
+            }
+            workspaceProjectId = createProjectId();
             localStorage.setItem('zb_active_view', 'welcome');
+            document.getElementById('app')?.classList.add('hidden');
             const welcomeScreen = document.getElementById('welcome-screen');
             if (welcomeScreen) {
                 welcomeScreen.style.display = 'flex';
@@ -1820,6 +1837,7 @@ Format:
 
             const savedFiles = (saved.files && typeof saved.files === 'object') ? saved.files : {};
             const hasFiles = Object.keys(savedFiles).length > 0;
+            const hasChatHistory = Array.isArray(saved.chatHistory) && saved.chatHistory.length > 0;
 
             // Project settings (name, chips, quality, art direction) are
             // preferences, not a session, so they are safe to keep.
@@ -1844,8 +1862,9 @@ Format:
             // left the editor holding old files so a new prompt took the
             // "refine" path instead of building fresh. Keep the work restorable
             // from Recent Projects and start on a clean slate instead.
-            if (hasFiles) {
+            if (hasFiles || hasChatHistory) {
                 archiveRestoredWorkspace(saved, savedFiles);
+                workspaceProjectId = createProjectId();
                 localStorage.removeItem(WORKSPACE_KEY);
                 localStorage.setItem('zb_active_view', 'welcome');
                 setSaveState('Previous session kept in Recent Projects — start a new build');
@@ -1862,28 +1881,27 @@ Format:
         }
     }
 
-    /* Preserve a session that was open at reload time as a restorable version
-       rather than silently replaying it. Skips when an identical snapshot for
-       this project already exists, so repeated reloads do not stack copies. */
+     /* Preserve a session that was open at reload time as a restorable version
+         rather than silently replaying it. */
     function archiveRestoredWorkspace(saved, files) {
         try {
             const snapshots = getSnapshots();
             const project = saved.name || 'Untitled project';
-            // Dedupe by actual file content, not name: two different builds can
-            // share the default "Untitled project" name.
-            const sig = JSON.stringify(files);
-            if (snapshots.some(s => JSON.stringify(s.files || {}) === sig)) return;
+            const existingIndex = saved.id ? snapshots.findIndex(s => s.projectId === saved.id) : -1;
             const snapshot = {
+                ...(existingIndex >= 0 ? snapshots[existingIndex] : {}),
                 id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
                 label: 'Session restored',
                 project,
-                prompt: saved.prompt || '',
+                projectId: saved.id || null,
+                prompt: saved.prompt || saved.chatHistory?.find(message => message.role === 'user')?.text || '',
                 createdAt: saved.updatedAt || Date.now(),
                 framework: saved.framework || 'vanilla',
                 files,
                 chat: Array.isArray(saved.chatHistory) ? saved.chatHistory.slice(-100) : [],
             };
-            localStorage.setItem(HISTORY_KEY, JSON.stringify([snapshot, ...snapshots].slice(0, 12)));
+            const next = existingIndex >= 0 ? snapshots.filter((_, index) => index !== existingIndex) : snapshots;
+            localStorage.setItem(HISTORY_KEY, JSON.stringify([snapshot, ...next].slice(0, 12)));
         } catch (error) {
             console.warn('Could not archive previous session:', error);
         }
@@ -1949,8 +1967,9 @@ Format:
 
     function createSnapshot(label) {
         const files = editor?.getAllFiles() || {};
-        if (!Object.keys(files).length) {
-            showToast('warning', 'Generate or create files before saving a version');
+        const snapshotChat = chatHistory.slice(-100);
+        if (!Object.keys(files).length && !snapshotChat.length) {
+            showToast('warning', 'Start a chat or create files before saving history');
             return;
         }
         const snapshot = {
@@ -1959,8 +1978,9 @@ Format:
             project: getProjectName(),
             createdAt: Date.now(),
             framework: framework?.frameworkOverride || 'vanilla',
+            prompt: framework?.memory?.userPrompt || snapshotChat.find(message => message.role === 'user')?.text || '',
             files,
-            chat: chatHistory.slice(-100),
+            chat: snapshotChat,
         };
         try {
             if (framework?.versionControl) {
@@ -1989,13 +2009,13 @@ Format:
         fileSystem?.setFiles(snapshot.files);
         preview?.render(snapshot.files);
         if (framework) {
-            framework.memory = framework.memory || {};
+            framework.memory = framework._createEmptyMemory ? framework._createEmptyMemory() : {};
             framework.memory.generatedFiles = { ...snapshot.files };
+            framework.memory.userPrompt = snapshot.prompt || '';
             framework.frameworkOverride = snapshot.framework || 'vanilla';
         }
-        if (Array.isArray(snapshot.chat) && snapshot.chat.length) {
-            renderChatHistory(snapshot.chat);
-        }
+        workspaceProjectId = createProjectId();
+        renderChatHistory(snapshot.chat);
         const name = document.getElementById('project-name');
         if (name && snapshot.project) name.value = snapshot.project;
         document.querySelectorAll('.fw-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.framework === (framework?.frameworkOverride || 'vanilla')));
@@ -2015,17 +2035,25 @@ Format:
             metrics.innerHTML = `
                 <div class="metric-card"><span class="metric-label">Files</span><span class="metric-value">${Object.keys(files).length}</span></div>
                 <div class="metric-card"><span class="metric-label">Workspace size</span><span class="metric-value">${formatBytes(bytes)}</span></div>
-                <div class="metric-card"><span class="metric-label">Versions</span><span class="metric-value">${snapshots.length}</span></div>
+                <div class="metric-card"><span class="metric-label">Saved sessions</span><span class="metric-value">${snapshots.length}</span></div>
                 <div class="metric-card"><span class="metric-label">Target</span><span class="metric-value">${framework?.frameworkOverride === 'fullstack-nextjs' ? 'Next.js' : framework?.frameworkOverride === 'react-vite' ? 'React' : 'Static'}</span></div>`;
         }
         if (!list) return;
         list.innerHTML = snapshots.length ? snapshots.map(snapshot => `
             <div class="version-row">
                 <i data-lucide="git-commit-horizontal"></i>
-                <div class="version-main"><span class="version-title">${escapeHtml(snapshot.label)} · ${escapeHtml(snapshot.project || 'Untitled project')}</span><span class="version-meta">${new Date(snapshot.createdAt).toLocaleString()} · ${Object.keys(snapshot.files || {}).length} files · ${escapeHtml(snapshot.framework || 'vanilla')}${Array.isArray(snapshot.chat) && snapshot.chat.length ? ` · ${snapshot.chat.length} chat` : ''}</span></div>
+                <div class="version-main"><span class="version-title">${escapeHtml(snapshot.label)} · ${escapeHtml(snapshot.project || 'Untitled project')}</span><span class="version-meta">${new Date(snapshot.createdAt).toLocaleString()} · ${Object.keys(snapshot.files || {}).length} files · ${escapeHtml(snapshot.framework || 'vanilla')}${Array.isArray(snapshot.chat) && snapshot.chat.length ? ` · ${snapshot.chat.length} messages` : ''}</span><span class="version-preview">${escapeHtml((snapshot.prompt || snapshot.chat?.find(message => message.role === 'user')?.text || '').trim().slice(0, 120) || 'No chat preview saved')}</span></div>
                 <button class="btn btn-secondary" data-restore-version="${snapshot.id}"><i data-lucide="rotate-ccw"></i> Restore</button>
-            </div>`).join('') : '<div class="history-empty">No versions yet. Save a snapshot before a risky change, or build a site to create one automatically.</div>';
-        list.querySelectorAll('[data-restore-version]').forEach(btn => btn.addEventListener('click', () => restoreSnapshot(btn.dataset.restoreVersion)));
+            </div>`).join('') : '<div class="history-empty">No saved chats or project versions yet. Your saved conversations will appear here.</div>';
+        list.querySelectorAll('[data-restore-version]').forEach(btn => btn.addEventListener('click', () => {
+            if (!restoreSnapshot(btn.dataset.restoreVersion)) return;
+            const welcomeScreen = document.getElementById('welcome-screen');
+            if (welcomeScreen) {
+                welcomeScreen.style.display = 'none';
+                welcomeScreen.classList.add('hidden');
+            }
+            document.getElementById('app')?.classList.remove('hidden');
+        }));
         if (typeof lucide !== 'undefined') lucide.createIcons();
     }
 
@@ -2041,7 +2069,7 @@ Format:
         recent.style.display = 'flex';
         grid.innerHTML = snapshots.map(snapshot => {
             const turns = Array.isArray(snapshot.chat) ? snapshot.chat.length : 0;
-            const preview = (snapshot.prompt || '').trim();
+            const preview = (snapshot.prompt || snapshot.chat?.find(message => message.role === 'user')?.text || '').trim();
             return `
             <div class="welcome-recent-card" data-restore-version="${snapshot.id}" title="Reopen this session">
                 <div class="recent-icon"><i data-lucide="box"></i></div>
