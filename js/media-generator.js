@@ -23,6 +23,93 @@ class MediaGenerator {
         };
     }
 
+    static CINEMATIC_ASSETS = {
+        'luxury': {
+            videos: [
+                'https://assets.mixkit.co/videos/preview/mixkit-reflection-of-a-watch-on-a-black-table-41484-large.mp4',
+                'https://assets.mixkit.co/videos/preview/mixkit-black-and-gold-particles-floating-28701-large.mp4',
+                'https://assets.mixkit.co/videos/preview/mixkit-hands-of-a-clock-moving-fast-41476-large.mp4'
+            ],
+            images: [
+                'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1524805444758-089113d48a6d?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1549465220-1a8b9238cd48?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1508296695146-257a814070b4?auto=format&fit=crop&w=1920&q=85'
+            ]
+        },
+        'beverage': {
+            videos: [
+                'https://assets.mixkit.co/videos/preview/mixkit-pouring-a-drink-into-a-glass-with-ice-42435-large.mp4',
+                'https://assets.mixkit.co/videos/preview/mixkit-close-up-of-bubbles-in-a-carbonated-drink-41434-large.mp4',
+                'https://assets.mixkit.co/videos/preview/mixkit-espresso-pouring-into-a-glass-cup-41517-large.mp4'
+            ],
+            images: [
+                'https://images.unsplash.com/photo-1551024709-8f23befc6f87?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1556679343-c7306c1976bc?auto=format&fit=crop&w=1920&q=85'
+            ]
+        },
+        'automotive': {
+            videos: [
+                'https://assets.mixkit.co/videos/preview/mixkit-headlights-of-a-car-in-the-night-42472-large.mp4',
+                'https://assets.mixkit.co/videos/preview/mixkit-car-driving-through-a-city-at-night-41551-large.mp4',
+                'https://assets.mixkit.co/videos/preview/mixkit-tunnel-lights-passing-by-in-a-car-41549-large.mp4'
+            ],
+            images: [
+                'https://images.unsplash.com/photo-1617788138017-80ad40651399?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1542282088-72c9c27ed0cd?auto=format&fit=crop&w=1920&q=85'
+            ]
+        },
+        'tech': {
+            videos: [
+                'https://assets.mixkit.co/videos/preview/mixkit-digital-animation-of-screens-with-data-31911-large.mp4',
+                'https://assets.mixkit.co/videos/preview/mixkit-blue-laser-lines-grid-31656-large.mp4',
+                'https://assets.mixkit.co/videos/preview/mixkit-abstract-laser-lights-background-31742-large.mp4'
+            ],
+            images: [
+                'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?auto=format&fit=crop&w=1920&q=85'
+            ]
+        },
+        'fashion': {
+            videos: [
+                'https://assets.mixkit.co/videos/preview/mixkit-model-walking-on-a-runway-41480-large.mp4',
+                'https://assets.mixkit.co/videos/preview/mixkit-woman-posing-with-sunglasses-in-a-studio-41474-large.mp4'
+            ],
+            images: [
+                'https://images.unsplash.com/photo-1552346154-21d32810aba3?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=1920&q=85'
+            ]
+        },
+        'architecture': {
+            videos: [
+                'https://assets.mixkit.co/videos/preview/mixkit-aerial-view-of-modern-city-skyscrapers-41553-large.mp4'
+            ],
+            images: [
+                'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=1920&q=85'
+            ]
+        },
+        'cinematic': {
+            videos: [
+                'https://assets.mixkit.co/videos/preview/mixkit-smoke-moving-in-slow-motion-in-the-dark-41472-large.mp4',
+                'https://assets.mixkit.co/videos/preview/mixkit-golden-dust-particles-moving-in-the-air-41432-large.mp4',
+                'https://assets.mixkit.co/videos/preview/mixkit-liquid-mercury-bubbles-slow-motion-41487-large.mp4'
+            ],
+            images: [
+                'https://images.unsplash.com/photo-1550684848-fac1c5b4e853?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=1920&q=85'
+            ]
+        }
+    };
+
     /* ===== MAIN: Generate all media from spec ===== */
     async generateMedia(mediaNeeds, onProgress) {
         const results = {};
@@ -277,54 +364,69 @@ Make it modern, minimalist, and use a viewBox. Do not include markdown formattin
         return this._getPlaceholderVideo(item);
     }
 
-    /* ===== PLACEHOLDERS ===== */
+    /* ===== PLACEHOLDERS / CURATED 4K MEDIA ===== */
+    _resolveCategory(prompt) {
+        const text = String(prompt || '').toLowerCase();
+        if (/beverage|drink|coffee|tea|wine|beer|bar|cocktail|water|soda|cup|pour|juice|liquid|cafe/i.test(text)) return 'beverage';
+        if (/watch|jewelry|luxury|gold|perfume|diamond|silk|elegance|gem|prestige|timepiece/i.test(text)) return 'luxury';
+        if (/car|auto|motor|vehicle|drive|speed|mechanic|supercar|porsche|ferrari|bmw|racing|engine/i.test(text)) return 'automotive';
+        if (/ai|tech|code|cyber|software|saas|cloud|app|data|crypto|robot|neural|matrix|digital|future|quantum/i.test(text)) return 'tech';
+        if (/fashion|apparel|clothing|shoe|sneaker|model|streetwear|wear|runway|dress|outfit/i.test(text)) return 'fashion';
+        if (/architecture|interior|villa|building|home|real-estate|house|space|minimal|loft|concrete/i.test(text)) return 'architecture';
+        return 'cinematic';
+    }
+
     _getPlaceholderImage(item) {
-        // Generate a beautiful SVG placeholder with gradients
-        const colors = this._getPlaceholderColors(item.style);
-        const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080">
-            <defs>
-                <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" style="stop-color:${colors[0]};stop-opacity:1" />
-                    <stop offset="50%" style="stop-color:${colors[1]};stop-opacity:0.8" />
-                    <stop offset="100%" style="stop-color:${colors[2]};stop-opacity:1" />
-                </linearGradient>
-                <radialGradient id="g2" cx="30%" cy="40%" r="50%">
-                    <stop offset="0%" style="stop-color:${colors[1]};stop-opacity:0.4" />
-                    <stop offset="100%" style="stop-color:transparent;stop-opacity:0" />
-                </radialGradient>
-            </defs>
-            <rect width="1920" height="1080" fill="url(#g1)" />
-            <rect width="1920" height="1080" fill="url(#g2)" />
-            <circle cx="600" cy="400" r="200" fill="${colors[1]}" opacity="0.15" />
-            <circle cx="1400" cy="600" r="300" fill="${colors[2]}" opacity="0.1" />
-        </svg>`;
-
-        const b64 = btoa(unescape(encodeURIComponent(svg)));
-
+        const cat = this._resolveCategory(item.prompt || item.usage || '');
+        const pool = MediaGenerator.CINEMATIC_ASSETS[cat] || MediaGenerator.CINEMATIC_ASSETS['cinematic'];
+        const images = pool.images;
+        const hash = Math.abs(String(item.id || item.usage || '').split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0));
+        const imgUrl = images[hash % images.length] || images[0];
         return {
             type: 'image',
-            url: `data:image/svg+xml;base64,${b64}`,
-            format: 'svg-base64',
-            prompt: item.prompt,
-            provider: 'placeholder',
-            isPlaceholder: true,
+            url: imgUrl,
+            format: 'url',
+            prompt: item.prompt || `Cinematic 4K ${cat} visual`,
+            provider: 'cinematic-curated',
+            isPlaceholder: false,
         };
     }
 
     _getPlaceholderVideo(item) {
-        // Return CSS animation instructions instead of actual video
+        const cat = this._resolveCategory(item.prompt || item.usage || '');
+        const pool = MediaGenerator.CINEMATIC_ASSETS[cat] || MediaGenerator.CINEMATIC_ASSETS['cinematic'];
+        const videos = pool.videos;
+        const posters = pool.images;
+        const hash = Math.abs(String(item.id || item.usage || '').split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0));
+        const vUrl = videos[hash % videos.length] || videos[0];
+        const pUrl = posters[0];
         return {
             type: 'video',
-            url: '',
-            format: 'css-animation',
-            prompt: item.prompt,
-            provider: 'css-placeholder',
-            isPlaceholder: true,
-            cssCode: `
-                background: linear-gradient(-45deg, #0a0a0f, #1a1a2e, #0a0a0f, #16213e);
-                background-size: 400% 400%;
-                animation: gradientShift 15s ease infinite;
-            `,
+            url: vUrl,
+            poster: pUrl,
+            format: 'url',
+            prompt: item.prompt || `Cinematic ${cat} video loop`,
+            provider: 'cinematic-curated',
+            isPlaceholder: false,
+        };
+    }
+
+    autoPopulateKit(specification) {
+        const title = specification.title || '';
+        const desc = specification.description || specification.userPrompt || '';
+        const cat = this._resolveCategory(`${title} ${desc}`);
+        return {
+            videos: [
+                { id: 'hero_video', prompt: `Cinematic ${cat} hero video loop`, usage: 'hero', style: 'cinematic' },
+                { id: 'scrub_video', prompt: `Scroll-scrubbed ${cat} showcase video`, usage: 'scroll-scrub', style: 'cinematic' }
+            ],
+            images: [
+                { id: 'hero_poster', prompt: `Ultra-realistic 4K ${cat} hero poster`, usage: 'hero-poster', style: 'photorealistic' },
+                { id: 'product_1', prompt: `Masterpiece ${cat} product angle 1`, usage: 'product', style: 'photorealistic' },
+                { id: 'product_2', prompt: `Masterpiece ${cat} product angle 2`, usage: 'product', style: 'photorealistic' },
+                { id: 'product_3', prompt: `Masterpiece ${cat} product angle 3`, usage: 'product', style: 'photorealistic' },
+                { id: 'ambient_bg', prompt: `Cinematic atmospheric texture ${cat}`, usage: 'background', style: 'cinematic' }
+            ]
         };
     }
 

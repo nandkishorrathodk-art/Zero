@@ -10,6 +10,88 @@ class CoderUIAgent extends BaseAgent {
 
         // Component templates for different site types
         this.componentTemplates = {
+            'scroll-video-scrub': {
+                html: `<section class="scene-scrub" data-scrub-scene>
+  <div class="scrub-sticky">
+    <video class="scrub-video" playsinline muted preload="auto" src="{{scrubVideoUrl}}" poster="{{posterUrl}}"></video>
+    <div class="scrub-overlay">
+      <div class="scrub-chapter active" data-scrub-chapter="1">
+        <span class="scrub-tag">01 / REVOLUTION</span>
+        <h2 class="scrub-title">{{title1}}</h2>
+        <p class="scrub-desc">{{desc1}}</p>
+      </div>
+      <div class="scrub-chapter" data-scrub-chapter="2">
+        <span class="scrub-tag">02 / ARCHITECTURE</span>
+        <h2 class="scrub-title">{{title2}}</h2>
+        <p class="scrub-desc">{{desc2}}</p>
+      </div>
+      <div class="scrub-chapter" data-scrub-chapter="3">
+        <span class="scrub-tag">03 / MASTERY</span>
+        <h2 class="scrub-title">{{title3}}</h2>
+        <p class="scrub-desc">{{desc3}}</p>
+      </div>
+    </div>
+    <div class="scrub-indicator"><div class="scrub-bar"></div></div>
+  </div>
+</section>`,
+                css: `.scene-scrub{height:300vh;position:relative}.scrub-sticky{position:sticky;top:0;height:100vh;overflow:hidden;display:flex;align-items:center;justify-content:center}.scrub-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}.scrub-overlay{position:relative;z-index:2;width:100%;max-width:1400px;padding:0 2rem;display:flex;flex-direction:column;pointer-events:none}.scrub-chapter{opacity:0;transform:translateY(40px);transition:all 0.6s cubic-bezier(0.16,1,0.3,1);position:absolute;bottom:10vh;left:2rem;max-width:600px;background:rgba(0,0,0,0.45);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,0.12);border-radius:24px;padding:2.5rem}.scrub-chapter.active{opacity:1;transform:translateY(0)}.scrub-tag{font-size:0.75rem;letter-spacing:0.2em;color:var(--accent,#00f0ff);text-transform:uppercase;font-weight:700}.scrub-title{font-size:clamp(2rem,4vw,3.5rem);line-height:1.05;margin:0.5rem 0}.scrub-desc{color:rgba(255,255,255,0.8);line-height:1.6}.scrub-indicator{position:absolute;bottom:2rem;right:2rem;width:160px;height:4px;background:rgba(255,255,255,0.15);border-radius:2px;overflow:hidden;z-index:3}.scrub-bar{height:100%;width:0%;background:var(--accent,#00f0ff);transition:width 0.1s linear}`,
+                js: `function initScrollScrub(){const section=document.querySelector('[data-scrub-scene]');const video=section?.querySelector('.scrub-video');const bar=section?.querySelector('.scrub-bar');const chapters=section?.querySelectorAll('.scrub-chapter');if(!section||!video)return;video.pause();ScrollTrigger.create({trigger:section,start:'top top',end:'bottom bottom',scrub:0.5,onUpdate:(self)=>{const p=self.progress;if(video.duration&&!isNaN(video.duration)){video.currentTime=video.duration*p}if(bar)bar.style.width=\`\${p*100}%\`;if(chapters&&chapters.length){const idx=Math.min(chapters.length-1,Math.floor(p*chapters.length));chapters.forEach((ch,i)=>ch.classList.toggle('active',i===idx))}}})}document.addEventListener('DOMContentLoaded',initScrollScrub);`
+            },
+            'product-3d-showcase': {
+                html: `<section class="scene-showcase" id="showcase">
+  <div class="showcase-container">
+    <div class="showcase-header">
+      <span class="showcase-tag">ENGINEERED PERFECTION</span>
+      <h2 class="showcase-heading">{{productTitle}}</h2>
+    </div>
+    <div class="showcase-stage" data-turntable>
+      <div class="showcase-card" data-hover="tilt">
+        <img class="showcase-img" src="{{productImage}}" alt="{{productTitle}}" />
+        <div class="hotspot" style="top:30%;left:45%;" data-tooltip="Titanium Alloy Chassis"><span></span></div>
+        <div class="hotspot" style="top:60%;left:65%;" data-tooltip="Haptic Touch Sensor Array"><span></span></div>
+      </div>
+      <div class="variant-selector">
+        <span class="variant-label">SELECT FINISH</span>
+        <div class="variant-pills">
+          <button class="variant-pill active" style="--color:#111" data-variant="Obsidian Black">Obsidian</button>
+          <button class="variant-pill" style="--color:#888" data-variant="Raw Titanium">Titanium</button>
+          <button class="variant-pill" style="--color:#d4af37" data-variant="Champagne Gold">Gold</button>
+        </div>
+      </div>
+      <div class="preorder-action">
+        <button class="btn btn-primary btn-preorder" data-magnet="0.3" id="btn-preorder-open">Pre-Order Now — {{price}}</button>
+      </div>
+    </div>
+  </div>
+  <div class="preorder-modal" id="preorder-modal" style="display:none">
+    <div class="preorder-backdrop" id="preorder-backdrop"></div>
+    <div class="preorder-content liquid-glass">
+      <button class="modal-close" id="btn-preorder-close">&times;</button>
+      <h3>Instant Pre-Order</h3>
+      <p>Reserve your unit with priority worldwide dispatch.</p>
+      <form class="preorder-form" onsubmit="event.preventDefault();alert('Pre-order confirmed! Priority dispatch assigned.')">
+        <input type="text" placeholder="Full Name" required />
+        <input type="email" placeholder="Email Address" required />
+        <button type="submit" class="btn btn-primary" style="width:100%">Confirm Reservation</button>
+      </form>
+    </div>
+  </div>
+</section>`,
+                css: `.scene-showcase{padding:6rem 2rem;position:relative}.showcase-container{max-width:1200px;margin:0 auto;text-align:center}.showcase-tag{font-size:0.75rem;letter-spacing:0.2em;color:var(--accent,#00f0ff);text-transform:uppercase;font-weight:700}.showcase-heading{font-size:clamp(2.5rem,5vw,4.5rem);margin:0.5rem 0 3rem}.showcase-stage{display:flex;flex-direction:column;align-items:center;gap:2rem}.showcase-card{position:relative;width:100%;max-width:650px;aspect-ratio:16/10;background:radial-gradient(circle at center,rgba(255,255,255,0.06) 0%,transparent 70%);border:1px solid rgba(255,255,255,0.1);border-radius:32px;padding:2rem;display:flex;align-items:center;justify-content:center;box-shadow:0 30px 60px rgba(0,0,0,0.5)}.showcase-img{max-width:85%;max-height:85%;object-fit:contain;filter:drop-shadow(0 20px 30px rgba(0,0,0,0.7));transition:transform 0.4s ease}.hotspot{position:absolute;width:24px;height:24px;border-radius:50%;background:rgba(0,240,255,0.3);display:flex;align-items:center;justify-content:center;cursor:pointer}.hotspot span{width:8px;height:8px;border-radius:50%;background:#00f0ff;animation:pulse 2s infinite}.variant-selector{display:flex;flex-direction:column;align-items:center;gap:0.75rem}.variant-pills{display:flex;gap:0.75rem}.variant-pill{padding:0.5rem 1.25rem;border-radius:100px;border:1px solid rgba(255,255,255,0.2);background:rgba(0,0,0,0.4);color:white;cursor:pointer;transition:all 0.3s ease}.variant-pill.active{border-color:#00f0ff;background:rgba(0,240,255,0.15)}.preorder-modal{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center}.preorder-backdrop{position:absolute;inset:0;background:rgba(0,0,0,0.8);backdrop-filter:blur(8px)}.preorder-content{position:relative;z-index:1;background:#111;border:1px solid rgba(255,255,255,0.15);border-radius:24px;padding:2.5rem;max-width:440px;width:90%}.modal-close{position:absolute;top:1rem;right:1rem;background:none;border:none;color:white;font-size:1.5rem;cursor:pointer}.preorder-form{display:flex;flex-direction:column;gap:1rem;margin-top:1.5rem}.preorder-form input{padding:0.85rem;border-radius:12px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.05);color:white}`,
+                js: `function initProductShowcase(){const openBtn=document.getElementById('btn-preorder-open');const closeBtn=document.getElementById('btn-preorder-close');const backdrop=document.getElementById('preorder-backdrop');const modal=document.getElementById('preorder-modal');openBtn?.addEventListener('click',()=>modal&&(modal.style.display='flex'));closeBtn?.addEventListener('click',()=>modal&&(modal.style.display='none'));backdrop?.addEventListener('click',()=>modal&&(modal.style.display='none'));document.querySelectorAll('.variant-pill').forEach(btn=>{btn.addEventListener('click',()=>{document.querySelectorAll('.variant-pill').forEach(b=>b.classList.remove('active'));btn.classList.add('active')})})}document.addEventListener('DOMContentLoaded',initProductShowcase);`
+            },
+            'chapter-nav': {
+                html: `<nav class="chapter-nav" aria-label="Chapters">
+  <div class="chapter-track">
+    <a href="#hero" class="chapter-item active" data-chapter="1"><span class="chapter-num">01</span><span class="chapter-text">Introduction</span></a>
+    <a href="#showcase" class="chapter-item" data-chapter="2"><span class="chapter-num">02</span><span class="chapter-text">Experience</span></a>
+    <a href="#specs" class="chapter-item" data-chapter="3"><span class="chapter-num">03</span><span class="chapter-text">Engineering</span></a>
+    <a href="#preorder" class="chapter-item" data-chapter="4"><span class="chapter-num">04</span><span class="chapter-text">Acquisition</span></a>
+  </div>
+</nav>`,
+                css: `.chapter-nav{position:fixed;left:2rem;top:50%;transform:translateY(-50%);z-index:900;display:flex;flex-direction:column}@media(max-width:1024px){.chapter-nav{display:none}}.chapter-track{display:flex;flex-direction:column;gap:1.5rem}.chapter-item{display:flex;align-items:center;gap:0.75rem;text-decoration:none;color:rgba(255,255,255,0.4);font-size:0.75rem;letter-spacing:0.15em;text-transform:uppercase;transition:all 0.3s ease}.chapter-item:hover,.chapter-item.active{color:white}.chapter-num{font-family:var(--font-mono,monospace);font-weight:700}.chapter-item.active .chapter-num{color:var(--accent,#00f0ff)}`,
+                js: `function initChapterNav(){const items=document.querySelectorAll('.chapter-item');items.forEach(item=>{item.addEventListener('click',e=>{e.preventDefault();const target=document.querySelector(item.getAttribute('href'));if(target){target.scrollIntoView({behavior:'smooth'});items.forEach(i=>i.classList.remove('active'));item.classList.add('active')}})})};document.addEventListener('DOMContentLoaded',initChapterNav);`
+            },
             'fading-video': {
                 html: `<div class="video-container" data-fading-video>
   <video class="fading-video active" autoplay muted playsinline loop>
@@ -786,16 +868,60 @@ DESIGN SYSTEM DISCIPLINE (this is what makes it read as studio work):
   the single clearest tell of a generated template.
 - One dominant element per section. If two things compete, one is too big.
 - Never show more than three type sizes in one section.
-- Whitespace is the design: when a section feels empty, add space, not a card.`;
+- Whitespace is the design: when a section feels empty, add space, not a card.
+
+AWARD-WINNING REFERENCE PATTERNS (use these as quality anchors):
+
+ASYMMETRIC HERO (never centre everything — offset the grid):
+<section class="scene-hero">
+  <div class="hero-grid">
+    <div class="hero-content" style="grid-column: 1 / span 5;">
+      <p class="hero-eyebrow type-0">Creative Studio <span>— EST 2024</span></p>
+      <h1 class="hero-title type-7">Shaping<br><span class="indent">Digital</span><br>Realities</h1>
+      <div class="hero-actions"><button class="btn" data-magnet>Start a Project</button></div>
+    </div>
+    <div class="hero-visual" style="grid-column: 6 / -1;">
+      <img src="hero.webp" class="hero-image" alt="" data-parallax-depth data-depth="0.3">
+    </div>
+  </div>
+</section>
+CSS for this pattern:
+.hero-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:var(--grid-gutter);min-height:100vh;align-items:end;padding:var(--space-2xl) var(--grid-margin)}
+.hero-title{font-size:var(--step-7);line-height:0.85;letter-spacing:var(--tracking-7)}
+.hero-title .indent{margin-left:15vw;display:block;font-style:italic}
+.hero-eyebrow{font-family:var(--font-mono);font-size:var(--step--1);text-transform:uppercase;letter-spacing:0.18em;display:flex;justify-content:space-between;border-bottom:1px solid currentColor;padding-bottom:var(--space-xs);margin-bottom:var(--space-xl)}
+
+PEER-FADING NAV (modern :has() pattern — dim siblings on hover):
+.nav-list:has(.nav-item:hover) .nav-item:not(:hover){opacity:0.3;filter:blur(1px);transform:scale(0.97)}
+.nav-item{transition:all 0.4s cubic-bezier(0.16,1,0.3,1)}
+
+EDITORIAL SPLIT SECTION (asymmetric 2-column with offset):
+.split-section{display:grid;grid-template-columns:4fr 7fr;gap:var(--space-xl);align-items:start;padding:var(--space-3xl) var(--grid-margin)}
+.split-section:nth-of-type(even){grid-template-columns:7fr 4fr}
+.split-section:nth-of-type(even) .split-copy{order:2}
+
+SCROLL-DRIVEN REVEAL (modern CSS, zero JS):
+.scroll-reveal{animation:reveal-up linear both;animation-timeline:view();animation-range:entry 10% cover 30%}
+@keyframes reveal-up{from{opacity:0;transform:translateY(60px) scale(0.95)}to{opacity:1;transform:none}}
+
+DARK SURFACE DEPTH (layered card with grain):
+.depth-card{background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:1.5rem;padding:var(--space-lg);position:relative;overflow:hidden}
+.depth-card::before{content:'';position:absolute;inset:0;background:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='0.65' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");pointer-events:none}
+`;
     }
 
-    async execute(specification, designSystem, threejsCode = null) {
+    async execute(specification, designSystem, threejsCode = null, generatedMedia = {}) {
         this.log('info', `Generating cinematic ${specification.complexity || 'premium'} website...`);
 
         const enhanced = designSystem.enhancedSpec || specification;
         const motionSystems = enhanced.motionSystems || [];
         const hasThreeJS = !!threejsCode;
         const isComplex = ['complex', 'ultra-complex'].includes(enhanced.complexity);
+
+        const mediaEntries = Object.entries(generatedMedia || {});
+        const mediaBlock = mediaEntries.length > 0
+            ? `\n═══════════════════════════════════════════════════════\n★ CINEMATIC MEDIA ASSETS (USE THESE EXACT WORKING URLS IN <img> AND <video> TAGS):\n═══════════════════════════════════════════════════════\n${mediaEntries.map(([id, m]) => `- ${id} (${m.type}): ${m.url} ${m.poster ? `(poster: ${m.poster})` : ''}`).join('\n')}\nDO NOT INVENT FAKE URLS OR LEAVE EMPTY SRC TAGS. Use these real URLs for the hero video, scroll-scrub scenes, product showcase cards, and background layers.\n`
+            : '';
 
         // Build comprehensive context
         const artDirection = enhanced.artDirection || {};
@@ -913,7 +1039,7 @@ ${typeof LibraryRegistry !== 'undefined' ? LibraryRegistry.runtimeRules(LibraryR
             : 'Include GSAP, ScrollTrigger and Lenis.';
 
         const htmlPrompt = `${contextBlock}
-
+${mediaBlock}
 DESIGN SYSTEM CSS (authoritative tokens + philosophy classes — use these, do not invent):
 ${designSystem.css}
 
@@ -942,6 +1068,18 @@ ${libraryBlock}
 14. Mobile hamburger nav structure
 15. Give each scene a unique, descriptive class (e.g. .scene-hero, .scene-proof)
     so it can be styled individually — do not reuse one generic section class.
+16. LAYOUT COMPOSITION: Use asymmetric grid columns (5/7, 4/8, or 3/9 splits).
+    The hero grid should NOT centre everything — offset content to one side.
+    At least one section must have content bleeding to the viewport edge.
+17. EDITORIAL TYPOGRAPHY: Hero headline should use line breaks to create
+    a staircase or indented shape, NOT a single centered line. Use the
+    .type-7 class for the hero title and .type-0 for eyebrows/labels.
+18. VISUAL DEPTH: Layer elements with z-index and subtle overlap between
+    sections. Use negative margins or position:relative + top:-4rem to
+    pull elements across section boundaries.
+19. PEER-FADING: Nav items should dim siblings on hover using :has().
+20. REAL IMAGERY: Every img tag MUST have a real src URL from the media
+    assets provided above. Never use empty src or placeholder URLs.
 
 Output ONLY the HTML file:
 **File: index.html**
@@ -985,22 +1123,29 @@ ${htmlContext}
 YOUR TASK: Generate a complete, cinematic styles.css file.
 
 REQUIREMENTS:
-1. Import/extend design system tokens
+1. Import/extend design system tokens — use var(--step-N) and var(--space-N) for all sizes
 2. Include all component CSS provided above
-3. Premium typography: huge hero text with clamp(), dramatic hierarchy
-4. Generous whitespace rhythms (section padding 120px+)
-5. Liquid glass effects with gradient border masks
+3. EDITORIAL TYPOGRAPHY: hero title uses var(--step-7) with line-height 0.85 and
+   letter-spacing var(--tracking-7). Eyebrows use var(--step--1) uppercase with
+   0.18em tracking. Body uses var(--step-0). Never use raw px for font sizes.
+4. WHITESPACE RHYTHMS: section padding uses var(--space-3xl) minimum.
+   Inner group spacing uses var(--space-lg). Label-to-value gap uses var(--space-xs).
+5. Surface effects matching the ${designPhilosophy} philosophy (use the provided philosophy CSS classes)
 6. Responsive: mobile-first with breakpoints at 768px, 1024px, 1440px
-7. All animations use transform/opacity (GPU accelerated)
-8. Include @media (prefers-reduced-motion: reduce) fallback
-9. Premium hover effects (scale, glow, magnetic feel)
-10. Make every section feel hand-designed
+7. PERFORMANCE: all animations use transform/opacity only (GPU accelerated).
+   Include @media (prefers-reduced-motion: reduce) fallback.
+8. MODERN CSS: use :has() for peer state (nav dimming, card highlighting).
+   Use container queries for cards that adapt to parent width.
+   Use scroll-driven animations (animation-timeline: view()) for reveals.
+9. ASYMMETRIC GRIDS: at least 2 sections use uneven column splits
+   (grid-template-columns: 4fr 7fr or 5fr 7fr). Alternate sides.
+10. VISUAL DEPTH: cards use layered box-shadows and subtle borders
+    (rgba(255,255,255,0.06)). Add film grain via SVG noise ::before pseudo.
 11. MANDATORY: write a rule for EVERY class in the CLASS INVENTORY above.
     A class used in the markup but absent from the CSS ships unstyled — the
-    single most common reason a generated page looks broken. Do not skip
-    section-specific classes; give each one real, art-directed styling.
-12. Style each section in the SKELETON distinctly — no two sections should
-    look identical.
+    single most common reason a generated page looks broken.
+12. Style each section DISTINCTLY — no two sections should share the same
+    background color, layout pattern, or visual treatment.
 
 Output ONLY the CSS file:
 **File: styles.css**
@@ -1062,26 +1207,21 @@ THE FOLLOWING BOILERPLATE IS ALREADY INCLUDED (DO NOT REPEAT):
 - Animated counters for [data-count]
 - Reduced motion respect
 
-GENERATE THE REST:
-1. BlurText word-by-word reveal for [data-blur-text]
-2. Magnetic buttons for [data-magnet] using gsap.quickTo
-3. Parallax layers for [data-parallax]
-4. FadingVideo crossfade for [data-fading-video]
-5. Scroll scenes with pin/scrub for [data-scene]
-6. 3D tilt effect for [data-3d="tilt"] (mousemove perspective)
-7. 3D scroll effects for [data-scroll-3d] (rotateX/zoom on scroll)
-8. Hover effects for [data-hover] (tilt, glow, spotlight, perspective)
-9. Entrance reveals for [data-reveal] (IntersectionObserver → add .revealed class)
-10. Micro interactions for [data-micro] (ripple, bounce, magnetic, counter)
-11. Smooth page loader (if .page-loader exists)
-12. 3D window interactivity for [data-3d-interactive] 
-13. Parallax scroll for [data-parallax-scroll]
-14. Parallax depth for [data-parallax-depth]
-15. Custom cursor (if micro-cursor effect is enabled)
-16. Shimmer sweep (CSS-only, no JS needed)
-17. ${hasThreeJS ? 'Three.js scene initialization' : ''}
-18. Form validation if forms exist
-19. Any interactive components needed
+GENERATE THESE (quality over quantity — implement each fully):
+1. HERO ENTRANCE TIMELINE: gsap.timeline() named 'heroEntrance' — stagger
+   copy (0.08s), then media (0.15s delay), then CTA (0.2s). Use expo.out.
+2. BlurText word-by-word reveal for [data-blur-text] with power3.out
+3. Magnetic buttons for [data-magnet] using gsap.quickTo
+4. SCROLL-LINKED SECTIONS: for each [data-scene], create a ScrollTrigger
+   with pin:true, scrub:1, anticipatePin:1. Choreograph internal elements
+   as a scrubbed timeline, NOT independent tweens.
+5. Parallax depth layers for [data-parallax-depth] with different speeds
+   (foreground 1.0, mid 0.6, background 0.3)
+6. Entrance reveals for [data-reveal] (IntersectionObserver → .revealed)
+7. Hover effects for [data-hover] (tilt with perspective, glow with radial)
+8. Smooth page loader dismissal (if .page-loader exists)
+9. ${hasThreeJS ? 'Three.js scene initialization' : 'Custom cursor follower with mix-blend-mode:difference'}
+10. Peer-fading nav: CSS handles :has(), JS adds smooth scroll to anchors
 
 INCLUDE THE ADVANCED ANIMATION JS PROVIDED ABOVE.
 

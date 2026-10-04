@@ -238,8 +238,8 @@
                         <span>Chat</span>
                     </div>
                     <div class="ws-chat-header-actions">
-                        <button class="ws-chat-action" id="btn-history" title="Versions">
-                            <i data-lucide="git-branch" style="width:14px;height:14px"></i>
+                        <button class="ws-chat-action" id="btn-history" title="Chat & Version History">
+                            <i data-lucide="clock-3" style="width:14px;height:14px"></i>
                         </button>
                         <button class="ws-chat-action" id="btn-new-chat" title="New Chat">
                             <i data-lucide="plus" style="width:14px;height:14px"></i>
@@ -280,7 +280,7 @@
             </aside>
 
             <!-- ===== RIGHT: CONTENT AREA (Preview / Code / Split) ===== -->
-            <div class="ws-content-area" id="ws-content-area">
+            <div class="ws-content-area" id="ws-content-area" data-view="preview">
 
                 <!-- Preview Panel -->
                 <section class="ws-preview-panel" id="preview-panel">
@@ -301,7 +301,7 @@
                     <div class="preview-viewport" id="preview-viewport">
                         <div class="preview-frame-wrapper" id="preview-frame-wrapper">
                             <iframe id="preview-iframe" class="preview-iframe"
-                                sandbox="allow-scripts allow-modals allow-popups" title="Website Preview"></iframe>
+                                sandbox="allow-scripts allow-modals allow-popups allow-same-origin" title="Website Preview"></iframe>
                             <!-- Empty state -->
                             <div class="preview-empty" id="preview-empty">
                                 <div class="preview-empty-content">
@@ -340,7 +340,7 @@
                 </section>
 
                 <!-- Code Editor Panel (hidden by default, toggled via view switch) -->
-                <section class="ws-editor-panel" id="editor-panel" style="display:none">
+                <section class="ws-editor-panel" id="editor-panel">
                     <!-- File Explorer (inside code editor) -->
                     <aside class="ws-file-explorer" id="file-panel">
                         <div class="panel-header">

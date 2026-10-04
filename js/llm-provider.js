@@ -294,7 +294,7 @@ class LLMProvider {
         this._autoSelectActiveProvider();
         const provider = this.providers[this.currentProvider];
         const apiKey = this.getApiKey(this.currentProvider);
-        const model = options.model || this.currentModel;
+        const model = this.resolveModel(options.model || this.currentModel);
 
         if (!this._isProviderReady(this.currentProvider)) {
             throw new Error(`No API key configured for ${provider ? provider.name : 'AI Provider'}. Go to Settings → AI Provider and enter your API Key.`);
@@ -328,7 +328,7 @@ class LLMProvider {
         this._autoSelectActiveProvider();
         const provider = this.providers[this.currentProvider];
         const apiKey = this.getApiKey(this.currentProvider);
-        const model = options.model || this.currentModel;
+        const model = this.resolveModel(options.model || this.currentModel);
 
         if (!this._isProviderReady(this.currentProvider)) {
             throw new Error(`No API key configured for ${provider ? provider.name : 'AI Provider'}. Go to Settings → AI Provider and enter your API Key.`);
@@ -459,15 +459,34 @@ class LLMProvider {
             body.systemInstruction = { parts: [{ text: systemPrompt }] };
         }
 
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-        });
+        let response;
+        let retries = 0;
+        const maxRetries = 2;
 
-        if (!response.ok) {
-            const err = await response.text();
-            throw new Error(`Gemini stream error (${response.status}): ${err}`);
+        while (retries <= maxRetries) {
+            response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+                signal: options.signal,
+            });
+
+            if (response.status === 429 && retries < maxRetries) {
+                retries++;
+                const errText = await response.text();
+                let waitMs = 12000 * retries;
+                const match = errText.match(/retry after\s+([0-9.]+)/i);
+                if (match) waitMs = Math.ceil(parseFloat(match[1]) * 1000) + 1000;
+                console.warn(`[LLMProvider] Gemini 429 in stream; backing off for ${waitMs}ms (attempt ${retries}/${maxRetries})...`);
+                await new Promise((resolve) => setTimeout(resolve, waitMs));
+                continue;
+            }
+
+            if (!response.ok) {
+                const err = await response.text();
+                throw new Error(this._parseErrorMessage(response.status, err));
+            }
+            break;
         }
 
         let fullText = '';
@@ -487,10 +506,12 @@ class LLMProvider {
                 if (line.startsWith('data: ')) {
                     try {
                         const json = JSON.parse(line.slice(6));
-                        const chunk = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
-                        if (chunk) {
-                            fullText += chunk;
-                            if (onChunk) onChunk(chunk, fullText);
+                        const parts = json.candidates?.[0]?.content?.parts || [];
+                        for (const part of parts) {
+                            if (part.text) {
+                                fullText += part.text;
+                                if (onChunk) onChunk(part.text, fullText);
+                            }
                         }
                     } catch (e) { /* skip malformed chunks */ }
                 }
@@ -502,12 +523,27 @@ class LLMProvider {
     }
 
     _convertToGeminiFormat(messages) {
-        return messages
-            .filter(m => m.role !== 'system')
+        const filtered = (messages || [])
+            .filter(m => m && m.role !== 'system')
             .map(m => ({
-                role: m.role === 'assistant' ? 'model' : 'user',
-                parts: [{ text: m.content }],
+                role: (m.role === 'assistant' || m.role === 'model') ? 'model' : 'user',
+                parts: [{ text: String(m.content || m.text || '') }],
             }));
+
+        // Gemini rejects consecutive turns with the same role. Merge adjacent messages of the same role.
+        const merged = [];
+        for (const msg of filtered) {
+            const prev = merged[merged.length - 1];
+            if (prev && prev.role === msg.role) {
+                prev.parts[0].text += '\n\n' + msg.parts[0].text;
+            } else {
+                merged.push({ role: msg.role, parts: [{ text: msg.parts[0].text }] });
+            }
+        }
+        if (merged.length === 0) {
+            merged.push({ role: 'user', parts: [{ text: 'Begin.' }] });
+        }
+        return merged;
     }
 
     _normalizeBaseUrl(rawUrl) {
@@ -588,6 +624,12 @@ class LLMProvider {
 
     _parseErrorMessage(status, rawText) {
         let msg = String(rawText || '').trim();
+        if (/Tokens per day|TPD|Limit 100000|rate limit reached for model/i.test(msg)) {
+            return `Groq Account Daily Limit Reached (100,000 TPD). Groq has blocked requests for 44 minutes. Please open Settings (⚙️) → AI Provider, select "Google Gemini", and enter your free Gemini API Key from https://aistudio.google.com/app/apikey.`;
+        }
+        if (/Tokens per minute|TPM|Limit 12000/i.test(msg)) {
+            return `Groq Per-Minute Token Limit Hit (12,000 TPM). Please wait 30 seconds or switch to Google Gemini in Settings (⚙️).`;
+        }
         try {
             const json = JSON.parse(msg);
             if (json.error?.message) msg = json.error.message;
@@ -798,9 +840,9 @@ class LLMProvider {
         let retries = 0;
         const maxRetries = 3;
         const retryStatuses = [408, 409, 425, 429, 500, 502, 503, 504];
+        let response;
 
         while (retries <= maxRetries) {
-            let response;
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 120000);
             try {
@@ -878,7 +920,11 @@ class LLMProvider {
                 }
                 throw new Error(this._parseErrorMessage(response.status, errText));
             }
-            throw new Error(`Stream error (${response.status}): ${err}`);
+            break;
+        }
+
+        if (!response || !response.body) {
+            throw new Error('Stream response body is empty or unavailable');
         }
 
         let fullText = '';
@@ -1006,7 +1052,7 @@ class LLMProvider {
             throw new Error(`Anthropic stream error (${response.status}): ${err}`);
         }
 
-        let fullText = '';
+        let fullText = options.json ? '{' : '';
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
@@ -1039,21 +1085,7 @@ class LLMProvider {
         return fullText;
     }
 
-    /* ===== CLEANING OUTPUT & ERROR PARSING ===== */
-    _parseErrorMessage(status, rawText) {
-        const text = String(rawText || '');
-        if (/Tokens per day|TPD|Limit 100000|rate limit reached for model/i.test(text)) {
-            return `Groq Account Daily Limit Reached (100,000 TPD). Groq has blocked requests for 44 minutes. Please open Settings (⚙️) → AI Provider, select "Google Gemini", and enter your free Gemini API Key from https://aistudio.google.com/app/apikey.`;
-        }
-        if (/Tokens per minute|TPM|Limit 12000/i.test(text)) {
-            return `Groq Per-Minute Token Limit Hit (12,000 TPM). Please wait 30 seconds or switch to Google Gemini in Settings (⚙️).`;
-        }
-        try {
-            const json = JSON.parse(text);
-            if (json.error?.message) return `API Error (${status}): ${json.error.message}`;
-        } catch { }
-        return `API Error (${status}): ${text.slice(0, 250)}`;
-    }
+    /* ===== CLEANING OUTPUT ===== */
 
     _cleanOutputText(text) {
         let output = String(text || '');

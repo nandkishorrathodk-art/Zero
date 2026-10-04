@@ -710,7 +710,7 @@ class LLMProvider {
         this._autoSelectActiveProvider();
         const provider = this.providers[this.currentProvider];
         const apiKey = this.getApiKey(this.currentProvider);
-        const model = options.model || this.currentModel;
+        const model = this.resolveModel(options.model || this.currentModel);
 
         if (!this._isProviderReady(this.currentProvider)) {
             throw new Error(`No API key configured for ${provider ? provider.name : 'AI Provider'}. Go to Settings → AI Provider and enter your API Key.`);
@@ -744,7 +744,7 @@ class LLMProvider {
         this._autoSelectActiveProvider();
         const provider = this.providers[this.currentProvider];
         const apiKey = this.getApiKey(this.currentProvider);
-        const model = options.model || this.currentModel;
+        const model = this.resolveModel(options.model || this.currentModel);
 
         if (!this._isProviderReady(this.currentProvider)) {
             throw new Error(`No API key configured for ${provider ? provider.name : 'AI Provider'}. Go to Settings → AI Provider and enter your API Key.`);
@@ -875,15 +875,34 @@ class LLMProvider {
             body.systemInstruction = { parts: [{ text: systemPrompt }] };
         }
 
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-        });
+        let response;
+        let retries = 0;
+        const maxRetries = 2;
 
-        if (!response.ok) {
-            const err = await response.text();
-            throw new Error(`Gemini stream error (${response.status}): ${err}`);
+        while (retries <= maxRetries) {
+            response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+                signal: options.signal,
+            });
+
+            if (response.status === 429 && retries < maxRetries) {
+                retries++;
+                const errText = await response.text();
+                let waitMs = 12000 * retries;
+                const match = errText.match(/retry after\s+([0-9.]+)/i);
+                if (match) waitMs = Math.ceil(parseFloat(match[1]) * 1000) + 1000;
+                console.warn(`[LLMProvider] Gemini 429 in stream; backing off for ${waitMs}ms (attempt ${retries}/${maxRetries})...`);
+                await new Promise((resolve) => setTimeout(resolve, waitMs));
+                continue;
+            }
+
+            if (!response.ok) {
+                const err = await response.text();
+                throw new Error(this._parseErrorMessage(response.status, err));
+            }
+            break;
         }
 
         let fullText = '';
@@ -903,10 +922,12 @@ class LLMProvider {
                 if (line.startsWith('data: ')) {
                     try {
                         const json = JSON.parse(line.slice(6));
-                        const chunk = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
-                        if (chunk) {
-                            fullText += chunk;
-                            if (onChunk) onChunk(chunk, fullText);
+                        const parts = json.candidates?.[0]?.content?.parts || [];
+                        for (const part of parts) {
+                            if (part.text) {
+                                fullText += part.text;
+                                if (onChunk) onChunk(part.text, fullText);
+                            }
                         }
                     } catch (e) { /* skip malformed chunks */ }
                 }
@@ -918,12 +939,27 @@ class LLMProvider {
     }
 
     _convertToGeminiFormat(messages) {
-        return messages
-            .filter(m => m.role !== 'system')
+        const filtered = (messages || [])
+            .filter(m => m && m.role !== 'system')
             .map(m => ({
-                role: m.role === 'assistant' ? 'model' : 'user',
-                parts: [{ text: m.content }],
+                role: (m.role === 'assistant' || m.role === 'model') ? 'model' : 'user',
+                parts: [{ text: String(m.content || m.text || '') }],
             }));
+
+        // Gemini rejects consecutive turns with the same role. Merge adjacent messages of the same role.
+        const merged = [];
+        for (const msg of filtered) {
+            const prev = merged[merged.length - 1];
+            if (prev && prev.role === msg.role) {
+                prev.parts[0].text += '\n\n' + msg.parts[0].text;
+            } else {
+                merged.push({ role: msg.role, parts: [{ text: msg.parts[0].text }] });
+            }
+        }
+        if (merged.length === 0) {
+            merged.push({ role: 'user', parts: [{ text: 'Begin.' }] });
+        }
+        return merged;
     }
 
     _normalizeBaseUrl(rawUrl) {
@@ -1004,6 +1040,12 @@ class LLMProvider {
 
     _parseErrorMessage(status, rawText) {
         let msg = String(rawText || '').trim();
+        if (/Tokens per day|TPD|Limit 100000|rate limit reached for model/i.test(msg)) {
+            return `Groq Account Daily Limit Reached (100,000 TPD). Groq has blocked requests for 44 minutes. Please open Settings (⚙️) → AI Provider, select "Google Gemini", and enter your free Gemini API Key from https://aistudio.google.com/app/apikey.`;
+        }
+        if (/Tokens per minute|TPM|Limit 12000/i.test(msg)) {
+            return `Groq Per-Minute Token Limit Hit (12,000 TPM). Please wait 30 seconds or switch to Google Gemini in Settings (⚙️).`;
+        }
         try {
             const json = JSON.parse(msg);
             if (json.error?.message) msg = json.error.message;
@@ -1214,9 +1256,9 @@ class LLMProvider {
         let retries = 0;
         const maxRetries = 3;
         const retryStatuses = [408, 409, 425, 429, 500, 502, 503, 504];
+        let response;
 
         while (retries <= maxRetries) {
-            let response;
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 120000);
             try {
@@ -1294,7 +1336,11 @@ class LLMProvider {
                 }
                 throw new Error(this._parseErrorMessage(response.status, errText));
             }
-            throw new Error(`Stream error (${response.status}): ${err}`);
+            break;
+        }
+
+        if (!response || !response.body) {
+            throw new Error('Stream response body is empty or unavailable');
         }
 
         let fullText = '';
@@ -1422,7 +1468,7 @@ class LLMProvider {
             throw new Error(`Anthropic stream error (${response.status}): ${err}`);
         }
 
-        let fullText = '';
+        let fullText = options.json ? '{' : '';
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
@@ -1455,21 +1501,7 @@ class LLMProvider {
         return fullText;
     }
 
-    /* ===== CLEANING OUTPUT & ERROR PARSING ===== */
-    _parseErrorMessage(status, rawText) {
-        const text = String(rawText || '');
-        if (/Tokens per day|TPD|Limit 100000|rate limit reached for model/i.test(text)) {
-            return `Groq Account Daily Limit Reached (100,000 TPD). Groq has blocked requests for 44 minutes. Please open Settings (⚙️) → AI Provider, select "Google Gemini", and enter your free Gemini API Key from https://aistudio.google.com/app/apikey.`;
-        }
-        if (/Tokens per minute|TPM|Limit 12000/i.test(text)) {
-            return `Groq Per-Minute Token Limit Hit (12,000 TPM). Please wait 30 seconds or switch to Google Gemini in Settings (⚙️).`;
-        }
-        try {
-            const json = JSON.parse(text);
-            if (json.error?.message) return `API Error (${status}): ${json.error.message}`;
-        } catch { }
-        return `API Error (${status}): ${text.slice(0, 250)}`;
-    }
+    /* ===== CLEANING OUTPUT ===== */
 
     _cleanOutputText(text) {
         let output = String(text || '');
@@ -2752,18 +2784,25 @@ class EngineClient {
     }
 
     async _post(path, body) {
-        const res = await fetch(`${this.baseUrl}${path}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body || {}),
-        });
-        const data = await res.json().catch(() => ({ error: 'Invalid engine response' }));
-        return data;
+        try {
+            const res = await fetch(`${this.baseUrl}${path}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body || {}),
+            });
+            return await res.json().catch(() => ({ ok: false, error: 'Invalid engine response' }));
+        } catch (err) {
+            return { ok: false, error: err.message, networkError: true };
+        }
     }
 
     async _get(path) {
-        const res = await fetch(`${this.baseUrl}${path}`);
-        return res.json().catch(() => ({ error: 'Invalid engine response' }));
+        try {
+            const res = await fetch(`${this.baseUrl}${path}`);
+            return await res.json().catch(() => ({ ok: false, error: 'Invalid engine response' }));
+        } catch (err) {
+            return { ok: false, error: err.message, networkError: true };
+        }
     }
 
     async isAvailable(force = false) {
@@ -3169,6 +3208,57 @@ class DesignSystem {
     ];
   }
 
+  /* Concrete grid compositions. Each recipe is a named pattern the prompt
+     can reference so the model builds real asymmetric layouts instead of
+     centred blocks. */
+  static layoutRecipes() {
+    return {
+      'asymmetric-hero': {
+        grid: 'grid-template-columns: repeat(12, 1fr)',
+        content: 'grid-column: 1 / span 5',
+        visual: 'grid-column: 6 / -1',
+        note: 'Content left, large visual right. Align items to bottom for editorial feel.',
+      },
+      'editorial-split': {
+        grid: 'grid-template-columns: 4fr 7fr',
+        alt: 'grid-template-columns: 7fr 4fr',
+        note: 'Narrow copy column, wide media. Alternate sides with :nth-of-type(even).',
+      },
+      'offset-statement': {
+        grid: 'grid-template-columns: repeat(12, 1fr)',
+        content: 'grid-column: 2 / span 8',
+        accent: 'grid-column: 10 / -1',
+        note: 'Inset from edges for a contained editorial block. Accent element breaks right.',
+      },
+      'full-bleed-media': {
+        grid: 'grid-template-columns: 1fr',
+        media: 'width: 100vw; margin-left: calc(-1 * var(--grid-margin))',
+        note: 'Media breaks out of container. Use for one dramatic section, not all.',
+      },
+      'staggered-cards': {
+        grid: 'grid-template-columns: repeat(3, 1fr)',
+        offset: '.card:nth-child(2) { transform: translateY(var(--space-xl)) }',
+        note: 'Cards at different vertical positions create visual rhythm.',
+      },
+      'overlap-sections': {
+        technique: 'position: relative; margin-top: calc(-1 * var(--space-xl))',
+        note: 'Pull section up to overlap the previous one. Creates depth without z-tricks.',
+      },
+    };
+  }
+
+  /* Editorial typography patterns that separate studio work from templates. */
+  static editorialTypography() {
+    return [
+      'Hero headlines break into 2-3 lines with deliberate line breaks, creating a staircase or indented shape. Never a single centered line.',
+      'Use .indent on a <span> inside the headline to push one word/line 10-20vw right, creating visual asymmetry.',
+      'Eyebrow text (above headlines) uses uppercase var(--step--1) with 0.18em tracking and a thin bottom border spanning the full width.',
+      'Section headings pair a tiny eyebrow label with a large title (6:1 size ratio minimum) — the contrast IS the design.',
+      'Pull quotes and statement text use var(--step-5) or var(--step-6) with italic and tight tracking.',
+      'Body paragraphs never exceed var(--measure-0) width. Set max-width on the paragraph, not the container.',
+    ];
+  }
+
   /* Emit the whole system as CSS custom properties. This is the block the
      coder agent must paste and then only ever reference by var(). */
   static toCSS(options = {}) {
@@ -3224,6 +3314,8 @@ class DesignSystem {
     const grid = DesignSystem.grid();
     const display = scale['step-6'];
     const hero = scale['step-7'];
+    const recipes = DesignSystem.layoutRecipes();
+    const typo = DesignSystem.editorialTypography();
     return [
       'DESIGN SYSTEM (computed — use these vars, do NOT invent sizes)',
       `* Display type: var(--step-6) ≈ ${display.px}–${display.pxMax}px. Hero statement: var(--step-7) ≈ ${hero.px}–${hero.pxMax}px.`,
@@ -3234,6 +3326,16 @@ class DesignSystem {
       '',
       'LAYOUT PRINCIPLES (hard constraints, not advice)',
       ...DesignSystem.layoutPrinciples().map((p) => `* ${p}`),
+      '',
+      'LAYOUT RECIPES (use these concrete grid compositions)',
+      `* HERO: ${recipes['asymmetric-hero'].grid}; content at ${recipes['asymmetric-hero'].content}, visual at ${recipes['asymmetric-hero'].visual}. ${recipes['asymmetric-hero'].note}`,
+      `* SPLIT: ${recipes['editorial-split'].grid} alternating with ${recipes['editorial-split'].alt}. ${recipes['editorial-split'].note}`,
+      `* STATEMENT: ${recipes['offset-statement'].grid}; content at ${recipes['offset-statement'].content}. ${recipes['offset-statement'].note}`,
+      `* CARDS: ${recipes['staggered-cards'].grid} with vertical offset on middle card. ${recipes['staggered-cards'].note}`,
+      `* OVERLAP: ${recipes['overlap-sections'].technique}. ${recipes['overlap-sections'].note}`,
+      '',
+      'EDITORIAL TYPOGRAPHY (what separates studio from template)',
+      ...typo.map((t) => `* ${t}`),
     ].join('\n');
   }
 }
@@ -3988,7 +4090,8 @@ class BaseAgent {
         const blocks = [];
 
         if (lang) {
-            const regex = new RegExp('```' + lang + '\\s*\\n([\\s\\S]*?)\\n```', 'gi');
+            const langPattern = (lang === 'javascript' || lang === 'js') ? '(?:javascript|js)' : (lang === 'typescript' || lang === 'ts') ? '(?:typescript|ts)' : lang;
+            const regex = new RegExp('```' + langPattern + '\\s*\\n([\\s\\S]*?)\\n```', 'gi');
             let match;
             while ((match = regex.exec(src)) !== null) {
                 blocks.push(match[1].trim());
@@ -3996,7 +4099,7 @@ class BaseAgent {
         }
 
         if (!blocks.length) {
-            const genericRegex = /```\s*\n([\s\S]*?)\n```/g;
+            const genericRegex = /```[a-zA-Z0-9_-]*\s*\n([\s\S]*?)\n```/g;
             let match;
             while ((match = genericRegex.exec(src)) !== null) {
                 blocks.push(match[1].trim());
@@ -4014,17 +4117,6 @@ class BaseAgent {
             String(str || '')
                 .replace(/^\uFEFF/, '')
                 .replace(/[\u200B\u200C\u200D\uFEFF\u00A0]/g, '')
-                .trim();
-
-        const stripNoise = (str) =>
-            sanitize(str)
-                .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
-                .replace(/<think>[\s\S]*?<\/think>/gi, '')
-                .replace(/```json/gi, '')
-                .replace(/```/g, '')
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(stripLineComments)
-                .replace(/,\s*([\}\]])/g, '$1')
                 .trim();
 
         /* Remove double-slash line comments without touching URLs or string
@@ -4052,6 +4144,18 @@ class BaseAgent {
                 out += ch;
             }
             return out;
+        };
+
+        const stripNoise = (str) => {
+            const clean = sanitize(str)
+                .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+                .replace(/<think>[\s\S]*?<\/think>/gi, '')
+                .replace(/```json/gi, '')
+                .replace(/```/g, '')
+                .replace(/\/\*[\s\S]*?\*\//g, '');
+            return stripLineComments(clean)
+                .replace(/,\s*([\}\]])/g, '$1')
+                .trim();
         };
 
         let cleanText = sanitize(text)
@@ -4678,16 +4782,26 @@ class AgentFramework {
             this._checkAbort();
 
             /* ── PHASE 2.5: MEDIA GENERATION ── */
-            if (this.mediaGenerator && mediaCount > 0) {
-                this._transition(this.states.GENERATING_MEDIA);
-                this.emit('progress', { step: 'generating-media', percent: 28, message: `Generating ${mediaCount} media assets...` });
+            if (this.mediaGenerator) {
+                if (!this.memory.specification.mediaNeeds ||
+                    (!this.memory.specification.mediaNeeds.images?.length && !this.memory.specification.mediaNeeds.videos?.length)) {
+                    if (this.mediaGenerator.autoPopulateKit) {
+                        this.memory.specification.mediaNeeds = this.mediaGenerator.autoPopulateKit(this.memory.specification);
+                    }
+                }
+                const activeCount = (this.memory.specification.mediaNeeds?.images?.length || 0) +
+                                    (this.memory.specification.mediaNeeds?.videos?.length || 0);
+                if (activeCount > 0) {
+                    this._transition(this.states.GENERATING_MEDIA);
+                    this.emit('progress', { step: 'generating-media', percent: 28, message: `Assembling ${activeCount} cinematic media assets...` });
 
-                this.memory.generatedMedia = await this.mediaGenerator.generateMedia(
-                    this.memory.specification.mediaNeeds,
-                    (msg) => this.emit('log', { type: 'info', message: msg })
-                );
+                    this.memory.generatedMedia = await this.mediaGenerator.generateMedia(
+                        this.memory.specification.mediaNeeds,
+                        (msg) => this.emit('log', { type: 'info', message: msg })
+                    );
 
-                this.emit('log', { type: 'success', message: `Generated ${Object.keys(this.memory.generatedMedia).length} media assets` });
+                    this.emit('log', { type: 'success', message: `Assembled ${Object.keys(this.memory.generatedMedia).length} cinematic media assets` });
+                }
             }
 
             this._checkAbort();
@@ -4784,7 +4898,8 @@ class AgentFramework {
                 uiFiles = await coderUI.execute(
                     this.memory.specification,
                     this.memory.designSystem,
-                    this.memory.generatedFiles['three-scene.js'] || null
+                    this.memory.generatedFiles['three-scene.js'] || null,
+                    this.memory.generatedMedia || {}
                 );
             }
 
@@ -5733,22 +5848,6 @@ class AgentFramework {
         }
     }
 
-    /* ===== CANCELLATION ===== */
-    cancel() {
-        if (this.abortController) {
-            this.abortController.abort();
-        }
-        // Allow a fresh generate/refine after cancel even if a long LLM call
-        // is still unwinding — the finally blocks still clear the lock safely.
-        this._generationLock = false;
-    }
-
-    _checkAbort() {
-        if (this.abortController?.signal?.aborted) {
-            throw new Error('ABORTED');
-        }
-    }
-
     /* ===== UTILITY ===== */
     getState() {
         return this.currentState;
@@ -5813,6 +5912,93 @@ class MediaGenerator {
             'stability': { endpoint: 'https://api.stability.ai/v2beta/stable-image/generate/sd3', model: 'sd3-large' },
         };
     }
+
+    static CINEMATIC_ASSETS = {
+        'luxury': {
+            videos: [
+                'https://assets.mixkit.co/videos/preview/mixkit-reflection-of-a-watch-on-a-black-table-41484-large.mp4',
+                'https://assets.mixkit.co/videos/preview/mixkit-black-and-gold-particles-floating-28701-large.mp4',
+                'https://assets.mixkit.co/videos/preview/mixkit-hands-of-a-clock-moving-fast-41476-large.mp4'
+            ],
+            images: [
+                'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1524805444758-089113d48a6d?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1549465220-1a8b9238cd48?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1508296695146-257a814070b4?auto=format&fit=crop&w=1920&q=85'
+            ]
+        },
+        'beverage': {
+            videos: [
+                'https://assets.mixkit.co/videos/preview/mixkit-pouring-a-drink-into-a-glass-with-ice-42435-large.mp4',
+                'https://assets.mixkit.co/videos/preview/mixkit-close-up-of-bubbles-in-a-carbonated-drink-41434-large.mp4',
+                'https://assets.mixkit.co/videos/preview/mixkit-espresso-pouring-into-a-glass-cup-41517-large.mp4'
+            ],
+            images: [
+                'https://images.unsplash.com/photo-1551024709-8f23befc6f87?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1556679343-c7306c1976bc?auto=format&fit=crop&w=1920&q=85'
+            ]
+        },
+        'automotive': {
+            videos: [
+                'https://assets.mixkit.co/videos/preview/mixkit-headlights-of-a-car-in-the-night-42472-large.mp4',
+                'https://assets.mixkit.co/videos/preview/mixkit-car-driving-through-a-city-at-night-41551-large.mp4',
+                'https://assets.mixkit.co/videos/preview/mixkit-tunnel-lights-passing-by-in-a-car-41549-large.mp4'
+            ],
+            images: [
+                'https://images.unsplash.com/photo-1617788138017-80ad40651399?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1542282088-72c9c27ed0cd?auto=format&fit=crop&w=1920&q=85'
+            ]
+        },
+        'tech': {
+            videos: [
+                'https://assets.mixkit.co/videos/preview/mixkit-digital-animation-of-screens-with-data-31911-large.mp4',
+                'https://assets.mixkit.co/videos/preview/mixkit-blue-laser-lines-grid-31656-large.mp4',
+                'https://assets.mixkit.co/videos/preview/mixkit-abstract-laser-lights-background-31742-large.mp4'
+            ],
+            images: [
+                'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?auto=format&fit=crop&w=1920&q=85'
+            ]
+        },
+        'fashion': {
+            videos: [
+                'https://assets.mixkit.co/videos/preview/mixkit-model-walking-on-a-runway-41480-large.mp4',
+                'https://assets.mixkit.co/videos/preview/mixkit-woman-posing-with-sunglasses-in-a-studio-41474-large.mp4'
+            ],
+            images: [
+                'https://images.unsplash.com/photo-1552346154-21d32810aba3?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=1920&q=85'
+            ]
+        },
+        'architecture': {
+            videos: [
+                'https://assets.mixkit.co/videos/preview/mixkit-aerial-view-of-modern-city-skyscrapers-41553-large.mp4'
+            ],
+            images: [
+                'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=1920&q=85'
+            ]
+        },
+        'cinematic': {
+            videos: [
+                'https://assets.mixkit.co/videos/preview/mixkit-smoke-moving-in-slow-motion-in-the-dark-41472-large.mp4',
+                'https://assets.mixkit.co/videos/preview/mixkit-golden-dust-particles-moving-in-the-air-41432-large.mp4',
+                'https://assets.mixkit.co/videos/preview/mixkit-liquid-mercury-bubbles-slow-motion-41487-large.mp4'
+            ],
+            images: [
+                'https://images.unsplash.com/photo-1550684848-fac1c5b4e853?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=1920&q=85',
+                'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=1920&q=85'
+            ]
+        }
+    };
 
     /* ===== MAIN: Generate all media from spec ===== */
     async generateMedia(mediaNeeds, onProgress) {
@@ -6068,54 +6254,69 @@ Make it modern, minimalist, and use a viewBox. Do not include markdown formattin
         return this._getPlaceholderVideo(item);
     }
 
-    /* ===== PLACEHOLDERS ===== */
+    /* ===== PLACEHOLDERS / CURATED 4K MEDIA ===== */
+    _resolveCategory(prompt) {
+        const text = String(prompt || '').toLowerCase();
+        if (/beverage|drink|coffee|tea|wine|beer|bar|cocktail|water|soda|cup|pour|juice|liquid|cafe/i.test(text)) return 'beverage';
+        if (/watch|jewelry|luxury|gold|perfume|diamond|silk|elegance|gem|prestige|timepiece/i.test(text)) return 'luxury';
+        if (/car|auto|motor|vehicle|drive|speed|mechanic|supercar|porsche|ferrari|bmw|racing|engine/i.test(text)) return 'automotive';
+        if (/ai|tech|code|cyber|software|saas|cloud|app|data|crypto|robot|neural|matrix|digital|future|quantum/i.test(text)) return 'tech';
+        if (/fashion|apparel|clothing|shoe|sneaker|model|streetwear|wear|runway|dress|outfit/i.test(text)) return 'fashion';
+        if (/architecture|interior|villa|building|home|real-estate|house|space|minimal|loft|concrete/i.test(text)) return 'architecture';
+        return 'cinematic';
+    }
+
     _getPlaceholderImage(item) {
-        // Generate a beautiful SVG placeholder with gradients
-        const colors = this._getPlaceholderColors(item.style);
-        const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080">
-            <defs>
-                <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" style="stop-color:${colors[0]};stop-opacity:1" />
-                    <stop offset="50%" style="stop-color:${colors[1]};stop-opacity:0.8" />
-                    <stop offset="100%" style="stop-color:${colors[2]};stop-opacity:1" />
-                </linearGradient>
-                <radialGradient id="g2" cx="30%" cy="40%" r="50%">
-                    <stop offset="0%" style="stop-color:${colors[1]};stop-opacity:0.4" />
-                    <stop offset="100%" style="stop-color:transparent;stop-opacity:0" />
-                </radialGradient>
-            </defs>
-            <rect width="1920" height="1080" fill="url(#g1)" />
-            <rect width="1920" height="1080" fill="url(#g2)" />
-            <circle cx="600" cy="400" r="200" fill="${colors[1]}" opacity="0.15" />
-            <circle cx="1400" cy="600" r="300" fill="${colors[2]}" opacity="0.1" />
-        </svg>`;
-
-        const b64 = btoa(unescape(encodeURIComponent(svg)));
-
+        const cat = this._resolveCategory(item.prompt || item.usage || '');
+        const pool = MediaGenerator.CINEMATIC_ASSETS[cat] || MediaGenerator.CINEMATIC_ASSETS['cinematic'];
+        const images = pool.images;
+        const hash = Math.abs(String(item.id || item.usage || '').split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0));
+        const imgUrl = images[hash % images.length] || images[0];
         return {
             type: 'image',
-            url: `data:image/svg+xml;base64,${b64}`,
-            format: 'svg-base64',
-            prompt: item.prompt,
-            provider: 'placeholder',
-            isPlaceholder: true,
+            url: imgUrl,
+            format: 'url',
+            prompt: item.prompt || `Cinematic 4K ${cat} visual`,
+            provider: 'cinematic-curated',
+            isPlaceholder: false,
         };
     }
 
     _getPlaceholderVideo(item) {
-        // Return CSS animation instructions instead of actual video
+        const cat = this._resolveCategory(item.prompt || item.usage || '');
+        const pool = MediaGenerator.CINEMATIC_ASSETS[cat] || MediaGenerator.CINEMATIC_ASSETS['cinematic'];
+        const videos = pool.videos;
+        const posters = pool.images;
+        const hash = Math.abs(String(item.id || item.usage || '').split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0));
+        const vUrl = videos[hash % videos.length] || videos[0];
+        const pUrl = posters[0];
         return {
             type: 'video',
-            url: '',
-            format: 'css-animation',
-            prompt: item.prompt,
-            provider: 'css-placeholder',
-            isPlaceholder: true,
-            cssCode: `
-                background: linear-gradient(-45deg, #0a0a0f, #1a1a2e, #0a0a0f, #16213e);
-                background-size: 400% 400%;
-                animation: gradientShift 15s ease infinite;
-            `,
+            url: vUrl,
+            poster: pUrl,
+            format: 'url',
+            prompt: item.prompt || `Cinematic ${cat} video loop`,
+            provider: 'cinematic-curated',
+            isPlaceholder: false,
+        };
+    }
+
+    autoPopulateKit(specification) {
+        const title = specification.title || '';
+        const desc = specification.description || specification.userPrompt || '';
+        const cat = this._resolveCategory(`${title} ${desc}`);
+        return {
+            videos: [
+                { id: 'hero_video', prompt: `Cinematic ${cat} hero video loop`, usage: 'hero', style: 'cinematic' },
+                { id: 'scrub_video', prompt: `Scroll-scrubbed ${cat} showcase video`, usage: 'scroll-scrub', style: 'cinematic' }
+            ],
+            images: [
+                { id: 'hero_poster', prompt: `Ultra-realistic 4K ${cat} hero poster`, usage: 'hero-poster', style: 'photorealistic' },
+                { id: 'product_1', prompt: `Masterpiece ${cat} product angle 1`, usage: 'product', style: 'photorealistic' },
+                { id: 'product_2', prompt: `Masterpiece ${cat} product angle 2`, usage: 'product', style: 'photorealistic' },
+                { id: 'product_3', prompt: `Masterpiece ${cat} product angle 3`, usage: 'product', style: 'photorealistic' },
+                { id: 'ambient_bg', prompt: `Cinematic atmospheric texture ${cat}`, usage: 'background', style: 'cinematic' }
+            ]
         };
     }
 
@@ -7383,6 +7584,9 @@ Generate a premium prompt pack now.`;
             queries.push('SaaS editorial landing page inspiration');
         }
 
+        queries.push(`${brief.siteArchetype} Awwwards winner layout`);  
+        queries.push('editorial asymmetric grid web design 2025');
+
         return [...new Set(queries)].slice(0, this.config.maxSearchQueries);
     }
 
@@ -7412,18 +7616,25 @@ Generate a premium prompt pack now.`;
 
     _describeLayout(sectionName) {
         const layouts = {
-            hero: 'Full viewport (100vh), overflow-hidden, media background z-0, content overlay z-10 with flex column',
-            'hero-film': 'Full viewport cinematic scene with video background and layered typography',
-            'hero-property': 'Full viewport with property photography and minimal type overlay',
-            'hero-manifesto': 'Full viewport with philosophical statement and subtle background treatment',
-            capabilities: 'Min-height 100vh, grid layout (1 col mobile / 3 col desktop), liquid glass cards with icons and tags',
-            'selected-work': 'Horizontal scroll gallery pinned with ScrollTrigger, or vertical case study cards',
-            philosophy: 'Two-column editorial layout, large type left, supporting text right',
-            gallery: 'Full-bleed image grid or horizontal pinned scroll',
-            cta: 'Centered content, magnetic button, form or contact info',
-            footer: 'Multi-column footer with links, social, brand info',
+            hero: 'Full viewport (100vh), 12-col grid. Content grid-column: 1/span 5, visual grid-column: 6/-1. Align items to bottom. Hero title breaks into 2-3 lines with .indent on middle line (margin-left: 15vw). Eyebrow above with uppercase + border-bottom.',
+            'hero-film': 'Full viewport with looping video background. Content overlay with z-10, positioned bottom-left in a 5-col span. Title uses var(--step-7) with line-height 0.85.',
+            'hero-property': 'Full viewport split: 7fr image left, 5fr content right. Property name at var(--step-6), location at var(--step--1) uppercase.',
+            'hero-manifesto': 'Full viewport centered statement. Single line at var(--step-7), supporting text at var(--step-1). Massive whitespace above and below. Subtle background gradient.',
+            'hero-campaign': 'Full bleed image with text overlay using mix-blend-mode: difference. Title at var(--step-7) offset to left edge.',
+            capabilities: 'grid-template-columns: repeat(3, 1fr) with staggered vertical offset on middle card (translateY var(--space-xl)). Cards use philosophy surface classes. Each card: icon + tags + title + description.',
+            'selected-work': 'Horizontal scroll gallery pinned with ScrollTrigger scrub. Each project card is 70vw wide with image + overlay title. Or: vertical 2-col masonry with alternating large/small cards.',
+            philosophy: 'grid-template-columns: 4fr 7fr. Large editorial type left at var(--step-5), supporting body text right at var(--step-0). Generous var(--space-3xl) padding.',
+            gallery: 'Full-bleed image grid or horizontal pinned scroll. Images have clip-path reveal on scroll entry.',
+            process: 'grid-template-columns: 7fr 4fr (reversed from philosophy section). Numbered steps left, visual diagram right.',
+            'features-scenes': 'Sticky scroll sequence: each feature pins and reveals with scrub. Content transitions between features while background stays.',
+            clients: 'Infinite marquee of logos/names. Subtle, small scale. Monochrome logos on dark bg.',
+            testimonials: 'Single large quote at var(--step-4) italic, centered. Author info small below. Carousel with fade transition, not slide.',
+            'floor-plans': 'Tab interface: buttons switch displayed floor plan image. Clean grid layout for specs.',
+            cta: 'Centered content block, max-width 600px. Large statement headline at var(--step-5), magnetic CTA button below. Generous var(--space-4xl) vertical padding.',
+            contact: 'grid-template-columns: 5fr 6fr. Contact info + social left, form right. Or: full-width statement with email link at var(--step-4).',
+            footer: 'grid-template-columns: 3fr 2fr 2fr 2fr 3fr. Brand column, 3 link columns, newsletter column. Subtle border-top, generous padding.',
         };
-        return layouts[sectionName] || 'Standard section with generous spacing and clear hierarchy';
+        return layouts[sectionName] || 'Asymmetric grid layout (4fr 7fr or 7fr 4fr) with generous var(--space-3xl) section padding and clear visual hierarchy.';
     }
 
     _componentsForSection(sectionName, motions) {
@@ -7524,14 +7735,18 @@ Generate a premium prompt pack now.`;
             `Art direction: ${brief.heroTreatment} with a premium ${brief.qualityBar} finish.`,
             `Color system: background ${colors.background}, text ${colors.text}, muted ${colors.textMuted}, accent ${colors.accent}, surface ${colors.surface}.`,
             `Typography: ${fonts.heading} (${fonts.headingStyle}) for headings and ${fonts.body} (300, 400, 500, 600) for body text. Use the Google Fonts URL ${fonts.googleFontsUrl}.`,
+            `EDITORIAL TYPOGRAPHY: hero headline breaks into 2-3 lines creating a staircase shape. Use .indent to push one line 15vw right. Eyebrow text above the headline uses uppercase with 0.18em tracking and a thin border-bottom.`,
+            `LAYOUT COMPOSITION: hero uses a 12-col grid with content spanning columns 1-5 and visual spanning 6-12. At least two other sections use asymmetric splits (4fr/7fr or 7fr/4fr), alternating sides. One section uses full-bleed media.`,
             `Motion systems to implement: ${motionLine}.`,
             `Required components: ${componentsLine}.`,
             `Hero copy: headline "${brief.heroSpec.headline}", subtext "${brief.heroSpec.subtext}", CTAs "${brief.heroSpec.ctaPrimary}" and "${brief.heroSpec.ctaSecondary}".`,
-            `Add exact scroll choreography, responsive breakpoints, prefers-reduced-motion fallback, and a clear asset plan.`,
+            `SCROLL CHOREOGRAPHY: hero entrance is a named GSAP timeline (stagger copy 0.08s, then media, then CTA). Every scroll section uses ScrollTrigger pin+scrub, not fire-once animations.`,
+            `VISUAL DEPTH: layer cards with subtle borders (rgba 0.06), film grain overlay, and staggered card positions (middle card offset vertically). Sections overlap by pulling the next one up with negative margin.`,
             `Assets: source HDRIs, PBR textures and models from Poly Haven (CC0) by slug, and build geometry, baked lightmaps and .glb exports with Blender. Do not invent asset URLs or use placeholder image hosts.`,
             `Typography must set tracking and leading per size — display type tight, body copy loose.`,
             `Research queries to guide reference gathering: ${queriesLine}.`,
             `Avoid: ${(brief.antiPatterns || []).join(', ')}.`,
+            `MODERN CSS: use :has() for nav peer-fading, container queries for adaptive cards, animation-timeline:view() for scroll reveals. No old-school media-query-only approaches.`,
             `Build it like a hand-crafted Awwwards site, not a template.`,
         ].join(' ');
     }
@@ -9968,6 +10183,88 @@ class CoderUIAgent extends BaseAgent {
 
         // Component templates for different site types
         this.componentTemplates = {
+            'scroll-video-scrub': {
+                html: `<section class="scene-scrub" data-scrub-scene>
+  <div class="scrub-sticky">
+    <video class="scrub-video" playsinline muted preload="auto" src="{{scrubVideoUrl}}" poster="{{posterUrl}}"></video>
+    <div class="scrub-overlay">
+      <div class="scrub-chapter active" data-scrub-chapter="1">
+        <span class="scrub-tag">01 / REVOLUTION</span>
+        <h2 class="scrub-title">{{title1}}</h2>
+        <p class="scrub-desc">{{desc1}}</p>
+      </div>
+      <div class="scrub-chapter" data-scrub-chapter="2">
+        <span class="scrub-tag">02 / ARCHITECTURE</span>
+        <h2 class="scrub-title">{{title2}}</h2>
+        <p class="scrub-desc">{{desc2}}</p>
+      </div>
+      <div class="scrub-chapter" data-scrub-chapter="3">
+        <span class="scrub-tag">03 / MASTERY</span>
+        <h2 class="scrub-title">{{title3}}</h2>
+        <p class="scrub-desc">{{desc3}}</p>
+      </div>
+    </div>
+    <div class="scrub-indicator"><div class="scrub-bar"></div></div>
+  </div>
+</section>`,
+                css: `.scene-scrub{height:300vh;position:relative}.scrub-sticky{position:sticky;top:0;height:100vh;overflow:hidden;display:flex;align-items:center;justify-content:center}.scrub-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}.scrub-overlay{position:relative;z-index:2;width:100%;max-width:1400px;padding:0 2rem;display:flex;flex-direction:column;pointer-events:none}.scrub-chapter{opacity:0;transform:translateY(40px);transition:all 0.6s cubic-bezier(0.16,1,0.3,1);position:absolute;bottom:10vh;left:2rem;max-width:600px;background:rgba(0,0,0,0.45);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,0.12);border-radius:24px;padding:2.5rem}.scrub-chapter.active{opacity:1;transform:translateY(0)}.scrub-tag{font-size:0.75rem;letter-spacing:0.2em;color:var(--accent,#00f0ff);text-transform:uppercase;font-weight:700}.scrub-title{font-size:clamp(2rem,4vw,3.5rem);line-height:1.05;margin:0.5rem 0}.scrub-desc{color:rgba(255,255,255,0.8);line-height:1.6}.scrub-indicator{position:absolute;bottom:2rem;right:2rem;width:160px;height:4px;background:rgba(255,255,255,0.15);border-radius:2px;overflow:hidden;z-index:3}.scrub-bar{height:100%;width:0%;background:var(--accent,#00f0ff);transition:width 0.1s linear}`,
+                js: `function initScrollScrub(){const section=document.querySelector('[data-scrub-scene]');const video=section?.querySelector('.scrub-video');const bar=section?.querySelector('.scrub-bar');const chapters=section?.querySelectorAll('.scrub-chapter');if(!section||!video)return;video.pause();ScrollTrigger.create({trigger:section,start:'top top',end:'bottom bottom',scrub:0.5,onUpdate:(self)=>{const p=self.progress;if(video.duration&&!isNaN(video.duration)){video.currentTime=video.duration*p}if(bar)bar.style.width=\`\${p*100}%\`;if(chapters&&chapters.length){const idx=Math.min(chapters.length-1,Math.floor(p*chapters.length));chapters.forEach((ch,i)=>ch.classList.toggle('active',i===idx))}}})}document.addEventListener('DOMContentLoaded',initScrollScrub);`
+            },
+            'product-3d-showcase': {
+                html: `<section class="scene-showcase" id="showcase">
+  <div class="showcase-container">
+    <div class="showcase-header">
+      <span class="showcase-tag">ENGINEERED PERFECTION</span>
+      <h2 class="showcase-heading">{{productTitle}}</h2>
+    </div>
+    <div class="showcase-stage" data-turntable>
+      <div class="showcase-card" data-hover="tilt">
+        <img class="showcase-img" src="{{productImage}}" alt="{{productTitle}}" />
+        <div class="hotspot" style="top:30%;left:45%;" data-tooltip="Titanium Alloy Chassis"><span></span></div>
+        <div class="hotspot" style="top:60%;left:65%;" data-tooltip="Haptic Touch Sensor Array"><span></span></div>
+      </div>
+      <div class="variant-selector">
+        <span class="variant-label">SELECT FINISH</span>
+        <div class="variant-pills">
+          <button class="variant-pill active" style="--color:#111" data-variant="Obsidian Black">Obsidian</button>
+          <button class="variant-pill" style="--color:#888" data-variant="Raw Titanium">Titanium</button>
+          <button class="variant-pill" style="--color:#d4af37" data-variant="Champagne Gold">Gold</button>
+        </div>
+      </div>
+      <div class="preorder-action">
+        <button class="btn btn-primary btn-preorder" data-magnet="0.3" id="btn-preorder-open">Pre-Order Now — {{price}}</button>
+      </div>
+    </div>
+  </div>
+  <div class="preorder-modal" id="preorder-modal" style="display:none">
+    <div class="preorder-backdrop" id="preorder-backdrop"></div>
+    <div class="preorder-content liquid-glass">
+      <button class="modal-close" id="btn-preorder-close">&times;</button>
+      <h3>Instant Pre-Order</h3>
+      <p>Reserve your unit with priority worldwide dispatch.</p>
+      <form class="preorder-form" onsubmit="event.preventDefault();alert('Pre-order confirmed! Priority dispatch assigned.')">
+        <input type="text" placeholder="Full Name" required />
+        <input type="email" placeholder="Email Address" required />
+        <button type="submit" class="btn btn-primary" style="width:100%">Confirm Reservation</button>
+      </form>
+    </div>
+  </div>
+</section>`,
+                css: `.scene-showcase{padding:6rem 2rem;position:relative}.showcase-container{max-width:1200px;margin:0 auto;text-align:center}.showcase-tag{font-size:0.75rem;letter-spacing:0.2em;color:var(--accent,#00f0ff);text-transform:uppercase;font-weight:700}.showcase-heading{font-size:clamp(2.5rem,5vw,4.5rem);margin:0.5rem 0 3rem}.showcase-stage{display:flex;flex-direction:column;align-items:center;gap:2rem}.showcase-card{position:relative;width:100%;max-width:650px;aspect-ratio:16/10;background:radial-gradient(circle at center,rgba(255,255,255,0.06) 0%,transparent 70%);border:1px solid rgba(255,255,255,0.1);border-radius:32px;padding:2rem;display:flex;align-items:center;justify-content:center;box-shadow:0 30px 60px rgba(0,0,0,0.5)}.showcase-img{max-width:85%;max-height:85%;object-fit:contain;filter:drop-shadow(0 20px 30px rgba(0,0,0,0.7));transition:transform 0.4s ease}.hotspot{position:absolute;width:24px;height:24px;border-radius:50%;background:rgba(0,240,255,0.3);display:flex;align-items:center;justify-content:center;cursor:pointer}.hotspot span{width:8px;height:8px;border-radius:50%;background:#00f0ff;animation:pulse 2s infinite}.variant-selector{display:flex;flex-direction:column;align-items:center;gap:0.75rem}.variant-pills{display:flex;gap:0.75rem}.variant-pill{padding:0.5rem 1.25rem;border-radius:100px;border:1px solid rgba(255,255,255,0.2);background:rgba(0,0,0,0.4);color:white;cursor:pointer;transition:all 0.3s ease}.variant-pill.active{border-color:#00f0ff;background:rgba(0,240,255,0.15)}.preorder-modal{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center}.preorder-backdrop{position:absolute;inset:0;background:rgba(0,0,0,0.8);backdrop-filter:blur(8px)}.preorder-content{position:relative;z-index:1;background:#111;border:1px solid rgba(255,255,255,0.15);border-radius:24px;padding:2.5rem;max-width:440px;width:90%}.modal-close{position:absolute;top:1rem;right:1rem;background:none;border:none;color:white;font-size:1.5rem;cursor:pointer}.preorder-form{display:flex;flex-direction:column;gap:1rem;margin-top:1.5rem}.preorder-form input{padding:0.85rem;border-radius:12px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.05);color:white}`,
+                js: `function initProductShowcase(){const openBtn=document.getElementById('btn-preorder-open');const closeBtn=document.getElementById('btn-preorder-close');const backdrop=document.getElementById('preorder-backdrop');const modal=document.getElementById('preorder-modal');openBtn?.addEventListener('click',()=>modal&&(modal.style.display='flex'));closeBtn?.addEventListener('click',()=>modal&&(modal.style.display='none'));backdrop?.addEventListener('click',()=>modal&&(modal.style.display='none'));document.querySelectorAll('.variant-pill').forEach(btn=>{btn.addEventListener('click',()=>{document.querySelectorAll('.variant-pill').forEach(b=>b.classList.remove('active'));btn.classList.add('active')})})}document.addEventListener('DOMContentLoaded',initProductShowcase);`
+            },
+            'chapter-nav': {
+                html: `<nav class="chapter-nav" aria-label="Chapters">
+  <div class="chapter-track">
+    <a href="#hero" class="chapter-item active" data-chapter="1"><span class="chapter-num">01</span><span class="chapter-text">Introduction</span></a>
+    <a href="#showcase" class="chapter-item" data-chapter="2"><span class="chapter-num">02</span><span class="chapter-text">Experience</span></a>
+    <a href="#specs" class="chapter-item" data-chapter="3"><span class="chapter-num">03</span><span class="chapter-text">Engineering</span></a>
+    <a href="#preorder" class="chapter-item" data-chapter="4"><span class="chapter-num">04</span><span class="chapter-text">Acquisition</span></a>
+  </div>
+</nav>`,
+                css: `.chapter-nav{position:fixed;left:2rem;top:50%;transform:translateY(-50%);z-index:900;display:flex;flex-direction:column}@media(max-width:1024px){.chapter-nav{display:none}}.chapter-track{display:flex;flex-direction:column;gap:1.5rem}.chapter-item{display:flex;align-items:center;gap:0.75rem;text-decoration:none;color:rgba(255,255,255,0.4);font-size:0.75rem;letter-spacing:0.15em;text-transform:uppercase;transition:all 0.3s ease}.chapter-item:hover,.chapter-item.active{color:white}.chapter-num{font-family:var(--font-mono,monospace);font-weight:700}.chapter-item.active .chapter-num{color:var(--accent,#00f0ff)}`,
+                js: `function initChapterNav(){const items=document.querySelectorAll('.chapter-item');items.forEach(item=>{item.addEventListener('click',e=>{e.preventDefault();const target=document.querySelector(item.getAttribute('href'));if(target){target.scrollIntoView({behavior:'smooth'});items.forEach(i=>i.classList.remove('active'));item.classList.add('active')}})})};document.addEventListener('DOMContentLoaded',initChapterNav);`
+            },
             'fading-video': {
                 html: `<div class="video-container" data-fading-video>
   <video class="fading-video active" autoplay muted playsinline loop>
@@ -10744,16 +11041,60 @@ DESIGN SYSTEM DISCIPLINE (this is what makes it read as studio work):
   the single clearest tell of a generated template.
 - One dominant element per section. If two things compete, one is too big.
 - Never show more than three type sizes in one section.
-- Whitespace is the design: when a section feels empty, add space, not a card.`;
+- Whitespace is the design: when a section feels empty, add space, not a card.
+
+AWARD-WINNING REFERENCE PATTERNS (use these as quality anchors):
+
+ASYMMETRIC HERO (never centre everything — offset the grid):
+<section class="scene-hero">
+  <div class="hero-grid">
+    <div class="hero-content" style="grid-column: 1 / span 5;">
+      <p class="hero-eyebrow type-0">Creative Studio <span>— EST 2024</span></p>
+      <h1 class="hero-title type-7">Shaping<br><span class="indent">Digital</span><br>Realities</h1>
+      <div class="hero-actions"><button class="btn" data-magnet>Start a Project</button></div>
+    </div>
+    <div class="hero-visual" style="grid-column: 6 / -1;">
+      <img src="hero.webp" class="hero-image" alt="" data-parallax-depth data-depth="0.3">
+    </div>
+  </div>
+</section>
+CSS for this pattern:
+.hero-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:var(--grid-gutter);min-height:100vh;align-items:end;padding:var(--space-2xl) var(--grid-margin)}
+.hero-title{font-size:var(--step-7);line-height:0.85;letter-spacing:var(--tracking-7)}
+.hero-title .indent{margin-left:15vw;display:block;font-style:italic}
+.hero-eyebrow{font-family:var(--font-mono);font-size:var(--step--1);text-transform:uppercase;letter-spacing:0.18em;display:flex;justify-content:space-between;border-bottom:1px solid currentColor;padding-bottom:var(--space-xs);margin-bottom:var(--space-xl)}
+
+PEER-FADING NAV (modern :has() pattern — dim siblings on hover):
+.nav-list:has(.nav-item:hover) .nav-item:not(:hover){opacity:0.3;filter:blur(1px);transform:scale(0.97)}
+.nav-item{transition:all 0.4s cubic-bezier(0.16,1,0.3,1)}
+
+EDITORIAL SPLIT SECTION (asymmetric 2-column with offset):
+.split-section{display:grid;grid-template-columns:4fr 7fr;gap:var(--space-xl);align-items:start;padding:var(--space-3xl) var(--grid-margin)}
+.split-section:nth-of-type(even){grid-template-columns:7fr 4fr}
+.split-section:nth-of-type(even) .split-copy{order:2}
+
+SCROLL-DRIVEN REVEAL (modern CSS, zero JS):
+.scroll-reveal{animation:reveal-up linear both;animation-timeline:view();animation-range:entry 10% cover 30%}
+@keyframes reveal-up{from{opacity:0;transform:translateY(60px) scale(0.95)}to{opacity:1;transform:none}}
+
+DARK SURFACE DEPTH (layered card with grain):
+.depth-card{background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:1.5rem;padding:var(--space-lg);position:relative;overflow:hidden}
+.depth-card::before{content:'';position:absolute;inset:0;background:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='0.65' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");pointer-events:none}
+`;
     }
 
-    async execute(specification, designSystem, threejsCode = null) {
+    async execute(specification, designSystem, threejsCode = null, generatedMedia = {}) {
         this.log('info', `Generating cinematic ${specification.complexity || 'premium'} website...`);
 
         const enhanced = designSystem.enhancedSpec || specification;
         const motionSystems = enhanced.motionSystems || [];
         const hasThreeJS = !!threejsCode;
         const isComplex = ['complex', 'ultra-complex'].includes(enhanced.complexity);
+
+        const mediaEntries = Object.entries(generatedMedia || {});
+        const mediaBlock = mediaEntries.length > 0
+            ? `\n═══════════════════════════════════════════════════════\n★ CINEMATIC MEDIA ASSETS (USE THESE EXACT WORKING URLS IN <img> AND <video> TAGS):\n═══════════════════════════════════════════════════════\n${mediaEntries.map(([id, m]) => `- ${id} (${m.type}): ${m.url} ${m.poster ? `(poster: ${m.poster})` : ''}`).join('\n')}\nDO NOT INVENT FAKE URLS OR LEAVE EMPTY SRC TAGS. Use these real URLs for the hero video, scroll-scrub scenes, product showcase cards, and background layers.\n`
+            : '';
 
         // Build comprehensive context
         const artDirection = enhanced.artDirection || {};
@@ -10871,7 +11212,7 @@ ${typeof LibraryRegistry !== 'undefined' ? LibraryRegistry.runtimeRules(LibraryR
             : 'Include GSAP, ScrollTrigger and Lenis.';
 
         const htmlPrompt = `${contextBlock}
-
+${mediaBlock}
 DESIGN SYSTEM CSS (authoritative tokens + philosophy classes — use these, do not invent):
 ${designSystem.css}
 
@@ -10900,6 +11241,18 @@ ${libraryBlock}
 14. Mobile hamburger nav structure
 15. Give each scene a unique, descriptive class (e.g. .scene-hero, .scene-proof)
     so it can be styled individually — do not reuse one generic section class.
+16. LAYOUT COMPOSITION: Use asymmetric grid columns (5/7, 4/8, or 3/9 splits).
+    The hero grid should NOT centre everything — offset content to one side.
+    At least one section must have content bleeding to the viewport edge.
+17. EDITORIAL TYPOGRAPHY: Hero headline should use line breaks to create
+    a staircase or indented shape, NOT a single centered line. Use the
+    .type-7 class for the hero title and .type-0 for eyebrows/labels.
+18. VISUAL DEPTH: Layer elements with z-index and subtle overlap between
+    sections. Use negative margins or position:relative + top:-4rem to
+    pull elements across section boundaries.
+19. PEER-FADING: Nav items should dim siblings on hover using :has().
+20. REAL IMAGERY: Every img tag MUST have a real src URL from the media
+    assets provided above. Never use empty src or placeholder URLs.
 
 Output ONLY the HTML file:
 **File: index.html**
@@ -10943,22 +11296,29 @@ ${htmlContext}
 YOUR TASK: Generate a complete, cinematic styles.css file.
 
 REQUIREMENTS:
-1. Import/extend design system tokens
+1. Import/extend design system tokens — use var(--step-N) and var(--space-N) for all sizes
 2. Include all component CSS provided above
-3. Premium typography: huge hero text with clamp(), dramatic hierarchy
-4. Generous whitespace rhythms (section padding 120px+)
-5. Liquid glass effects with gradient border masks
+3. EDITORIAL TYPOGRAPHY: hero title uses var(--step-7) with line-height 0.85 and
+   letter-spacing var(--tracking-7). Eyebrows use var(--step--1) uppercase with
+   0.18em tracking. Body uses var(--step-0). Never use raw px for font sizes.
+4. WHITESPACE RHYTHMS: section padding uses var(--space-3xl) minimum.
+   Inner group spacing uses var(--space-lg). Label-to-value gap uses var(--space-xs).
+5. Surface effects matching the ${designPhilosophy} philosophy (use the provided philosophy CSS classes)
 6. Responsive: mobile-first with breakpoints at 768px, 1024px, 1440px
-7. All animations use transform/opacity (GPU accelerated)
-8. Include @media (prefers-reduced-motion: reduce) fallback
-9. Premium hover effects (scale, glow, magnetic feel)
-10. Make every section feel hand-designed
+7. PERFORMANCE: all animations use transform/opacity only (GPU accelerated).
+   Include @media (prefers-reduced-motion: reduce) fallback.
+8. MODERN CSS: use :has() for peer state (nav dimming, card highlighting).
+   Use container queries for cards that adapt to parent width.
+   Use scroll-driven animations (animation-timeline: view()) for reveals.
+9. ASYMMETRIC GRIDS: at least 2 sections use uneven column splits
+   (grid-template-columns: 4fr 7fr or 5fr 7fr). Alternate sides.
+10. VISUAL DEPTH: cards use layered box-shadows and subtle borders
+    (rgba(255,255,255,0.06)). Add film grain via SVG noise ::before pseudo.
 11. MANDATORY: write a rule for EVERY class in the CLASS INVENTORY above.
     A class used in the markup but absent from the CSS ships unstyled — the
-    single most common reason a generated page looks broken. Do not skip
-    section-specific classes; give each one real, art-directed styling.
-12. Style each section in the SKELETON distinctly — no two sections should
-    look identical.
+    single most common reason a generated page looks broken.
+12. Style each section DISTINCTLY — no two sections should share the same
+    background color, layout pattern, or visual treatment.
 
 Output ONLY the CSS file:
 **File: styles.css**
@@ -11020,26 +11380,21 @@ THE FOLLOWING BOILERPLATE IS ALREADY INCLUDED (DO NOT REPEAT):
 - Animated counters for [data-count]
 - Reduced motion respect
 
-GENERATE THE REST:
-1. BlurText word-by-word reveal for [data-blur-text]
-2. Magnetic buttons for [data-magnet] using gsap.quickTo
-3. Parallax layers for [data-parallax]
-4. FadingVideo crossfade for [data-fading-video]
-5. Scroll scenes with pin/scrub for [data-scene]
-6. 3D tilt effect for [data-3d="tilt"] (mousemove perspective)
-7. 3D scroll effects for [data-scroll-3d] (rotateX/zoom on scroll)
-8. Hover effects for [data-hover] (tilt, glow, spotlight, perspective)
-9. Entrance reveals for [data-reveal] (IntersectionObserver → add .revealed class)
-10. Micro interactions for [data-micro] (ripple, bounce, magnetic, counter)
-11. Smooth page loader (if .page-loader exists)
-12. 3D window interactivity for [data-3d-interactive] 
-13. Parallax scroll for [data-parallax-scroll]
-14. Parallax depth for [data-parallax-depth]
-15. Custom cursor (if micro-cursor effect is enabled)
-16. Shimmer sweep (CSS-only, no JS needed)
-17. ${hasThreeJS ? 'Three.js scene initialization' : ''}
-18. Form validation if forms exist
-19. Any interactive components needed
+GENERATE THESE (quality over quantity — implement each fully):
+1. HERO ENTRANCE TIMELINE: gsap.timeline() named 'heroEntrance' — stagger
+   copy (0.08s), then media (0.15s delay), then CTA (0.2s). Use expo.out.
+2. BlurText word-by-word reveal for [data-blur-text] with power3.out
+3. Magnetic buttons for [data-magnet] using gsap.quickTo
+4. SCROLL-LINKED SECTIONS: for each [data-scene], create a ScrollTrigger
+   with pin:true, scrub:1, anticipatePin:1. Choreograph internal elements
+   as a scrubbed timeline, NOT independent tweens.
+5. Parallax depth layers for [data-parallax-depth] with different speeds
+   (foreground 1.0, mid 0.6, background 0.3)
+6. Entrance reveals for [data-reveal] (IntersectionObserver → .revealed)
+7. Hover effects for [data-hover] (tilt with perspective, glow with radial)
+8. Smooth page loader dismissal (if .page-loader exists)
+9. ${hasThreeJS ? 'Three.js scene initialization' : 'Custom cursor follower with mix-blend-mode:difference'}
+10. Peer-fading nav: CSS handles :has(), JS adds smooth scroll to anchors
 
 INCLUDE THE ADVANCED ANIMATION JS PROVIDED ABOVE.
 
@@ -20436,6 +20791,16 @@ class CodeEditor {
     focus() {
         this.editor?.focus();
     }
+
+    formatCurrentFile() {
+        if (!this.editor) return;
+        if (typeof CodeMirror !== 'undefined' && this.editor.lineCount && this.editor.indentLine) {
+            const count = this.editor.lineCount();
+            for (let i = 0; i < count; i++) {
+                this.editor.indentLine(i);
+            }
+        }
+    }
 }
 
 window.CodeEditor = CodeEditor;
@@ -23041,6 +23406,16 @@ window.DeployManager = DeployManager;
         document.getElementById('cli-close')?.addEventListener('click', () => {
             const cliModal = document.getElementById('cli-modal');
             if (cliModal) cliModal.style.display = 'none';
+            if (window.cliPingInterval) {
+                clearInterval(window.cliPingInterval);
+                window.cliPingInterval = null;
+            }
+        });
+        document.getElementById('btn-format')?.addEventListener('click', () => {
+            if (editor?.formatCurrentFile) {
+                editor.formatCurrentFile();
+                showToast('success', 'Code formatted');
+            }
         });
         document.getElementById('btn-copy-cli')?.addEventListener('click', () => {
             const code = document.getElementById('cli-command-code')?.textContent;
@@ -23120,6 +23495,25 @@ window.DeployManager = DeployManager;
         // Export
         document.getElementById('btn-import-zip')?.addEventListener('click', () => document.getElementById('zip-import-input')?.click());
         document.getElementById('btn-import-zip-small')?.addEventListener('click', () => document.getElementById('zip-import-input')?.click());
+        document.getElementById('welcome-import-btn')?.addEventListener('click', () => document.getElementById('zip-import-input')?.click());
+
+        // Upload image
+        document.getElementById('btn-upload-image')?.addEventListener('click', () => {
+            document.getElementById('image-upload-input')?.click();
+        });
+        document.getElementById('image-upload-input')?.addEventListener('change', (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                const dataUrl = evt.target?.result;
+                const filename = `assets/${file.name}`;
+                editor?.addFile(filename, dataUrl);
+                fileSystem?.addFile(filename, dataUrl);
+                showToast('success', `Uploaded ${file.name}`);
+            };
+            reader.readAsDataURL(file);
+        });
         document.getElementById('zip-import-input')?.addEventListener('change', handleZipImport);
         document.getElementById('btn-export')?.addEventListener('click', handleExport);
         document.getElementById('btn-export-local')?.addEventListener('click', exportToLocalWorkspace);
@@ -23208,6 +23602,10 @@ window.DeployManager = DeployManager;
         document.getElementById('console-header')?.addEventListener('click', () => {
             document.getElementById('console-panel')?.classList.toggle('collapsed');
         });
+        document.getElementById('btn-toggle-console')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            document.getElementById('console-panel')?.classList.toggle('collapsed');
+        });
         document.getElementById('btn-clear-console')?.addEventListener('click', () => {
             const output = document.getElementById('console-output');
             if (output) output.innerHTML = '';
@@ -23217,6 +23615,10 @@ window.DeployManager = DeployManager;
         document.getElementById('chat-send')?.addEventListener('click', handleChatSend);
         document.getElementById('btn-stop-generation')?.addEventListener('click', handleStopGeneration);
         document.getElementById('btn-new-chat')?.addEventListener('click', handleNewChat);
+        document.getElementById('ws-chat-model-btn')?.addEventListener('click', () => {
+            loadSavedSettings();
+            toggleModal('settings-modal', true);
+        });
         document.getElementById('chat-input')?.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -23478,27 +23880,33 @@ Format:
             if (welcomeScreen) welcomeScreen.style.display = 'none';
         }, 500);
 
+        // Reset chat history and messages container for a fresh project build
+        chatHistory = [];
+        const messagesContainer = document.getElementById('chat-messages');
+        if (messagesContainer) messagesContainer.innerHTML = '';
+        workspaceProjectId = createProjectId();
+
         // Put the prompt in the chat history
         addChatMessage('user', prompt);
         addChatMessage('ai', 'Thinking...');
 
         // Fetch a conversational reply & clarification questions
+        let welcomeAiReply = "I'm on it! Building your website now...";
         try {
             const systemPrompt = "You are the Zero-Builder AI Assistant. The user just asked you to create a website. Give a brief, friendly, conversational reply (1-2 sentences) acknowledging their request. Speak in the same language as the user (e.g., Hinglish if they use it).";
             const reply = await window.llmProvider.chat([{ role: 'user', content: prompt }], { systemPrompt, maxTokens: 100, temperature: 0.7 });
-            const messages = document.getElementById('chat-messages');
-            if (messages && messages.lastElementChild && messages.lastElementChild.classList.contains('ai')) {
-                const bubble = messages.lastElementChild.querySelector('.ws-msg-bubble');
-                if (bubble) bubble.textContent = reply;
-            }
+            if (reply) welcomeAiReply = reply;
         } catch (err) {
             console.error("Chat reply failed:", err);
-            const messages = document.getElementById('chat-messages');
-            if (messages && messages.lastElementChild && messages.lastElementChild.classList.contains('ai')) {
-                const bubble = messages.lastElementChild.querySelector('.ws-msg-bubble');
-                if (bubble) bubble.textContent = "I'm on it! Building your website now...";
-            }
         }
+
+        const messages = document.getElementById('chat-messages');
+        if (messages && messages.lastElementChild && messages.lastElementChild.classList.contains('ai')) {
+            const bubble = messages.lastElementChild.querySelector('.ws-msg-bubble');
+            if (bubble) bubble.textContent = welcomeAiReply;
+        }
+        chatHistory.push({ role: 'ai', text: welcomeAiReply, isHtml: false });
+        scheduleWorkspaceSave();
 
         // Check for clarification questions
         const questions = await fetchClarificationQuestions(prompt);
@@ -23526,7 +23934,7 @@ Format:
 
     function handleNewChat() {
         const files = editor?.getAllFiles() || {};
-        if (Object.keys(files).length > 0) {
+        if (Object.keys(files).length > 0 || chatHistory.length > 0) {
             createSnapshot('Before starting new chat');
         }
 
@@ -23649,7 +24057,7 @@ Format:
             const msg = e?.message || String(e);
 
             // Add error message instead of replacing
-            addChatMessage('system', `❌ Error: ${msg}`, true);
+            addChatMessage('system', `❌ Error: ${escapeHtml(msg)}`, true);
 
             // Surface engineer-grade failure guidance (no silent fail, no weak shell)
             if (/too thin|no weak|failed permanently|could not finish|extract ANY code|is not a function/i.test(msg)) {
@@ -23663,15 +24071,6 @@ Format:
     }
 
     /* ===== CHAT / REFINEMENT ===== */
-    function handleStopGeneration() {
-        if (!isGenerating) return;
-        framework?.cancel();
-        isGenerating = false;
-        updateGenerateButton(false);
-        showToast('info', 'Generation stopped');
-        addChatMessage('system', '⏹️ Generation stopped by user.', true);
-    }
-
     async function handleChatSend() {
         const chatInput = document.getElementById('chat-input');
         const prompt = chatInput?.value?.trim();
@@ -23737,6 +24136,8 @@ Format:
                 const bubble = messages.lastElementChild.querySelector('.ws-msg-bubble');
                 if (bubble) bubble.textContent = reply;
             }
+            chatHistory.push({ role: 'ai', text: reply, isHtml: false });
+            scheduleWorkspaceSave();
 
             // If it's a simple greeting or general inquiry, stop here. Do NOT throw error or refine code.
             if (isGreeting) {
@@ -23784,8 +24185,8 @@ Format:
             if (e?.message === 'ABORTED' || framework?.isCancelled) {
                 return;
             }
-            addChatMessage('system', `❌ Error: ${e.message}`, true);
-            showToast('error', `Chat failed: ${e.message}`);
+            addChatMessage('system', `❌ Error: ${escapeHtml(e?.message || String(e))}`, true);
+            showToast('error', `Chat failed: ${e?.message || String(e)}`);
         } finally {
             isGenerating = false;
             updateGenerateButton(false);
@@ -24151,6 +24552,10 @@ Format:
         if (welcomeLabel) {
             welcomeLabel.textContent = provider.name;
         }
+        const wsLabel = document.getElementById('ws-model-label');
+        if (wsLabel) {
+            wsLabel.textContent = provider.name;
+        }
 
         // Update dropdown active states
         document.querySelectorAll('.provider-option').forEach(opt => {
@@ -24291,12 +24696,13 @@ Format:
 
         // Temporarily save current settings for the test
         const providerId = document.getElementById('settings-provider')?.value;
+        const modelId = document.getElementById('settings-model')?.value;
         const apiKey = document.getElementById('settings-api-key')?.value;
         const customUrl = document.getElementById('settings-custom-url')?.value;
         const customModel = document.getElementById('settings-custom-model')?.value;
 
         if (apiKey) window.llmProvider.setApiKey(providerId, apiKey);
-        if (providerId) window.llmProvider.setProvider(providerId);
+        if (providerId) window.llmProvider.setProvider(providerId, modelId);
         if (customUrl) window.llmProvider.customBaseUrl = customUrl;
         if (customModel) window.llmProvider.customModelName = customModel;
 
@@ -24612,12 +25018,16 @@ Format:
         container.innerHTML = '';
         for (const msg of chatHistory) {
             const div = document.createElement('div');
-            div.className = `ws-chat-msg ${msg.role}`;
-            if (msg.role === 'system' && msg.isHtml) div.innerHTML = msg.text;
-            else div.innerHTML = `<div class="ws-msg-bubble">${escapeHtml(msg.text)}</div>`;
+            const role = (msg.role === 'assistant' || msg.role === 'model') ? 'ai' : (msg.role || 'user');
+            div.className = `ws-chat-msg ${role}`;
+            const text = msg.text || msg.content || '';
+            if (role === 'system' && msg.isHtml) div.innerHTML = text;
+            else div.innerHTML = `<div class="ws-msg-bubble">${escapeHtml(text)}</div>`;
             container.appendChild(div);
         }
-        container.scrollTop = container.scrollHeight;
+        requestAnimationFrame(() => {
+            container.scrollTop = container.scrollHeight;
+        });
     }
 
     function createSnapshot(label) {
@@ -24658,18 +25068,19 @@ Format:
 
     function restoreSnapshot(id, { confirmFirst = true } = {}) {
         const snapshot = getSnapshots().find(item => item.id === id);
-        if (!snapshot || !snapshot.files) return false;
+        if (!snapshot) return false;
+        const snapshotFiles = (snapshot.files && typeof snapshot.files === 'object') ? snapshot.files : {};
         if (confirmFirst && !confirm(`Restore “${snapshot.label}”? Your current workspace will be kept as a local draft.`)) return false;
-        editor?.setFiles(snapshot.files);
-        fileSystem?.setFiles(snapshot.files);
-        preview?.render(snapshot.files);
+        editor?.setFiles(snapshotFiles);
+        fileSystem?.setFiles(snapshotFiles);
+        preview?.render(snapshotFiles);
         if (framework) {
             framework.memory = framework._createEmptyMemory ? framework._createEmptyMemory() : {};
-            framework.memory.generatedFiles = { ...snapshot.files };
+            framework.memory.generatedFiles = { ...snapshotFiles };
             framework.memory.userPrompt = snapshot.prompt || '';
             framework.frameworkOverride = snapshot.framework || 'vanilla';
         }
-        workspaceProjectId = createProjectId();
+        workspaceProjectId = snapshot.projectId || snapshot.id || createProjectId();
         renderChatHistory(snapshot.chat);
         const name = document.getElementById('project-name');
         if (name && snapshot.project) name.value = snapshot.project;
@@ -24694,12 +25105,32 @@ Format:
                 <div class="metric-card"><span class="metric-label">Target</span><span class="metric-value">${framework?.frameworkOverride === 'fullstack-nextjs' ? 'Next.js' : framework?.frameworkOverride === 'react-vite' ? 'React' : 'Static'}</span></div>`;
         }
         if (!list) return;
-        list.innerHTML = snapshots.length ? snapshots.map(snapshot => `
+        list.innerHTML = snapshots.length ? snapshots.map(snapshot => {
+            const turns = Array.isArray(snapshot.chat) ? snapshot.chat : [];
+            const chatTranscriptHtml = turns.length ? `
+                <details class="version-transcript" style="margin-top:8px;">
+                    <summary style="font-size:12px;color:var(--text-secondary);cursor:pointer;user-select:none;">
+                        View conversation (${turns.length} message${turns.length === 1 ? '' : 's'})
+                    </summary>
+                    <div style="margin-top:6px;max-height:160px;overflow-y:auto;background:var(--bg-secondary);padding:8px 10px;border-radius:6px;font-size:12px;display:flex;flex-direction:column;gap:4px;">
+                        ${turns.map(m => `
+                            <div><strong style="color:${(m.role === 'ai' || m.role === 'assistant') ? 'var(--accent-purple)' : 'var(--text-primary)'}">${(m.role === 'ai' || m.role === 'assistant') ? 'Zero AI' : 'You'}:</strong> <span>${escapeHtml((m.text || m.content || '').slice(0, 300))}</span></div>
+                        `).join('')}
+                    </div>
+                </details>` : '';
+
+            return `
             <div class="version-row">
                 <i data-lucide="git-commit-horizontal"></i>
-                <div class="version-main"><span class="version-title">${escapeHtml(snapshot.label)} · ${escapeHtml(snapshot.project || 'Untitled project')}</span><span class="version-meta">${new Date(snapshot.createdAt).toLocaleString()} · ${Object.keys(snapshot.files || {}).length} files · ${escapeHtml(snapshot.framework || 'vanilla')}${Array.isArray(snapshot.chat) && snapshot.chat.length ? ` · ${snapshot.chat.length} messages` : ''}</span><span class="version-preview">${escapeHtml((snapshot.prompt || snapshot.chat?.find(message => message.role === 'user')?.text || '').trim().slice(0, 120) || 'No chat preview saved')}</span></div>
+                <div class="version-main">
+                    <span class="version-title">${escapeHtml(snapshot.label)} · ${escapeHtml(snapshot.project || 'Untitled project')}</span>
+                    <span class="version-meta">${new Date(snapshot.createdAt).toLocaleString()} · ${Object.keys(snapshot.files || {}).length} files · ${escapeHtml(snapshot.framework || 'vanilla')}${turns.length ? ` · ${turns.length} messages` : ''}</span>
+                    <span class="version-preview">${escapeHtml((snapshot.prompt || snapshot.chat?.find(message => message.role === 'user')?.text || '').trim().slice(0, 120) || 'No chat preview saved')}</span>
+                    ${chatTranscriptHtml}
+                </div>
                 <button class="btn btn-secondary" data-restore-version="${snapshot.id}"><i data-lucide="rotate-ccw"></i> Restore</button>
-            </div>`).join('') : '<div class="history-empty">No saved chats or project versions yet. Your saved conversations will appear here.</div>';
+            </div>`;
+        }).join('') : '<div class="history-empty">No saved chats or project versions yet. Your saved conversations will appear here.</div>';
         list.querySelectorAll('[data-restore-version]').forEach(btn => btn.addEventListener('click', () => {
             if (!restoreSnapshot(btn.dataset.restoreVersion)) return;
             const welcomeScreen = document.getElementById('welcome-screen');
@@ -24827,8 +25258,13 @@ Format:
         }
     }
 
+    function clearAiStatusIndicators() {
+        document.querySelectorAll('.ws-ai-status').forEach(el => el.remove());
+    }
+
     function updateGenerateButton(generating) {
-        const welcomeBtn = document.getElementById('prompt-send');
+        if (!generating) clearAiStatusIndicators();
+        const welcomeBtn = document.getElementById('welcome-send-btn') || document.getElementById('prompt-send');
         const chatSendBtn = document.getElementById('chat-send');
 
         if (welcomeBtn) {

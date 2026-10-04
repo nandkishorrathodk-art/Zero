@@ -136,7 +136,8 @@ class BaseAgent {
         const blocks = [];
 
         if (lang) {
-            const regex = new RegExp('```' + lang + '\\s*\\n([\\s\\S]*?)\\n```', 'gi');
+            const langPattern = (lang === 'javascript' || lang === 'js') ? '(?:javascript|js)' : (lang === 'typescript' || lang === 'ts') ? '(?:typescript|ts)' : lang;
+            const regex = new RegExp('```' + langPattern + '\\s*\\n([\\s\\S]*?)\\n```', 'gi');
             let match;
             while ((match = regex.exec(src)) !== null) {
                 blocks.push(match[1].trim());
@@ -144,7 +145,7 @@ class BaseAgent {
         }
 
         if (!blocks.length) {
-            const genericRegex = /```\s*\n([\s\S]*?)\n```/g;
+            const genericRegex = /```[a-zA-Z0-9_-]*\s*\n([\s\S]*?)\n```/g;
             let match;
             while ((match = genericRegex.exec(src)) !== null) {
                 blocks.push(match[1].trim());
@@ -162,17 +163,6 @@ class BaseAgent {
             String(str || '')
                 .replace(/^\uFEFF/, '')
                 .replace(/[\u200B\u200C\u200D\uFEFF\u00A0]/g, '')
-                .trim();
-
-        const stripNoise = (str) =>
-            sanitize(str)
-                .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
-                .replace(/<think>[\s\S]*?<\/think>/gi, '')
-                .replace(/```json/gi, '')
-                .replace(/```/g, '')
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(stripLineComments)
-                .replace(/,\s*([\}\]])/g, '$1')
                 .trim();
 
         /* Remove double-slash line comments without touching URLs or string
@@ -200,6 +190,18 @@ class BaseAgent {
                 out += ch;
             }
             return out;
+        };
+
+        const stripNoise = (str) => {
+            const clean = sanitize(str)
+                .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+                .replace(/<think>[\s\S]*?<\/think>/gi, '')
+                .replace(/```json/gi, '')
+                .replace(/```/g, '')
+                .replace(/\/\*[\s\S]*?\*\//g, '');
+            return stripLineComments(clean)
+                .replace(/,\s*([\}\]])/g, '$1')
+                .trim();
         };
 
         let cleanText = sanitize(text)
@@ -826,16 +828,26 @@ class AgentFramework {
             this._checkAbort();
 
             /* ── PHASE 2.5: MEDIA GENERATION ── */
-            if (this.mediaGenerator && mediaCount > 0) {
-                this._transition(this.states.GENERATING_MEDIA);
-                this.emit('progress', { step: 'generating-media', percent: 28, message: `Generating ${mediaCount} media assets...` });
+            if (this.mediaGenerator) {
+                if (!this.memory.specification.mediaNeeds ||
+                    (!this.memory.specification.mediaNeeds.images?.length && !this.memory.specification.mediaNeeds.videos?.length)) {
+                    if (this.mediaGenerator.autoPopulateKit) {
+                        this.memory.specification.mediaNeeds = this.mediaGenerator.autoPopulateKit(this.memory.specification);
+                    }
+                }
+                const activeCount = (this.memory.specification.mediaNeeds?.images?.length || 0) +
+                                    (this.memory.specification.mediaNeeds?.videos?.length || 0);
+                if (activeCount > 0) {
+                    this._transition(this.states.GENERATING_MEDIA);
+                    this.emit('progress', { step: 'generating-media', percent: 28, message: `Assembling ${activeCount} cinematic media assets...` });
 
-                this.memory.generatedMedia = await this.mediaGenerator.generateMedia(
-                    this.memory.specification.mediaNeeds,
-                    (msg) => this.emit('log', { type: 'info', message: msg })
-                );
+                    this.memory.generatedMedia = await this.mediaGenerator.generateMedia(
+                        this.memory.specification.mediaNeeds,
+                        (msg) => this.emit('log', { type: 'info', message: msg })
+                    );
 
-                this.emit('log', { type: 'success', message: `Generated ${Object.keys(this.memory.generatedMedia).length} media assets` });
+                    this.emit('log', { type: 'success', message: `Assembled ${Object.keys(this.memory.generatedMedia).length} cinematic media assets` });
+                }
             }
 
             this._checkAbort();
@@ -932,7 +944,8 @@ class AgentFramework {
                 uiFiles = await coderUI.execute(
                     this.memory.specification,
                     this.memory.designSystem,
-                    this.memory.generatedFiles['three-scene.js'] || null
+                    this.memory.generatedFiles['three-scene.js'] || null,
+                    this.memory.generatedMedia || {}
                 );
             }
 
@@ -1878,22 +1891,6 @@ class AgentFramework {
             throw error;
         } finally {
             this._generationLock = false;
-        }
-    }
-
-    /* ===== CANCELLATION ===== */
-    cancel() {
-        if (this.abortController) {
-            this.abortController.abort();
-        }
-        // Allow a fresh generate/refine after cancel even if a long LLM call
-        // is still unwinding — the finally blocks still clear the lock safely.
-        this._generationLock = false;
-    }
-
-    _checkAbort() {
-        if (this.abortController?.signal?.aborted) {
-            throw new Error('ABORTED');
         }
     }
 

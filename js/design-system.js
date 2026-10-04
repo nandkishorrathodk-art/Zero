@@ -129,6 +129,57 @@ class DesignSystem {
     ];
   }
 
+  /* Concrete grid compositions. Each recipe is a named pattern the prompt
+     can reference so the model builds real asymmetric layouts instead of
+     centred blocks. */
+  static layoutRecipes() {
+    return {
+      'asymmetric-hero': {
+        grid: 'grid-template-columns: repeat(12, 1fr)',
+        content: 'grid-column: 1 / span 5',
+        visual: 'grid-column: 6 / -1',
+        note: 'Content left, large visual right. Align items to bottom for editorial feel.',
+      },
+      'editorial-split': {
+        grid: 'grid-template-columns: 4fr 7fr',
+        alt: 'grid-template-columns: 7fr 4fr',
+        note: 'Narrow copy column, wide media. Alternate sides with :nth-of-type(even).',
+      },
+      'offset-statement': {
+        grid: 'grid-template-columns: repeat(12, 1fr)',
+        content: 'grid-column: 2 / span 8',
+        accent: 'grid-column: 10 / -1',
+        note: 'Inset from edges for a contained editorial block. Accent element breaks right.',
+      },
+      'full-bleed-media': {
+        grid: 'grid-template-columns: 1fr',
+        media: 'width: 100vw; margin-left: calc(-1 * var(--grid-margin))',
+        note: 'Media breaks out of container. Use for one dramatic section, not all.',
+      },
+      'staggered-cards': {
+        grid: 'grid-template-columns: repeat(3, 1fr)',
+        offset: '.card:nth-child(2) { transform: translateY(var(--space-xl)) }',
+        note: 'Cards at different vertical positions create visual rhythm.',
+      },
+      'overlap-sections': {
+        technique: 'position: relative; margin-top: calc(-1 * var(--space-xl))',
+        note: 'Pull section up to overlap the previous one. Creates depth without z-tricks.',
+      },
+    };
+  }
+
+  /* Editorial typography patterns that separate studio work from templates. */
+  static editorialTypography() {
+    return [
+      'Hero headlines break into 2-3 lines with deliberate line breaks, creating a staircase or indented shape. Never a single centered line.',
+      'Use .indent on a <span> inside the headline to push one word/line 10-20vw right, creating visual asymmetry.',
+      'Eyebrow text (above headlines) uses uppercase var(--step--1) with 0.18em tracking and a thin bottom border spanning the full width.',
+      'Section headings pair a tiny eyebrow label with a large title (6:1 size ratio minimum) — the contrast IS the design.',
+      'Pull quotes and statement text use var(--step-5) or var(--step-6) with italic and tight tracking.',
+      'Body paragraphs never exceed var(--measure-0) width. Set max-width on the paragraph, not the container.',
+    ];
+  }
+
   /* Emit the whole system as CSS custom properties. This is the block the
      coder agent must paste and then only ever reference by var(). */
   static toCSS(options = {}) {
@@ -184,6 +235,8 @@ class DesignSystem {
     const grid = DesignSystem.grid();
     const display = scale['step-6'];
     const hero = scale['step-7'];
+    const recipes = DesignSystem.layoutRecipes();
+    const typo = DesignSystem.editorialTypography();
     return [
       'DESIGN SYSTEM (computed — use these vars, do NOT invent sizes)',
       `* Display type: var(--step-6) ≈ ${display.px}–${display.pxMax}px. Hero statement: var(--step-7) ≈ ${hero.px}–${hero.pxMax}px.`,
@@ -194,6 +247,16 @@ class DesignSystem {
       '',
       'LAYOUT PRINCIPLES (hard constraints, not advice)',
       ...DesignSystem.layoutPrinciples().map((p) => `* ${p}`),
+      '',
+      'LAYOUT RECIPES (use these concrete grid compositions)',
+      `* HERO: ${recipes['asymmetric-hero'].grid}; content at ${recipes['asymmetric-hero'].content}, visual at ${recipes['asymmetric-hero'].visual}. ${recipes['asymmetric-hero'].note}`,
+      `* SPLIT: ${recipes['editorial-split'].grid} alternating with ${recipes['editorial-split'].alt}. ${recipes['editorial-split'].note}`,
+      `* STATEMENT: ${recipes['offset-statement'].grid}; content at ${recipes['offset-statement'].content}. ${recipes['offset-statement'].note}`,
+      `* CARDS: ${recipes['staggered-cards'].grid} with vertical offset on middle card. ${recipes['staggered-cards'].note}`,
+      `* OVERLAP: ${recipes['overlap-sections'].technique}. ${recipes['overlap-sections'].note}`,
+      '',
+      'EDITORIAL TYPOGRAPHY (what separates studio from template)',
+      ...typo.map((t) => `* ${t}`),
     ].join('\n');
   }
 }

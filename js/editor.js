@@ -272,6 +272,16 @@ class CodeEditor {
     focus() {
         this.editor?.focus();
     }
+
+    formatCurrentFile() {
+        if (!this.editor) return;
+        if (typeof CodeMirror !== 'undefined' && this.editor.lineCount && this.editor.indentLine) {
+            const count = this.editor.lineCount();
+            for (let i = 0; i < count; i++) {
+                this.editor.indentLine(i);
+            }
+        }
+    }
 }
 
 window.CodeEditor = CodeEditor;

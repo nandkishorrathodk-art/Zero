@@ -987,7 +987,7 @@ html, body {
 
 .preview-viewport {
     flex: 1;
-    overflow: hidden;
+    overflow: auto;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1429,7 +1429,7 @@ html, body {
 /* ===== PROVIDER DROPDOWN ===== */
 .provider-dropdown {
     position: fixed;
-    z-index: 1001;
+    z-index: 10002;
     width: 280px;
     background: var(--bg-secondary);
     border: 1px solid var(--border-default);
@@ -2538,10 +2538,13 @@ html, body {
     align-self: flex-end;
     max-width: 90%;
     word-break: break-word;
+    white-space: pre-wrap;
 }
 
 /* AI message */
-.ws-chat-msg.ai .ws-msg-bubble {
+.ws-chat-msg.ai .ws-msg-bubble,
+.ws-chat-msg.assistant .ws-msg-bubble,
+.ws-chat-msg.model .ws-msg-bubble {
     background: var(--bg-tertiary);
     border: 1px solid var(--border-subtle);
     color: var(--text-secondary);
@@ -2550,6 +2553,8 @@ html, body {
     font-size: 0.85rem;
     line-height: 1.5;
     max-width: 95%;
+    word-break: break-word;
+    white-space: pre-wrap;
 }
 
 /* Version pill (v0-style) */

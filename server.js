@@ -14,7 +14,29 @@ const projectsFile = path.join(dataDir, 'projects.json');
 const workspacesDir = path.join(dataDir, 'local-workspaces');
 const port = Number(process.env.PORT || 4173);
 const host = process.env.HOST || '127.0.0.1';
-const mimeTypes = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.ico': 'image/x-icon', '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json', '.hdr': 'image/vnd.radiance', '.ktx2': 'image/ktx2', '.wasm': 'application/wasm', '.bin': 'application/octet-stream' };
+const mimeTypes = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.mp4': 'video/mp4',
+  '.ico': 'image/x-icon',
+  '.glb': 'model/gltf-binary',
+  '.gltf': 'model/gltf+json',
+  '.hdr': 'image/vnd.radiance',
+  '.ktx2': 'image/ktx2',
+  '.wasm': 'application/wasm',
+  '.bin': 'application/octet-stream',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf'
+};
 
 async function readProjects() {
   try { return JSON.parse(await fs.readFile(projectsFile, 'utf8')); } catch { return {}; }
@@ -44,18 +66,35 @@ async function writeWorkspaceFiles(workspace, files) {
 }
 
 function send(res, status, payload) {
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'Access-Control-Allow-Origin': '*',
+  });
   res.end(JSON.stringify(payload));
 }
 
 function readJson(req, maxBytes = 1_500_000) {
   return new Promise((resolve, reject) => {
-    let body = '';
+    let received = 0;
+    const chunks = [];
     req.on('data', chunk => {
-      body += chunk;
-      if (Buffer.byteLength(body) > maxBytes) reject(new Error('Request payload too large'));
+      received += chunk.length;
+      if (received > maxBytes) {
+        req.destroy();
+        reject(new Error('Request payload too large'));
+        return;
+      }
+      chunks.push(chunk);
     });
-    req.on('end', () => { try { resolve(JSON.parse(body || '{}')); } catch { reject(new Error('Invalid JSON body')); } });
+    req.on('end', () => {
+      try {
+        const body = Buffer.concat(chunks).toString('utf8');
+        resolve(JSON.parse(body || '{}'));
+      } catch {
+        reject(new Error('Invalid JSON body'));
+      }
+    });
     req.on('error', reject);
   });
 }
@@ -69,10 +108,10 @@ function isPrivateHost(hostname) {
   const h = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
   if (!h) return true;
   if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.internal')) return true;
-  if (h === '::1' || h.startsWith('fe80:') || h.startsWith('fc') || h.startsWith('fd')) return true;
+  if (h === '::' || h === '::1' || h.startsWith('fe80:') || h.startsWith('fc') || h.startsWith('fd') || h.startsWith('::ffff:')) return true;
   if (/^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h) || /^169\.254\./.test(h)) return true;
   if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true;
-  if (/^0\./.test(h)) return true;
+  if (/^0+(\.0+)+$/.test(h) || /^0\./.test(h)) return true;
   return false;
 }
 
@@ -125,6 +164,13 @@ async function proxyLLM(req, res) {
 }
 
 const server = http.createServer(async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    return res.end();
+  }
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   try {
     if (url.pathname === '/api/health' && req.method === 'GET') return send(res, 200, { ok: true, service: 'zero-builder-max', version: '5.0.0-engine', capabilities: ['local-device-bridge', 'project-sync', 'workspace-export', 'zip-project-intake', 'domparser-preview', 'google-auth-ready', 'project-intelligence-agents', 'agent-recovery-supervisor', 'project-repository-memory', 'motion-studio', 'execution-engine', 'real-verify-loop', 'git-workspaces', 'repo-intake', 'repo-aware-context', 'coordinator-swarm', 'jarvis-agent', 'llm-proxy'] });
@@ -244,14 +290,33 @@ const server = http.createServer(async (req, res) => {
 
     const relativePath = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname).replace(/^\/+/, '');
     let filePath = path.resolve(root, relativePath);
-    if (!filePath.startsWith(root + path.sep)) return send(res, 403, { error: 'Forbidden' });
-    // Directory URLs ("/jarvis/") should serve the index inside them, not EISDIR.
-    if (relativePath.endsWith('/')) filePath = path.join(filePath, 'index.html');
+    if (!filePath.startsWith(root + path.sep) && filePath !== root) return send(res, 403, { error: 'Forbidden' });
+
+    // Block sensitive directories and files
+    const segments = relativePath.split(/[\\/]/);
+    const blockedNames = ['.git', '.env', 'data', 'engine', 'node_modules', 'scripts', 'server.js', 'package.json', 'package-lock.json', 'build-bundle.js'];
+    if (segments.some(s => blockedNames.includes(s.toLowerCase()) || (s.startsWith('.') && s !== '.' && s !== '..'))) {
+      return send(res, 403, { error: 'Forbidden' });
+    }
+
+    try {
+      const stat = await fs.stat(filePath);
+      if (stat.isDirectory()) {
+        filePath = path.join(filePath, 'index.html');
+      }
+    } catch (e) {
+      if (e.code === 'ENOENT') return send(res, 404, { error: 'Not found' });
+      throw e;
+    }
+
     const file = await fs.readFile(filePath);
-    res.writeHead(200, { 'Content-Type': mimeTypes[path.extname(filePath).toLowerCase()] || 'application/octet-stream' });
+    res.writeHead(200, {
+      'Content-Type': mimeTypes[path.extname(filePath).toLowerCase()] || 'application/octet-stream',
+      'Access-Control-Allow-Origin': '*'
+    });
     res.end(file);
   } catch (error) {
-    if (error.code === 'ENOENT') return send(res, 404, { error: 'Not found' });
+    if (error.code === 'ENOENT' || error.code === 'EISDIR') return send(res, 404, { error: 'Not found' });
     send(res, 400, { error: error.message || 'Request failed' });
   }
 });

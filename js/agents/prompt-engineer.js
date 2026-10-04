@@ -1179,6 +1179,9 @@ Generate a premium prompt pack now.`;
             queries.push('SaaS editorial landing page inspiration');
         }
 
+        queries.push(`${brief.siteArchetype} Awwwards winner layout`);  
+        queries.push('editorial asymmetric grid web design 2025');
+
         return [...new Set(queries)].slice(0, this.config.maxSearchQueries);
     }
 
@@ -1208,18 +1211,25 @@ Generate a premium prompt pack now.`;
 
     _describeLayout(sectionName) {
         const layouts = {
-            hero: 'Full viewport (100vh), overflow-hidden, media background z-0, content overlay z-10 with flex column',
-            'hero-film': 'Full viewport cinematic scene with video background and layered typography',
-            'hero-property': 'Full viewport with property photography and minimal type overlay',
-            'hero-manifesto': 'Full viewport with philosophical statement and subtle background treatment',
-            capabilities: 'Min-height 100vh, grid layout (1 col mobile / 3 col desktop), liquid glass cards with icons and tags',
-            'selected-work': 'Horizontal scroll gallery pinned with ScrollTrigger, or vertical case study cards',
-            philosophy: 'Two-column editorial layout, large type left, supporting text right',
-            gallery: 'Full-bleed image grid or horizontal pinned scroll',
-            cta: 'Centered content, magnetic button, form or contact info',
-            footer: 'Multi-column footer with links, social, brand info',
+            hero: 'Full viewport (100vh), 12-col grid. Content grid-column: 1/span 5, visual grid-column: 6/-1. Align items to bottom. Hero title breaks into 2-3 lines with .indent on middle line (margin-left: 15vw). Eyebrow above with uppercase + border-bottom.',
+            'hero-film': 'Full viewport with looping video background. Content overlay with z-10, positioned bottom-left in a 5-col span. Title uses var(--step-7) with line-height 0.85.',
+            'hero-property': 'Full viewport split: 7fr image left, 5fr content right. Property name at var(--step-6), location at var(--step--1) uppercase.',
+            'hero-manifesto': 'Full viewport centered statement. Single line at var(--step-7), supporting text at var(--step-1). Massive whitespace above and below. Subtle background gradient.',
+            'hero-campaign': 'Full bleed image with text overlay using mix-blend-mode: difference. Title at var(--step-7) offset to left edge.',
+            capabilities: 'grid-template-columns: repeat(3, 1fr) with staggered vertical offset on middle card (translateY var(--space-xl)). Cards use philosophy surface classes. Each card: icon + tags + title + description.',
+            'selected-work': 'Horizontal scroll gallery pinned with ScrollTrigger scrub. Each project card is 70vw wide with image + overlay title. Or: vertical 2-col masonry with alternating large/small cards.',
+            philosophy: 'grid-template-columns: 4fr 7fr. Large editorial type left at var(--step-5), supporting body text right at var(--step-0). Generous var(--space-3xl) padding.',
+            gallery: 'Full-bleed image grid or horizontal pinned scroll. Images have clip-path reveal on scroll entry.',
+            process: 'grid-template-columns: 7fr 4fr (reversed from philosophy section). Numbered steps left, visual diagram right.',
+            'features-scenes': 'Sticky scroll sequence: each feature pins and reveals with scrub. Content transitions between features while background stays.',
+            clients: 'Infinite marquee of logos/names. Subtle, small scale. Monochrome logos on dark bg.',
+            testimonials: 'Single large quote at var(--step-4) italic, centered. Author info small below. Carousel with fade transition, not slide.',
+            'floor-plans': 'Tab interface: buttons switch displayed floor plan image. Clean grid layout for specs.',
+            cta: 'Centered content block, max-width 600px. Large statement headline at var(--step-5), magnetic CTA button below. Generous var(--space-4xl) vertical padding.',
+            contact: 'grid-template-columns: 5fr 6fr. Contact info + social left, form right. Or: full-width statement with email link at var(--step-4).',
+            footer: 'grid-template-columns: 3fr 2fr 2fr 2fr 3fr. Brand column, 3 link columns, newsletter column. Subtle border-top, generous padding.',
         };
-        return layouts[sectionName] || 'Standard section with generous spacing and clear hierarchy';
+        return layouts[sectionName] || 'Asymmetric grid layout (4fr 7fr or 7fr 4fr) with generous var(--space-3xl) section padding and clear visual hierarchy.';
     }
 
     _componentsForSection(sectionName, motions) {
@@ -1320,14 +1330,18 @@ Generate a premium prompt pack now.`;
             `Art direction: ${brief.heroTreatment} with a premium ${brief.qualityBar} finish.`,
             `Color system: background ${colors.background}, text ${colors.text}, muted ${colors.textMuted}, accent ${colors.accent}, surface ${colors.surface}.`,
             `Typography: ${fonts.heading} (${fonts.headingStyle}) for headings and ${fonts.body} (300, 400, 500, 600) for body text. Use the Google Fonts URL ${fonts.googleFontsUrl}.`,
+            `EDITORIAL TYPOGRAPHY: hero headline breaks into 2-3 lines creating a staircase shape. Use .indent to push one line 15vw right. Eyebrow text above the headline uses uppercase with 0.18em tracking and a thin border-bottom.`,
+            `LAYOUT COMPOSITION: hero uses a 12-col grid with content spanning columns 1-5 and visual spanning 6-12. At least two other sections use asymmetric splits (4fr/7fr or 7fr/4fr), alternating sides. One section uses full-bleed media.`,
             `Motion systems to implement: ${motionLine}.`,
             `Required components: ${componentsLine}.`,
             `Hero copy: headline "${brief.heroSpec.headline}", subtext "${brief.heroSpec.subtext}", CTAs "${brief.heroSpec.ctaPrimary}" and "${brief.heroSpec.ctaSecondary}".`,
-            `Add exact scroll choreography, responsive breakpoints, prefers-reduced-motion fallback, and a clear asset plan.`,
+            `SCROLL CHOREOGRAPHY: hero entrance is a named GSAP timeline (stagger copy 0.08s, then media, then CTA). Every scroll section uses ScrollTrigger pin+scrub, not fire-once animations.`,
+            `VISUAL DEPTH: layer cards with subtle borders (rgba 0.06), film grain overlay, and staggered card positions (middle card offset vertically). Sections overlap by pulling the next one up with negative margin.`,
             `Assets: source HDRIs, PBR textures and models from Poly Haven (CC0) by slug, and build geometry, baked lightmaps and .glb exports with Blender. Do not invent asset URLs or use placeholder image hosts.`,
             `Typography must set tracking and leading per size — display type tight, body copy loose.`,
             `Research queries to guide reference gathering: ${queriesLine}.`,
             `Avoid: ${(brief.antiPatterns || []).join(', ')}.`,
+            `MODERN CSS: use :has() for nav peer-fading, container queries for adaptive cards, animation-timeline:view() for scroll reveals. No old-school media-query-only approaches.`,
             `Build it like a hand-crafted Awwwards site, not a template.`,
         ].join(' ');
     }

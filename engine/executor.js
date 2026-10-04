@@ -21,7 +21,7 @@ const ALLOWED_BINARIES = new Set([
   'npm', 'npx', 'pnpm', 'yarn',
   'node', 'tsc', 'vite', 'next',
   'jest', 'vitest', 'eslint', 'prettier',
-  'git',
+  'git', 'blender',
   'python3', 'python', 'pip3', 'pytest',
   'cargo', 'go', 'make',
 ]);
@@ -55,6 +55,8 @@ class EngineExecutor {
 
   async resolveWorkspaceFile(name, relativePath) {
     const target = this.resolveWorkspace(name);
+    await fs.mkdir(this.workspacesDir, { recursive: true });
+    await fs.mkdir(target, { recursive: true });
     const realBase = await fs.realpath(this.workspacesDir);
     const realTarget = await fs.realpath(target);
     if (realTarget !== realBase && !realTarget.startsWith(realBase + path.sep)) {
@@ -162,9 +164,12 @@ class EngineExecutor {
     const workspace = this.safeName(`${owner}-${repo}-${branch}`);
     const target = this.resolveWorkspace(workspace);
     const token = options.token || process.env.GITHUB_TOKEN || '';
+    const authArgs = token
+      ? ['-c', `http.extraheader=Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`]
+      : [];
 
     if (fssync.existsSync(path.join(target, '.git'))) {
-      const pull = await this.runArgs('git', ['-C', target, 'pull', '--ff-only'], { timeoutMs: 120_000 });
+      const pull = await this.runArgs('git', [...authArgs, '-C', target, 'pull', '--ff-only'], { timeoutMs: 120_000 });
       return { workspace, location: target, owner, repo, branch, reused: true, pull: pull.ok, pullOutput: (pull.stdout + pull.stderr).trim() };
     }
 
@@ -172,9 +177,6 @@ class EngineExecutor {
     // Authenticate via -c http.extraheader so the token never lands in
     // .git/config or the process command line. GitHub expects Basic auth
     // (x-access-token:<token>) for git-over-HTTPS.
-    const authArgs = token
-      ? ['-c', `http.extraheader=Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`]
-      : [];
     const clone = await this.runArgs('git', [...authArgs, 'clone', '--depth', '1', '--branch', branch, cloneUrl, '.'], { cwd: target, timeoutMs: 300_000 });
     if (!clone.ok) {
       await fs.rm(target, { recursive: true, force: true }).catch(() => {});
@@ -251,13 +253,23 @@ class EngineExecutor {
 
   /* ---------- command execution ---------- */
   parseCommand(command) {
-    const parts = String(command || '').trim().split(/\s+/).filter(Boolean);
-    if (!parts.length) throw new Error('Empty command');
-    const binary = parts[0];
+    const raw = String(command || '').trim();
+    if (/[&|;><^%\r\n]/.test(raw)) {
+      throw new Error('Shell metacharacters are forbidden in command string.');
+    }
+    const matches = raw.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
+    if (!matches.length) throw new Error('Empty command');
+    const binary = matches[0];
     if (!ALLOWED_BINARIES.has(binary)) {
       throw new Error(`Command "${binary}" is not allowed by the execution engine.`);
     }
-    return { binary, args: parts.slice(1) };
+    const args = matches.slice(1).map(arg => {
+      if ((arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith("'") && arg.endsWith("'"))) {
+        return arg.slice(1, -1);
+      }
+      return arg;
+    });
+    return { binary, args };
   }
 
   runCommand(command, options = {}) {
@@ -286,7 +298,17 @@ class EngineExecutor {
       let truncated = false;
       let finished = false;
 
-      const child = spawn(binary, args, {
+      const isWin = process.platform === 'win32';
+      const winBatchCmds = new Set(['npm', 'npx', 'yarn', 'pnpm', 'tsc', 'vite', 'next', 'jest', 'vitest', 'eslint', 'prettier']);
+
+      let spawnBinary = binary;
+      let spawnArgs = args;
+      if (isWin && winBatchCmds.has(binary)) {
+        spawnBinary = process.env.ComSpec || 'cmd.exe';
+        spawnArgs = ['/d', '/s', '/c', binary, ...args];
+      }
+
+      const child = spawn(spawnBinary, spawnArgs, {
         cwd: cwd || this.root,
         shell: false,
         env: { ...process.env, CI: '1', NO_COLOR: '1', npm_config_yes: 'true', GIT_TERMINAL_PROMPT: '0' },
@@ -294,7 +316,11 @@ class EngineExecutor {
 
       const timer = setTimeout(() => {
         if (!finished) {
-          try { child.kill('SIGKILL'); } catch { /* noop */ }
+          if (process.platform === 'win32' && child.pid) {
+            try { require('node:child_process').spawnSync('taskkill', ['/pid', String(child.pid), '/t', '/f']); } catch {}
+          } else {
+            try { child.kill('SIGKILL'); } catch { /* noop */ }
+          }
           stderr += `\n[engine] Command timed out after ${timeout}ms and was killed.`;
         }
       }, timeout);
@@ -407,17 +433,18 @@ class EngineExecutor {
     // A workspace nested inside another repository must never commit into it.
     const ensureOwnRepo = async () => {
       const top = await runGit(['rev-parse', '--show-toplevel']);
-      const resolvedTop = top.ok ? top.stdout.trim() : '';
-      if (resolvedTop !== target) {
+      const resolvedTop = top.ok ? path.resolve(top.stdout.trim()).toLowerCase() : '';
+      if (resolvedTop !== path.resolve(target).toLowerCase()) {
         await runGit(['init']);
       }
     };
 
     if (action === 'status') {
-      const inside = await runGit(['rev-parse', '--is-inside-work-tree']);
-      if (!inside.ok) return { ok: true, initialized: false };
+      const top = await runGit(['rev-parse', '--show-toplevel']);
+      const isOwn = top.ok && path.resolve(top.stdout.trim()).toLowerCase() === path.resolve(target).toLowerCase();
+      if (!isOwn) return { ok: true, initialized: false, dirty: [] };
       const status = await runGit(['status', '--porcelain']);
-      return { ok: true, initialized: true, dirty: status.stdout.trim().split('\n').filter(Boolean) };
+      return { ok: true, initialized: true, dirty: status.stdout.trim().split(/\r?\n/).filter(Boolean) };
     }
     if (action === 'init') {
       await ensureOwnRepo();
@@ -434,6 +461,9 @@ class EngineExecutor {
       return { ok: true, commit: (commit.stdout + commit.stderr).trim() };
     }
     if (action === 'log') {
+      const top = await runGit(['rev-parse', '--show-toplevel']);
+      const isOwn = top.ok && path.resolve(top.stdout.trim()).toLowerCase() === path.resolve(target).toLowerCase();
+      if (!isOwn) return { ok: true, initialized: false, log: '' };
       const log = await runGit(['log', '--oneline', '-10']);
       return { ok: true, log: log.stdout };
     }

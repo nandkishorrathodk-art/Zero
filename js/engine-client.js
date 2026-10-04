@@ -13,18 +13,25 @@ class EngineClient {
     }
 
     async _post(path, body) {
-        const res = await fetch(`${this.baseUrl}${path}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body || {}),
-        });
-        const data = await res.json().catch(() => ({ error: 'Invalid engine response' }));
-        return data;
+        try {
+            const res = await fetch(`${this.baseUrl}${path}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body || {}),
+            });
+            return await res.json().catch(() => ({ ok: false, error: 'Invalid engine response' }));
+        } catch (err) {
+            return { ok: false, error: err.message, networkError: true };
+        }
     }
 
     async _get(path) {
-        const res = await fetch(`${this.baseUrl}${path}`);
-        return res.json().catch(() => ({ error: 'Invalid engine response' }));
+        try {
+            const res = await fetch(`${this.baseUrl}${path}`);
+            return await res.json().catch(() => ({ ok: false, error: 'Invalid engine response' }));
+        } catch (err) {
+            return { ok: false, error: err.message, networkError: true };
+        }
     }
 
     async isAvailable(force = false) {

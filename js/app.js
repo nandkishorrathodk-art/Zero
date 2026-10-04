@@ -386,6 +386,16 @@
         document.getElementById('cli-close')?.addEventListener('click', () => {
             const cliModal = document.getElementById('cli-modal');
             if (cliModal) cliModal.style.display = 'none';
+            if (window.cliPingInterval) {
+                clearInterval(window.cliPingInterval);
+                window.cliPingInterval = null;
+            }
+        });
+        document.getElementById('btn-format')?.addEventListener('click', () => {
+            if (editor?.formatCurrentFile) {
+                editor.formatCurrentFile();
+                showToast('success', 'Code formatted');
+            }
         });
         document.getElementById('btn-copy-cli')?.addEventListener('click', () => {
             const code = document.getElementById('cli-command-code')?.textContent;
@@ -465,6 +475,25 @@
         // Export
         document.getElementById('btn-import-zip')?.addEventListener('click', () => document.getElementById('zip-import-input')?.click());
         document.getElementById('btn-import-zip-small')?.addEventListener('click', () => document.getElementById('zip-import-input')?.click());
+        document.getElementById('welcome-import-btn')?.addEventListener('click', () => document.getElementById('zip-import-input')?.click());
+
+        // Upload image
+        document.getElementById('btn-upload-image')?.addEventListener('click', () => {
+            document.getElementById('image-upload-input')?.click();
+        });
+        document.getElementById('image-upload-input')?.addEventListener('change', (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                const dataUrl = evt.target?.result;
+                const filename = `assets/${file.name}`;
+                editor?.addFile(filename, dataUrl);
+                fileSystem?.addFile(filename, dataUrl);
+                showToast('success', `Uploaded ${file.name}`);
+            };
+            reader.readAsDataURL(file);
+        });
         document.getElementById('zip-import-input')?.addEventListener('change', handleZipImport);
         document.getElementById('btn-export')?.addEventListener('click', handleExport);
         document.getElementById('btn-export-local')?.addEventListener('click', exportToLocalWorkspace);
@@ -553,6 +582,10 @@
         document.getElementById('console-header')?.addEventListener('click', () => {
             document.getElementById('console-panel')?.classList.toggle('collapsed');
         });
+        document.getElementById('btn-toggle-console')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            document.getElementById('console-panel')?.classList.toggle('collapsed');
+        });
         document.getElementById('btn-clear-console')?.addEventListener('click', () => {
             const output = document.getElementById('console-output');
             if (output) output.innerHTML = '';
@@ -562,6 +595,10 @@
         document.getElementById('chat-send')?.addEventListener('click', handleChatSend);
         document.getElementById('btn-stop-generation')?.addEventListener('click', handleStopGeneration);
         document.getElementById('btn-new-chat')?.addEventListener('click', handleNewChat);
+        document.getElementById('ws-chat-model-btn')?.addEventListener('click', () => {
+            loadSavedSettings();
+            toggleModal('settings-modal', true);
+        });
         document.getElementById('chat-input')?.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -823,27 +860,33 @@ Format:
             if (welcomeScreen) welcomeScreen.style.display = 'none';
         }, 500);
 
+        // Reset chat history and messages container for a fresh project build
+        chatHistory = [];
+        const messagesContainer = document.getElementById('chat-messages');
+        if (messagesContainer) messagesContainer.innerHTML = '';
+        workspaceProjectId = createProjectId();
+
         // Put the prompt in the chat history
         addChatMessage('user', prompt);
         addChatMessage('ai', 'Thinking...');
 
         // Fetch a conversational reply & clarification questions
+        let welcomeAiReply = "I'm on it! Building your website now...";
         try {
             const systemPrompt = "You are the Zero-Builder AI Assistant. The user just asked you to create a website. Give a brief, friendly, conversational reply (1-2 sentences) acknowledging their request. Speak in the same language as the user (e.g., Hinglish if they use it).";
             const reply = await window.llmProvider.chat([{ role: 'user', content: prompt }], { systemPrompt, maxTokens: 100, temperature: 0.7 });
-            const messages = document.getElementById('chat-messages');
-            if (messages && messages.lastElementChild && messages.lastElementChild.classList.contains('ai')) {
-                const bubble = messages.lastElementChild.querySelector('.ws-msg-bubble');
-                if (bubble) bubble.textContent = reply;
-            }
+            if (reply) welcomeAiReply = reply;
         } catch (err) {
             console.error("Chat reply failed:", err);
-            const messages = document.getElementById('chat-messages');
-            if (messages && messages.lastElementChild && messages.lastElementChild.classList.contains('ai')) {
-                const bubble = messages.lastElementChild.querySelector('.ws-msg-bubble');
-                if (bubble) bubble.textContent = "I'm on it! Building your website now...";
-            }
         }
+
+        const messages = document.getElementById('chat-messages');
+        if (messages && messages.lastElementChild && messages.lastElementChild.classList.contains('ai')) {
+            const bubble = messages.lastElementChild.querySelector('.ws-msg-bubble');
+            if (bubble) bubble.textContent = welcomeAiReply;
+        }
+        chatHistory.push({ role: 'ai', text: welcomeAiReply, isHtml: false });
+        scheduleWorkspaceSave();
 
         // Check for clarification questions
         const questions = await fetchClarificationQuestions(prompt);
@@ -871,7 +914,7 @@ Format:
 
     function handleNewChat() {
         const files = editor?.getAllFiles() || {};
-        if (Object.keys(files).length > 0) {
+        if (Object.keys(files).length > 0 || chatHistory.length > 0) {
             createSnapshot('Before starting new chat');
         }
 
@@ -994,7 +1037,7 @@ Format:
             const msg = e?.message || String(e);
 
             // Add error message instead of replacing
-            addChatMessage('system', `❌ Error: ${msg}`, true);
+            addChatMessage('system', `❌ Error: ${escapeHtml(msg)}`, true);
 
             // Surface engineer-grade failure guidance (no silent fail, no weak shell)
             if (/too thin|no weak|failed permanently|could not finish|extract ANY code|is not a function/i.test(msg)) {
@@ -1008,15 +1051,6 @@ Format:
     }
 
     /* ===== CHAT / REFINEMENT ===== */
-    function handleStopGeneration() {
-        if (!isGenerating) return;
-        framework?.cancel();
-        isGenerating = false;
-        updateGenerateButton(false);
-        showToast('info', 'Generation stopped');
-        addChatMessage('system', '⏹️ Generation stopped by user.', true);
-    }
-
     async function handleChatSend() {
         const chatInput = document.getElementById('chat-input');
         const prompt = chatInput?.value?.trim();
@@ -1082,6 +1116,8 @@ Format:
                 const bubble = messages.lastElementChild.querySelector('.ws-msg-bubble');
                 if (bubble) bubble.textContent = reply;
             }
+            chatHistory.push({ role: 'ai', text: reply, isHtml: false });
+            scheduleWorkspaceSave();
 
             // If it's a simple greeting or general inquiry, stop here. Do NOT throw error or refine code.
             if (isGreeting) {
@@ -1129,8 +1165,8 @@ Format:
             if (e?.message === 'ABORTED' || framework?.isCancelled) {
                 return;
             }
-            addChatMessage('system', `❌ Error: ${e.message}`, true);
-            showToast('error', `Chat failed: ${e.message}`);
+            addChatMessage('system', `❌ Error: ${escapeHtml(e?.message || String(e))}`, true);
+            showToast('error', `Chat failed: ${e?.message || String(e)}`);
         } finally {
             isGenerating = false;
             updateGenerateButton(false);
@@ -1496,6 +1532,10 @@ Format:
         if (welcomeLabel) {
             welcomeLabel.textContent = provider.name;
         }
+        const wsLabel = document.getElementById('ws-model-label');
+        if (wsLabel) {
+            wsLabel.textContent = provider.name;
+        }
 
         // Update dropdown active states
         document.querySelectorAll('.provider-option').forEach(opt => {
@@ -1636,12 +1676,13 @@ Format:
 
         // Temporarily save current settings for the test
         const providerId = document.getElementById('settings-provider')?.value;
+        const modelId = document.getElementById('settings-model')?.value;
         const apiKey = document.getElementById('settings-api-key')?.value;
         const customUrl = document.getElementById('settings-custom-url')?.value;
         const customModel = document.getElementById('settings-custom-model')?.value;
 
         if (apiKey) window.llmProvider.setApiKey(providerId, apiKey);
-        if (providerId) window.llmProvider.setProvider(providerId);
+        if (providerId) window.llmProvider.setProvider(providerId, modelId);
         if (customUrl) window.llmProvider.customBaseUrl = customUrl;
         if (customModel) window.llmProvider.customModelName = customModel;
 
@@ -1957,12 +1998,16 @@ Format:
         container.innerHTML = '';
         for (const msg of chatHistory) {
             const div = document.createElement('div');
-            div.className = `ws-chat-msg ${msg.role}`;
-            if (msg.role === 'system' && msg.isHtml) div.innerHTML = msg.text;
-            else div.innerHTML = `<div class="ws-msg-bubble">${escapeHtml(msg.text)}</div>`;
+            const role = (msg.role === 'assistant' || msg.role === 'model') ? 'ai' : (msg.role || 'user');
+            div.className = `ws-chat-msg ${role}`;
+            const text = msg.text || msg.content || '';
+            if (role === 'system' && msg.isHtml) div.innerHTML = text;
+            else div.innerHTML = `<div class="ws-msg-bubble">${escapeHtml(text)}</div>`;
             container.appendChild(div);
         }
-        container.scrollTop = container.scrollHeight;
+        requestAnimationFrame(() => {
+            container.scrollTop = container.scrollHeight;
+        });
     }
 
     function createSnapshot(label) {
@@ -2003,18 +2048,19 @@ Format:
 
     function restoreSnapshot(id, { confirmFirst = true } = {}) {
         const snapshot = getSnapshots().find(item => item.id === id);
-        if (!snapshot || !snapshot.files) return false;
+        if (!snapshot) return false;
+        const snapshotFiles = (snapshot.files && typeof snapshot.files === 'object') ? snapshot.files : {};
         if (confirmFirst && !confirm(`Restore “${snapshot.label}”? Your current workspace will be kept as a local draft.`)) return false;
-        editor?.setFiles(snapshot.files);
-        fileSystem?.setFiles(snapshot.files);
-        preview?.render(snapshot.files);
+        editor?.setFiles(snapshotFiles);
+        fileSystem?.setFiles(snapshotFiles);
+        preview?.render(snapshotFiles);
         if (framework) {
             framework.memory = framework._createEmptyMemory ? framework._createEmptyMemory() : {};
-            framework.memory.generatedFiles = { ...snapshot.files };
+            framework.memory.generatedFiles = { ...snapshotFiles };
             framework.memory.userPrompt = snapshot.prompt || '';
             framework.frameworkOverride = snapshot.framework || 'vanilla';
         }
-        workspaceProjectId = createProjectId();
+        workspaceProjectId = snapshot.projectId || snapshot.id || createProjectId();
         renderChatHistory(snapshot.chat);
         const name = document.getElementById('project-name');
         if (name && snapshot.project) name.value = snapshot.project;
@@ -2039,12 +2085,32 @@ Format:
                 <div class="metric-card"><span class="metric-label">Target</span><span class="metric-value">${framework?.frameworkOverride === 'fullstack-nextjs' ? 'Next.js' : framework?.frameworkOverride === 'react-vite' ? 'React' : 'Static'}</span></div>`;
         }
         if (!list) return;
-        list.innerHTML = snapshots.length ? snapshots.map(snapshot => `
+        list.innerHTML = snapshots.length ? snapshots.map(snapshot => {
+            const turns = Array.isArray(snapshot.chat) ? snapshot.chat : [];
+            const chatTranscriptHtml = turns.length ? `
+                <details class="version-transcript" style="margin-top:8px;">
+                    <summary style="font-size:12px;color:var(--text-secondary);cursor:pointer;user-select:none;">
+                        View conversation (${turns.length} message${turns.length === 1 ? '' : 's'})
+                    </summary>
+                    <div style="margin-top:6px;max-height:160px;overflow-y:auto;background:var(--bg-secondary);padding:8px 10px;border-radius:6px;font-size:12px;display:flex;flex-direction:column;gap:4px;">
+                        ${turns.map(m => `
+                            <div><strong style="color:${(m.role === 'ai' || m.role === 'assistant') ? 'var(--accent-purple)' : 'var(--text-primary)'}">${(m.role === 'ai' || m.role === 'assistant') ? 'Zero AI' : 'You'}:</strong> <span>${escapeHtml((m.text || m.content || '').slice(0, 300))}</span></div>
+                        `).join('')}
+                    </div>
+                </details>` : '';
+
+            return `
             <div class="version-row">
                 <i data-lucide="git-commit-horizontal"></i>
-                <div class="version-main"><span class="version-title">${escapeHtml(snapshot.label)} · ${escapeHtml(snapshot.project || 'Untitled project')}</span><span class="version-meta">${new Date(snapshot.createdAt).toLocaleString()} · ${Object.keys(snapshot.files || {}).length} files · ${escapeHtml(snapshot.framework || 'vanilla')}${Array.isArray(snapshot.chat) && snapshot.chat.length ? ` · ${snapshot.chat.length} messages` : ''}</span><span class="version-preview">${escapeHtml((snapshot.prompt || snapshot.chat?.find(message => message.role === 'user')?.text || '').trim().slice(0, 120) || 'No chat preview saved')}</span></div>
+                <div class="version-main">
+                    <span class="version-title">${escapeHtml(snapshot.label)} · ${escapeHtml(snapshot.project || 'Untitled project')}</span>
+                    <span class="version-meta">${new Date(snapshot.createdAt).toLocaleString()} · ${Object.keys(snapshot.files || {}).length} files · ${escapeHtml(snapshot.framework || 'vanilla')}${turns.length ? ` · ${turns.length} messages` : ''}</span>
+                    <span class="version-preview">${escapeHtml((snapshot.prompt || snapshot.chat?.find(message => message.role === 'user')?.text || '').trim().slice(0, 120) || 'No chat preview saved')}</span>
+                    ${chatTranscriptHtml}
+                </div>
                 <button class="btn btn-secondary" data-restore-version="${snapshot.id}"><i data-lucide="rotate-ccw"></i> Restore</button>
-            </div>`).join('') : '<div class="history-empty">No saved chats or project versions yet. Your saved conversations will appear here.</div>';
+            </div>`;
+        }).join('') : '<div class="history-empty">No saved chats or project versions yet. Your saved conversations will appear here.</div>';
         list.querySelectorAll('[data-restore-version]').forEach(btn => btn.addEventListener('click', () => {
             if (!restoreSnapshot(btn.dataset.restoreVersion)) return;
             const welcomeScreen = document.getElementById('welcome-screen');
@@ -2172,8 +2238,13 @@ Format:
         }
     }
 
+    function clearAiStatusIndicators() {
+        document.querySelectorAll('.ws-ai-status').forEach(el => el.remove());
+    }
+
     function updateGenerateButton(generating) {
-        const welcomeBtn = document.getElementById('prompt-send');
+        if (!generating) clearAiStatusIndicators();
+        const welcomeBtn = document.getElementById('welcome-send-btn') || document.getElementById('prompt-send');
         const chatSendBtn = document.getElementById('chat-send');
 
         if (welcomeBtn) {
